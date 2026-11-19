@@ -244,12 +244,16 @@ Maintainer commands from the source tree, using a Python environment with the He
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests
 PYTHONPATH=src python3 -m proactive_pilot.selftest
-python3 release_export.py scan
-python3 release_export.py build --output ./dist/hermes-proactive-portal-1.0.0.tar.gz
-python3 release_export.py doctor --installed /path/to/extracted-package
+python3 scripts/release_export.py scan
+python3 scripts/release_export.py build --output ./dist/hermes-proactive-portal-1.0.0.tar.gz
+python3 scripts/release_export.py doctor --installed /path/to/extracted-package
 ```
 
-`release_export.py` builds a deterministic code-only archive, excludes tests, runtime state and `.build-context`, verifies the manifest/module version and scans for personal paths. `doctor` validates package-local files, imports the extracted entrypoints and delegates host validation to `hermes plugins doctor --ci` under an isolated profile. These commands validate packaging; they do not constitute live delivery, connector, model or device qualification.
+`scripts/release_export.py` is the repository-only developer implementation. The old root `release_export.py` remains a thin import/CLI compatibility shim for existing commands and tests; prefer the `scripts/` path for new automation. Both the shim and the `scripts/` package are development tooling and are excluded from the exported archive.
+
+`scripts/release_export.py` builds a deterministic code-only archive, excludes tests, runtime state and `.build-context`, verifies the manifest/module version and scans for personal paths. `doctor` validates package-local files, imports the extracted entrypoints and delegates host validation to `hermes plugins doctor --ci` under an isolated profile. These commands validate packaging; they do not constitute live delivery, connector, model or device qualification.
+
+Keep three script locations distinct. Repository scripts such as `scripts/release_export.py` are maintainer-only tooling and never ship. The shipped `runners/*.py` templates are package content. The profile-installed scripts under the active profile's `scripts/` directory, for example `$HERMES_HOME/scripts/proactive_secretary_*.py`, are owned copies that `hermes secretary setup` installs for the native scheduler; the exporter neither installs nor runs them.
 
 ## Qualification and limitations
 

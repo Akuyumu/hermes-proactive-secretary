@@ -1,5 +1,5 @@
 name: hermes-proactive-secretary
-version: 1.0.1
+version: 1.0.2
 kind: standalone
 platforms:
   - linux
@@ -28,6 +28,7 @@ provides_tools:
   - secretary_context
   - secretary_responsibility
   - secretary_propose_notice
+  - secretary_followup
 provides_hooks:
   - pre_llm_call
 

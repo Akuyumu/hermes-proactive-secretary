@@ -28,6 +28,153 @@ The portal's native final output stays local. When something warrants the user's
 
 Setup, settings saves and registration do not arm the portal. Preview and enable are explicit and require a schedule; there is no hidden default cadence. Pause stops later runs but is not a proven hard cancellation of a run already in progress in the native transport.
 
+## Candidate architecture walkthrough
+
+This walkthrough describes the candidate tree as it exists. It is explanatory,
+not a new contract or a promise of live behaviour.
+
+### Components and data flow
+
+```text
+foreground private chat
+  -> secretary_followup (create/list/inspect/stop)
+  -> followups.json (owner-only, bounded, shared by the portal)
+
+native script jobs (--no-agent)
+  collectors + reminder runner
+  -> evidence, reminders and state
+  -> optional preparation runner (explicit opt-in)
+
+native normal-agent portal job
+  (preview/enable require an explicit schedule)
+  -> reads the owning profile's sources, responsibilities, memory and follow-ups
+  -> prepares private local work
+  -> secretary_followup (due/record_check)
+  -> notice request: secretary_propose_notice or queue_notice
+  -> portal_notices gates (quiet hours, cooldown, optional daily cap)
+  -> local final output; any external send stays approval-required
+```
+
+### Entrypoint and native schedule
+
+`__init__.py:45` is the registration boundary. `register(ctx)` binds the native
+CLI context, optionally registers the configured-only model lane, registers the
+skill, the conversation tools and the proposal tool, and registers the
+`secretary` CLI group. Registration does not read private sources, send a
+message, arm a job or change access. Optional surfaces fail without taking down
+the deterministic CLI.
+
+The native portal lifecycle lives in `secretary_portal.py:410`. Its actions are
+`preview`, `enable`, `status`, `pause`, `resume` and `remove`. `preview` and
+`enable` require a schedule; there is no hidden default cadence. The job is a
+normal native agent job, not a `--no-agent` script job, and it pins
+`deliver=local` plus `context_from=["self"]`. Setup does not arm the portal.
+Pause stops later runs but is not a proven hard cancellation of a run already
+in progress in the native transport.
+
+### Independent initiative
+
+The work contract in `secretary_portal.py:29` tells the scheduled session to
+inspect accepted responsibilities, standing instructions, authorised sources,
+prior progress and existing artifacts, and to investigate and prepare private
+work proactively. It may consult active follow-ups through the typed tool; when
+there are none, or the tool is unavailable, it uses its original initiative
+independently. That independence does not grant new authority, sources,
+spending, credentials or external sends, and follow-ups never create a
+schedule or mutate the per-watch prompt.
+
+### Shared follow-up tool and data
+
+There is one tool, `secretary_followup`, defined in
+`secretary_followups.py:34`. Foreground actions (`create`, `list`, `inspect`,
+`stop`) require the current private human turn and a matching evidence quote;
+background, shared or stale turns are refused. Desktop create and stop therefore
+require a captured private owner turn. The approval-prompt fallback remains
+disabled because the current host cannot prove a fresh per-request owner decision
+bound to the exact operation, profile and payload; if that capture is unavailable,
+the action fails closed. Portal actions (`due`, `record_check`, `queue_notice`,
+`resolve_notice`) require the same verified owned portal execution identity used
+by the notice tool.
+
+The durable store is `src/proactive_pilot/followups.py`, persisted as
+`followups.json` through the shared state store with owner-only permissions,
+atomic writes, a lock, an explicit schema and a monotonic version. It holds at
+most 20 active follow-ups and bounded text, hints, evidence and seen
+fingerprints. It does not schedule checks, call models or touch the network.
+
+A **one-shot** follow-up is a single semantic event. Queueing freezes it before
+the enqueue attempt and its event key depends only on its durable id, so a
+restart cannot create a second send path. Only a positive `delivered` receipt or
+an exact owner acknowledgment may close it. An `emitted-unconfirmed` one-shot
+exposes a notice receipt reference only after the portal queue records that
+state; it can be closed only by an explicit owner acknowledgment naming that
+exact reference in the current private owner turn. That records an
+`owner_confirmed` outcome, never transport verification, frees the pending slot
+and does not resend. Replaying the same acknowledgment is idempotent; a
+different reference is refused. Otherwise `emitted`, `attempted` and `unknown`
+leave it awaiting and never trigger a resend, and the shared tool refuses to
+assert `delivered` without a verified receipt. Example: "let me know when the
+consultation reopens" creates one one-shot watch, and repeated scheduled runs
+do not enqueue it twice.
+
+An **ongoing** follow-up can notify once per genuinely new match. Its notice
+event key includes a bounded match fingerprint, and already-seen fingerprints
+are suppressed. Example: "keep an eye on the timetable for cancellations"
+remains active across runs; a new cancellation fingerprint may be queued once,
+while the same fingerprint is not repeated.
+
+### Gated notice path
+
+Notice proposals go through the existing `portal_notices` transport rather than
+a second sender. The transport validates a bounded proposal, and the existing
+monitoring gates decide whether anything is emitted. `queue_notice` reports
+`queued`, `already_queued`, an ambiguous `enqueue_unknown`, or a refusal; none of
+these is delivery. The follow-up tool refuses to resolve a notice as
+`delivered` because no verified delivery receipt exists in this candidate.
+A proposal or queue entry is therefore not completion, not an acknowledgement
+and not proof that a message reached a device.
+
+### Developer scripts, installed runners and export shim
+
+Repository developer tooling lives under `scripts/`, including
+`scripts/release_export.py`; the exporter excludes its own `scripts/` tree and
+`tests/`. The `runners/` tree contains the shipped runner templates. The scripts
+the native scheduler runs are copies installed into the active profile's
+`scripts/` directory after an explicit setup; they are not the repository
+developer scripts. The exporter builds a deterministic code-only archive and
+its scan/doctor checks validate packaging, entrypoint import/registration and a
+synthetic host doctor. That is not live activation, connector access, model
+availability or delivery.
+
+The root `release_export.py` is a compatibility shim only. It re-exports
+`scripts/release_export.py`, including its helpers, and preserves the same
+module identity; new maintainer automation should use the relocated module.
+
+### Tests
+
+The `tests/` tree is offline and fixture-based. Representative coverage includes
+portal lifecycle and readback (`test_portal_lifecycle.py`), notice transport and
+gating (`test_portal_notices.py`, `test_notification_contract_053.py`), shared
+follow-up behaviour (`test_followup_integration.py`,
+`test_portal_tool_schema.py`), installed-candidate checks
+(`test_installed_lastmile.py`, `test_release_doctor_runtime.py`) and the wider
+source, reminder and responsibility suites. These tests use simulated chat
+contexts and synthetic profiles. A passing run is not live behaviour.
+
+### Limitations
+
+- Simulated chat tests are not live and do not establish live chat behaviour.
+- The current audit has not established native per-notice acknowledgement.
+- The current audit has not established reliable Desktop foreground metadata.
+- Do not infer delivery from a coarse job outcome such as enabled, running or
+  succeeded; only explicit notice evidence can support a delivery claim.
+- A proposal, queued follow-up notice or local final output is not delivery.
+- Pause is not a proven hard cancellation of an in-progress native run.
+- Packaging scans and doctor checks validate packaging only, not live services,
+  models, connectors, Desktop state or devices.
+- Concurrent fix internals are intentionally not documented here because they
+  may change.
+
 ## Host prerequisites
 
 ### Configured-only auxiliary contract
@@ -102,6 +249,8 @@ Never use `git reset --hard`, `git clean`, or a blanket checkout to undo this ch
 ## Release and packaging
 
 Package version and metadata are authoritative in `plugin.yaml` and the release-export inputs; this documentation does not set them. `main` is the production/stable branch; a `dev` branch, if used later, is experimental and not the live install source. Release tag `v1.0.0` marks the tested `main` commit. For an immutable pin, resolve the immutable 40-character commit SHA and pass it through the native `--ref` argument.
+
+Repository developer tooling lives under `scripts/` (for example `scripts/release_export.py`) and is excluded from the exported archive; the old root `release_export.py` is a compatibility shim only. This is distinct from the shipped `runners/*.py` templates and from the profile-installed scripts under the active profile's `scripts/` directory, which the native scheduler runs after an explicit setup.
 
 The exporter builds a deterministic code-only archive and excludes tests, runtime state and `.build-context`. Its scan and doctor checks validate packaging only. They do not establish live connector access, model availability, message delivery or Desktop/device behaviour. Do not claim that every service or source always works, and do not infer universal third-party availability from a green packaging run.
 

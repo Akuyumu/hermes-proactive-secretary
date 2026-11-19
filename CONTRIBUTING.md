@@ -40,4 +40,4 @@ Some Hermes versions need the included host compatibility update for the strict 
 
 ## Packaging
 
-The release exporter builds a deterministic code-only archive and excludes tests, runtime state and `.build-context`. Its own scan and doctor output are packaging checks, not live qualification. See [operations](docs/operations.md#development-and-release) for the current commands and package naming.
+The repository release exporter is `scripts/release_export.py`; the root `release_export.py` remains a compatibility shim for existing imports and commands. It builds a deterministic code-only archive and excludes tests, runtime state and `.build-context`. Repository `scripts/` tooling is not shipped, unlike the `runners/*.py` templates or the profile-installed scripts that setup places in the active profile. Its own scan and doctor output are packaging checks, not live qualification. See [operations](docs/operations.md#development-and-release) for the current commands and package naming.
