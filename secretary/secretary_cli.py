@@ -1090,6 +1090,7 @@ def status_command(args: argparse.Namespace) -> int:
                       "to the library 'src' directory)")
     else:
         monitoring = caps.get("monitoring", "full")
+    layout_line = secretary_status.layout_diagnostic(paths.plugin_root())
     human = "\n".join([
         ("Proactive Secretary: installed; "
          + ("paused (collection/delivery stopped)" if payload['paused'] else "not paused")
@@ -1114,6 +1115,8 @@ def status_command(args: argparse.Namespace) -> int:
         + (f" (error {payload['prepare_queue'].get('error')})" if payload['prepare_queue'].get('error') else ""),
         f"  next schedule : {payload['next_schedule'] or 'none recorded'}",
     ])
+    if layout_line:
+        human += f"\n  {layout_line}"
     if next_action:
         human += f"\n  next action   : {next_action}"
     _emit(payload, as_json=as_json, human=human)

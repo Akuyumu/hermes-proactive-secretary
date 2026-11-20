@@ -1,4 +1,4 @@
-"""Reproducible code-only 1.0.3 export builder and installed-candidate doctor.
+"""Reproducible code-only 1.0.4 export builder and installed-candidate doctor.
 
 This is not a new package manager. It uses the plugin's existing manifest and
 Python modules, applies the same export rules the release review requires, and
@@ -10,7 +10,7 @@ Rules enforced by :func:`build_package`:
 * every shipped file comes from an explicit allowlist of code/docs/policy/skill/
   runner trees (no ``.build-context``, tests, git metadata, caches, private
   runtime state or scratch files);
-* the manifest and ``src/proactive_pilot/__init__.py`` both say 1.0.3;
+* the manifest and ``src/proactive_pilot/__init__.py`` both say 1.0.4;
 * sanitisation terms and absolute personal home paths are rejected;
 * file order, timestamps and hashes are deterministic.
 """
@@ -35,7 +35,11 @@ from pathlib import Path
 from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = "1.0.3"
+_SRC = ROOT / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+from proactive_pilot.layout import legacy_shadows  # noqa: E402
+VERSION = "1.0.4"
 SHIPPED_DIRS = ("src", "policy", "skills", "runners", "secretary", "public_samples",
                 "fixtures", "desktop", "dashboard", "docs")
 # Nested trees contain executable/assets as well as docs. Keep the same
@@ -368,6 +372,13 @@ def doctor(installed: Path) -> dict[str, Any]:
     missing = [name for name in required if not (installed / name).is_file()]
     manifest_version, module_version = _version(installed)
     shipped = scan(installed)
+    shadows = legacy_shadows(installed)
+    layout_problems = []
+    if shadows:
+        layout_problems.append(
+            "legacy root module(s) shadow secretary/: "
+            + ", ".join(shadows)
+            + "; remove the stale root modules and reinstall instead of copying over")
     server_assets = all((installed / "runners" / name).is_file() for name in (
         "proactive_secretary_runner.py", "proactive_secretary_reminder_runner.py",
         "proactive_secretary_prepare_runner.py"))
@@ -380,14 +391,15 @@ def doctor(installed: Path) -> dict[str, Any]:
              "reason": "not run: required package files are missing"}
             if missing else _native_host_doctor(installed))
     ok = (not missing and manifest_version == VERSION == module_version
-          and server_assets and shipped["ok"] and imports.get("ok")
-          and host.get("ok"))
+          and server_assets and shipped["ok"] and not layout_problems
+          and imports.get("ok") and host.get("ok"))
     return {"ok": ok, "installed": str(installed), "version": manifest_version,
             "module_version": module_version, "missing": missing,
             "required_runners": server_assets,
             "entrypoint_import_registration": imports,
             "native_host_doctor": host,
             "scan_ok": shipped["ok"], "scan_problems": shipped["problems"],
+            "layout_shadows": shadows, "layout_problems": layout_problems,
             "identity": "hermes-proactive-secretary",
             "scope": "package-local validation plus canonical host doctor; not live activation"}
 

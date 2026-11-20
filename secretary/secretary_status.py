@@ -37,6 +37,19 @@ def _bounded_list(values: Any, *, limit: int = MAX_LIST) -> list[str]:
     return out
 
 
+def layout_diagnostic(root: Any) -> str:
+    """Return one bounded legacy-layout warning line, or ``""`` when clean."""
+    try:
+        from proactive_pilot.layout import legacy_shadows
+        shadows = legacy_shadows(root)
+    except Exception:  # noqa: BLE001 - diagnostics degrade, never crash status
+        return ""
+    if not shadows:
+        return ""
+    return (f"layout        : {len(shadows)} legacy root module(s) shadow "
+            "secretary/ — reinstall to clear")
+
+
 def _read_prefs() -> dict[str, Any]:
     try:
         from proactive_pilot.feedback import load_preferences_file
