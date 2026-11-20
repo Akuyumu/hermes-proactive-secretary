@@ -147,7 +147,7 @@ def _optional_allowance(value: Any) -> int | None:
         return None
     import sys
     from pathlib import Path
-    src = str(Path(__file__).resolve().parent / "src")
+    src = str(Path(__file__).resolve().parent.parent / "src")
     if src not in sys.path:
         sys.path.insert(0, src)
     from proactive_pilot.userconfig import validate_config
@@ -429,7 +429,7 @@ class OnboardingService:
         try:
             import sys
             from pathlib import Path
-            src = str(Path(__file__).resolve().parent / "src")
+            src = str(Path(__file__).resolve().parent.parent / "src")
             if src not in sys.path:
                 sys.path.insert(0, src)
             from proactive_pilot.userconfig import (default_config,
@@ -636,7 +636,7 @@ class OnboardingService:
         try:
             import sys
             from pathlib import Path
-            src = str(Path(__file__).resolve().parent / "src")
+            src = str(Path(__file__).resolve().parent.parent / "src")
             if src not in sys.path:
                 sys.path.insert(0, src)
             from proactive_pilot.userconfig import load_user_config
@@ -668,7 +668,7 @@ class OnboardingService:
         try:
             import sys
             from pathlib import Path
-            src = str(Path(__file__).resolve().parent / "src")
+            src = str(Path(__file__).resolve().parent.parent / "src")
             if src not in sys.path:
                 sys.path.insert(0, src)
             from proactive_pilot.native_runtime import bound_model_lane_status
@@ -996,7 +996,7 @@ class OnboardingService:
             raise OnboardingError("native settings are unavailable")
         import sys
         from pathlib import Path
-        src = str(Path(__file__).resolve().parent / "src")
+        src = str(Path(__file__).resolve().parent.parent / "src")
         if src not in sys.path:
             sys.path.insert(0, src)
         from proactive_pilot.userconfig import load_user_config
@@ -1017,7 +1017,7 @@ class OnboardingService:
         """
         import sys
         from pathlib import Path
-        src = str(Path(__file__).resolve().parent / "src")
+        src = str(Path(__file__).resolve().parent.parent / "src")
         if src not in sys.path:
             sys.path.insert(0, src)
         from proactive_pilot.userconfig import (native_flat_changes,
@@ -1184,7 +1184,7 @@ class OnboardingService:
         if user_config_changed or projection_changes or route_writes:
             try:
                 from proactive_pilot import config_backup
-                from . import paths as plugin_paths
+                from .. import paths as plugin_paths
                 backup = config_backup.create_backup(
                     plugin_paths.data_root(), native=self.ctx,
                     state=self._state_facade, reason="onboarding apply settings")

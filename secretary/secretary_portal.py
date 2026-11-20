@@ -12,12 +12,12 @@ import json
 from typing import Any
 
 try:  # package import
-    from . import cron, paths
+    from .. import cron, paths
     from . import secretary_portal_controls as portal_controls
 except ImportError:  # direct/standalone import
     import cron  # type: ignore
     import paths  # type: ignore
-    import secretary_portal_controls as portal_controls  # type: ignore
+    from secretary import secretary_portal_controls as portal_controls  # type: ignore
 
 LIMITATIONS = (
     "notifications depend on an already-enabled monitoring lane; a proposal is not "

@@ -77,12 +77,13 @@ hermes://plugin/install?repo=Akuyumu/hermes-proactive-portal&enable=1
 
 The optional client component and refresh behaviour depend on your installed client. The [official plugin guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins) describes the native flow.
 
-The native plugin id stays `hermes-proactive-secretary`, and commands stay `hermes secretary`; existing jobs and state keep working. This release is version 1.0.0.
+The native plugin id stays `hermes-proactive-secretary`, and commands stay `hermes secretary`; existing jobs and state keep working. This release is version 1.0.3.
 
 ## Learn more
 
 - [Installation](docs/INSTALLATION.md)
-- [Agent-assisted setup](AGENT_SETUP.md)
+- [Agent-assisted setup](docs/AGENT_SETUP.md)
+- [Repository layout](docs/ENGINEERING.md#repository-layout)
 - [Contributing](CONTRIBUTING.md)
 - [Operations guide](docs/operations.md)
 - [Background portal details](docs/NATIVE-PORTAL.md)

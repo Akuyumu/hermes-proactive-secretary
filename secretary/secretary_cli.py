@@ -34,12 +34,18 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import cron as cron_mod
-from . import paths
-from . import runner_install
+try:  # package import
+    from .. import cron as cron_mod
+    from .. import paths
+    from .. import runner_install
+    from .. import state_import
+except ImportError:  # direct/standalone import
+    import cron as cron_mod  # type: ignore
+    import paths  # type: ignore
+    import runner_install  # type: ignore
+    import state_import  # type: ignore
 from . import secretary_portal_controls as portal_controls
 from . import secretary_status
-from . import state_import
 
 # Host-built native context captured from the registered CLI handler closure.
 # It is only ever the context Hermes constructs and passes to ``register(ctx)``;
@@ -104,6 +110,7 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
              ("responsibilities", "Capture/list/inspect/update/cancel accepted responsibilities and inspect handoff"),
              ("context", "Foreground bounded context refresh: list | show | update | revoke"),
              ("reminders", "Requested reminders (dispatch | check | list | status | add | cancel)"),
+             ("deliveries", "Read recent delivered proactive notices (--since | --limit)"),
              ("doctor", "Check the environment and wiring"),
           )}
     portal = p["portal"]
@@ -177,6 +184,10 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
     p["reminders"].add_argument("reminder_args", nargs=argparse.REMAINDER,
                                 help="arguments forwarded to the validated reminder CLI "
                                      "(default: dispatch)")
+    p["deliveries"].add_argument("--since", default=None,
+                                 help="only rows at/after this ISO timestamp")
+    p["deliveries"].add_argument("--limit", type=int, default=10,
+                                 help="maximum rows to print (default 10, hard max 50)")
     for _name in ("disable", "uninstall"):
         p[_name].add_argument("--purge", action="store_true",
                               help="also delete the owner-only runtime data directory")
@@ -1626,7 +1637,7 @@ def responsibilities_command(args: argparse.Namespace) -> int:
     try:
         from .secretary_responsibilities import dispatch
     except ImportError:  # pragma: no cover - direct module execution
-        from secretary_responsibilities import dispatch
+        from secretary.secretary_responsibilities import dispatch
 
     action = str(getattr(args, "action", "list"))
     payload: dict[str, Any] = {
@@ -2034,6 +2045,73 @@ def configure_command(args: argparse.Namespace) -> int:
 # dispatch
 # --------------------------------------------------------------------------- #
 
+def _deliveries_error(as_json: bool, message: str) -> int:
+    if as_json:
+        print(json.dumps({"ok": False, "error": message}, indent=2, sort_keys=True))
+    else:
+        print(f"deliveries: {message}", file=sys.stderr)
+    return 1
+
+
+def deliveries_command(args: argparse.Namespace) -> int:
+    """On-demand read surface for the owner-only delivery ledger."""
+    as_json = bool(getattr(args, "json", False))
+    since = getattr(args, "since", None)
+    try:
+        limit = int(getattr(args, "limit", 10))
+    except (TypeError, ValueError):
+        return _deliveries_error(as_json, "invalid --limit: expected an integer")
+    if limit < 1:
+        return _deliveries_error(as_json, "invalid --limit: must be at least 1")
+    limit = min(limit, 50)
+
+    _ensure_src()
+    try:
+        from proactive_pilot import deliveries as ledger
+        from proactive_pilot.clock import Clock
+        from proactive_pilot.state import CorruptStateError, StateStore
+    except Exception as exc:  # noqa: BLE001 - report honestly, no fake success
+        return _deliveries_error(as_json, f"ledger unavailable ({type(exc).__name__})")
+
+    try:
+        store = StateStore(Path(paths.state_dir()), Clock())
+        rows = ledger.recent(store, since=since, limit=limit, strict=True)
+    except ValueError as exc:
+        return _deliveries_error(as_json, f"malformed --since: {exc}")
+    except (paths.ProfileResolutionError, ledger.DeliveryLedgerError) as exc:
+        return _deliveries_error(as_json, str(exc) or type(exc).__name__)
+    except CorruptStateError as exc:
+        return _deliveries_error(as_json, f"delivery ledger is corrupt: {exc}")
+    except Exception as exc:  # noqa: BLE001 - unavailable/corrupt is not empty
+        return _deliveries_error(
+            as_json, f"delivery ledger unavailable ({type(exc).__name__})")
+
+    payload_rows = [
+        {
+            "at": row.get("at", ""),
+            "kind": row.get("kind", ""),
+            "destination": row.get("destination", ""),
+            "message": row.get("message", ""),
+        }
+        for row in rows
+    ]
+    if as_json:
+        print(json.dumps({
+            "ok": True,
+            "since": since or "",
+            "limit": limit,
+            "count": len(payload_rows),
+            "deliveries": payload_rows,
+        }, indent=2, sort_keys=True))
+    elif not payload_rows:
+        print("no deliveries")
+    else:
+        for row in payload_rows:
+            print(f"{row['at']}  {row['kind']}  {row['destination'] or '-'}")
+            print(f"  {row['message']}")
+    return 0
+
+
 def portal_command(args: argparse.Namespace, *, backend: Any = None) -> int:
     """Lazy glue: the portal service owns actions, backend and JSON output."""
     from . import secretary_portal as _portal
@@ -2061,6 +2139,7 @@ _DISPATCH = {
     "responsibilities": responsibilities_command,
     "context": context_command,
     "reminders": reminders_command,
+    "deliveries": deliveries_command,
     "watch": watch_command,
     "feedback": feedback_command,
     "configure": configure_command,
@@ -2074,7 +2153,7 @@ def secretary_command(args: argparse.Namespace) -> int:
     if not sub:
         print("usage: hermes secretary {setup,status,portal,pause,resume,disable,uninstall,"
               "migrate-jobs,self-test,run-once,prepare,responsibilities,watch,feedback,"
-              "configure,doctor}")
+              "configure,deliveries,doctor}")
         return 2
     handler = _DISPATCH.get(sub)
     if handler is None:

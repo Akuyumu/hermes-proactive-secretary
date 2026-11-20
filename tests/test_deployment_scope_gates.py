@@ -304,7 +304,7 @@ class MigrationAndParserTests(unittest.TestCase):
         package = importlib.util.module_from_spec(spec)
         sys.modules[name] = package
         spec.loader.exec_module(package)
-        sc = importlib.import_module(name + ".secretary_cli")
+        sc = importlib.import_module(name + ".secretary.secretary_cli")
         parser = argparse.ArgumentParser()
         sc.register_cli(parser)
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:

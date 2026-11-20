@@ -23,7 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from proactive_pilot import userconfig  # noqa: E402
-from secretary_setup_actions import (  # noqa: E402
+from secretary.secretary_setup_actions import (  # noqa: E402
     CLEARED_FIELDS,
     PRESERVED_FIELDS,
     SetupActionError,

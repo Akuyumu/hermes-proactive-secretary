@@ -46,7 +46,7 @@ class FinalizationHarnessTests(unittest.TestCase):
             forbidden, _reason = common.is_forbidden(rel)
             self.assertTrue(forbidden, rel)
         for rel in ("src/proactive_pilot/main.py", "tests/test_proactive_pilot.py",
-                    "policy/policy.default.json", "README.md", "AGENT_SETUP.md",
+                    "policy/policy.default.json", "README.md", "docs/AGENT_SETUP.md",
                     "plugin.yaml", "runners/proactive_secretary_runner.py"):
             forbidden, reason = common.is_forbidden(rel)
             self.assertFalse(forbidden, f"{rel}: {reason}")

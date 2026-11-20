@@ -40,9 +40,9 @@ def _load_plugin_package(name: str = "hermes_proactive_secretary_autonomy_qa"):
 
 _PKG = _load_plugin_package()
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
-sc = importlib.import_module(f"{_PKG.__name__}.secretary_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
-portal = importlib.import_module(f"{_PKG.__name__}.secretary_portal")
+portal = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal")
 
 PORTAL = cron_mod.PORTAL_JOB_NAME
 

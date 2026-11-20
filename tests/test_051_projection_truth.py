@@ -41,9 +41,9 @@ def _load_package():
 
 
 PKG = _load_package()
-sc = importlib.import_module(f"{PKG.__name__}.secretary_cli")
+sc = importlib.import_module(f"{PKG.__name__}.secretary.secretary_cli")
 paths = importlib.import_module(f"{PKG.__name__}.paths")
-setup_actions = importlib.import_module("secretary_setup_actions")
+setup_actions = importlib.import_module("secretary.secretary_setup_actions")
 cron_mod = importlib.import_module(f"{PKG.__name__}.cron")
 
 

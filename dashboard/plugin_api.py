@@ -35,7 +35,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from secretary_setup_actions import (  # noqa: E402
+from secretary.secretary_setup_actions import (  # noqa: E402
     SetupActionError, SetupActions, owner_data_root, owner_profile_home,
 )
 

@@ -32,7 +32,7 @@ _pkg = importlib.util.module_from_spec(_spec)
 sys.modules[_PKG_NAME] = _pkg
 _spec.loader.exec_module(_pkg)
 
-cli = importlib.import_module(f"{_PKG_NAME}.secretary_cli")
+cli = importlib.import_module(f"{_PKG_NAME}.secretary.secretary_cli")
 from proactive_pilot import responsibilities as R  # noqa: E402
 from proactive_pilot import evidence_cache  # noqa: E402
 from proactive_pilot import userconfig as uc  # noqa: E402

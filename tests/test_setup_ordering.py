@@ -35,7 +35,7 @@ def _load_plugin_package():
 
 
 _PKG = _load_plugin_package()
-sc = importlib.import_module(f"{_PKG.__name__}.secretary_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
 runner_install = importlib.import_module(f"{_PKG.__name__}.runner_install")

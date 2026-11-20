@@ -7,7 +7,7 @@ Thanks for helping improve Hermes Proactive Portal. This is a Hermes plugin, not
 - Read [Engineering](docs/ENGINEERING.md) for architecture, the native scheduled-session model, host prerequisites and the reviewed compatibility patch base.
 - Read [Installation](docs/INSTALLATION.md) before testing a setup path.
 - Read [docs/NATIVE-PORTAL.md](docs/NATIVE-PORTAL.md) for the portal job's lifecycle and delivery behaviour.
-- For agent-assisted setup wording and consent rules, use [AGENT_SETUP.md](AGENT_SETUP.md) as the established reference.
+- For agent-assisted setup wording and consent rules, use [docs/AGENT_SETUP.md](docs/AGENT_SETUP.md) as the established reference.
 
 ## Branches and releases
 

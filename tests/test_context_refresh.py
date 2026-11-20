@@ -39,8 +39,8 @@ def _load_package():
 
 
 _PKG = _load_package()
-refresh = importlib.import_module(f"{_PKG.__name__}.secretary_context_refresh")
-conversation = importlib.import_module(f"{_PKG.__name__}.secretary_conversation")
+refresh = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_context_refresh")
+conversation = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_conversation")
 
 NOW = (SeededClock("2026-10-05T12:00:00+00:00")).now()
 

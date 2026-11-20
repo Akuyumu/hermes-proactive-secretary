@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 try:  # package import
-    from . import cron
+    from .. import cron
 except ImportError:  # direct/standalone import
     import cron  # type: ignore
 

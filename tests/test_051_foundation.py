@@ -40,10 +40,10 @@ def _load_package():
 
 
 PKG = _load_package()
-sc = importlib.import_module(f"{PKG.__name__}.secretary_cli")
+sc = importlib.import_module(f"{PKG.__name__}.secretary.secretary_cli")
 paths = importlib.import_module(f"{PKG.__name__}.paths")
-onboarding = importlib.import_module(f"{PKG.__name__}.secretary_onboarding")
-conversation = importlib.import_module(f"{PKG.__name__}.secretary_conversation")
+onboarding = importlib.import_module(f"{PKG.__name__}.secretary.secretary_onboarding")
+conversation = importlib.import_module(f"{PKG.__name__}.secretary.secretary_conversation")
 
 
 class FormCtx:

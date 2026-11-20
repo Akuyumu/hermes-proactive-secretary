@@ -31,6 +31,9 @@ _REF = re.compile(r"\bsec-[a-z0-9]{6,}\b", re.IGNORECASE)
 _RELEVANT = re.compile(
     r"\b(secretary|proactive|reminder|remind|alert|why this|not today|snooze|"
     r"stop these|standing scope|onboarding|setup)\b", re.IGNORECASE)
+_DEICTIC = re.compile(
+    r"\b(?:that|those|these|it|the one|the thing|you sent|you prepped|"
+    r"you mentioned|earlier|before|add these|send me the)\b", re.IGNORECASE)
 
 
 class ConversationError(ValueError):
@@ -274,7 +277,7 @@ def _alert_lines(ctx: Any, ref: str = "") -> list[str]:
     try:
         import sys
         from pathlib import Path
-        src = str(Path(__file__).resolve().parent / "src")
+        src = str(Path(__file__).resolve().parent.parent / "src")
         if src not in sys.path:
             sys.path.insert(0, src)
         from proactive_pilot.alertrefs import alert_context
@@ -324,7 +327,65 @@ def _append_guidance(context: str, guidance: str | None) -> str:
     """Append optional refresh guidance while preserving every existing line."""
     if not guidance or guidance in context:
         return context
+    if not context:
+        return guidance
     return f"{context}\n\n{guidance}"
+
+
+def delivery_continuity_context(
+    ctx: Any, *, platform: Any, user_message: Any, session_id: str = "",
+    task_id: str = "", parent_session_id: str = "", chat_type: str = "",
+    is_shared: bool = False, is_first_turn: bool = False,
+) -> str | None:
+    """Content-free recency hint pointing at the on-demand delivery read surface.
+
+    The host exposes no chat id/chat type at this hook and ``Platform.TELEGRAM``
+    covers both DM and group. Therefore this line never contains notice text,
+    topics, handles or destination ids: only a count, a timestamp and the CLI
+    read surface. It is also strictly limited to eligible human turns, a row in
+    the last 24h, and either a deictic message or the first turn of a session.
+    """
+    if not eligible_human_turn(
+            platform, user_message, task_id=task_id,
+            parent_session_id=parent_session_id, chat_type=chat_type,
+            is_shared=is_shared):
+        return None
+    if not is_first_turn and _DEICTIC.search(_text(user_message)) is None:
+        return None
+    try:
+        try:
+            from .. import paths as plugin_paths
+        except ImportError:  # pragma: no cover - direct module execution
+            import paths as plugin_paths  # type: ignore[no-redef]
+        import sys
+        from datetime import datetime, timedelta
+        from pathlib import Path
+        src = str(Path(__file__).resolve().parent.parent / "src")
+        if src not in sys.path:
+            sys.path.insert(0, src)
+        from proactive_pilot import deliveries
+        from proactive_pilot.clock import Clock
+        from proactive_pilot.state import StateStore
+        store = StateStore(Path(plugin_paths.state_dir()), Clock())
+        summary = deliveries.summary_since(store, within_hours=24)
+        if not summary:
+            return None
+        count = int(summary.get("count") or 0)
+        newest = str(summary.get("newest") or "")
+        if count <= 0 or not newest:
+            return None
+        try:
+            since = (datetime.fromisoformat(newest) - timedelta(days=1)).isoformat()
+        except ValueError:
+            since = newest
+        return (
+            f"Recent proactive notices in this profile: {count} delivered in the "
+            f"last 24h (newest {newest}). If the user refers to something you do "
+            "not remember saying, run: hermes secretary deliveries "
+            f"--since {since} --limit 5"
+        )
+    except Exception:  # noqa: BLE001 - continuity is optional and content-free
+        return None
 
 
 def make_pre_llm_hook(ctx: Any, service: OnboardingService | None = None):
@@ -336,6 +397,7 @@ def make_pre_llm_hook(ctx: Any, service: OnboardingService | None = None):
         session_id = str(kwargs.get("session_id") or "")
         chat_type = str(kwargs.get("chat_type") or "")
         is_shared = bool(kwargs.get("is_shared", False))
+        is_first_turn = bool(kwargs.get("is_first_turn", False))
         # Always remember an eligible human turn, even when relevance or
         # onboarding context has higher display priority. Consent checks read
         # this trusted turn; they never rely on model reply metadata.
@@ -362,6 +424,14 @@ def make_pre_llm_hook(ctx: Any, service: OnboardingService | None = None):
                 chat_type=chat_type, is_shared=is_shared)
         except Exception:  # noqa: BLE001 - optional guidance never breaks a turn
             guidance = None
+        continuity = delivery_continuity_context(
+            ctx, platform=platform, user_message=user_message,
+            session_id=session_id, task_id=str(kwargs.get("task_id") or ""),
+            parent_session_id=str(kwargs.get("parent_session_id") or ""),
+            chat_type=chat_type, is_shared=is_shared,
+            is_first_turn=is_first_turn)
+        if continuity:
+            guidance = _append_guidance(guidance or "", continuity)
         relevant = relevance_context(ctx, user_message=user_message, platform=platform,
                                      chat_type=chat_type, is_shared=is_shared)
         if relevant is not None:
@@ -386,7 +456,7 @@ def make_pre_llm_hook(ctx: Any, service: OnboardingService | None = None):
 def _control_state_paths() -> tuple[Any, Any]:
     """Resolve only this profile's existing plugin paths (no global interceptor)."""
     try:
-        from . import paths as plugin_paths
+        from .. import paths as plugin_paths
     except ImportError:  # pragma: no cover - direct module execution
         import paths as plugin_paths  # type: ignore[no-redef]
     return plugin_paths
@@ -397,7 +467,7 @@ def _apply_control(action: str) -> dict[str, Any]:
     paths = _control_state_paths()
     import sys
     from pathlib import Path
-    src = str(Path(__file__).resolve().parent / "src")
+    src = str(Path(__file__).resolve().parent.parent / "src")
     if src not in sys.path:
         sys.path.insert(0, src)
     from proactive_pilot.clock import Clock
@@ -416,7 +486,7 @@ def _owned_jobs_summary() -> dict[str, Any]:
     """Read our ownership record only; never polls the cron backend."""
     try:
         paths = _control_state_paths()
-        from . import cron as cron_mod
+        from .. import cron as cron_mod
     except Exception:  # noqa: BLE001
         return {"available": False, "owned": []}
     try:

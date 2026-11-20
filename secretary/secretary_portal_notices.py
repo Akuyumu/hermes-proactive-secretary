@@ -16,8 +16,12 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
-from . import paths
-from .cron import PORTAL_JOB_NAME, load_job_ownership
+try:  # package import
+    from .. import paths
+    from ..cron import PORTAL_JOB_NAME, load_job_ownership
+except ImportError:  # direct/standalone import
+    import paths  # type: ignore
+    from cron import PORTAL_JOB_NAME, load_job_ownership  # type: ignore
 
 PROPOSAL_KEYS = ("event_key", "topic", "message", "evidence_refs", "expiry")
 MAX_MESSAGE = 350

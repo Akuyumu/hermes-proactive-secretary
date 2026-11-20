@@ -72,12 +72,12 @@ def _load_package():
 
 
 PKG = _load_package()
-conversation = importlib.import_module(f"{PKG.__name__}.secretary_conversation")
-onboarding = importlib.import_module(f"{PKG.__name__}.secretary_onboarding")
-models = importlib.import_module(f"{PKG.__name__}.secretary_models")
-sc = importlib.import_module(f"{PKG.__name__}.secretary_cli")
+conversation = importlib.import_module(f"{PKG.__name__}.secretary.secretary_conversation")
+onboarding = importlib.import_module(f"{PKG.__name__}.secretary.secretary_onboarding")
+models = importlib.import_module(f"{PKG.__name__}.secretary.secretary_models")
+sc = importlib.import_module(f"{PKG.__name__}.secretary.secretary_cli")
 cron_mod = importlib.import_module(f"{PKG.__name__}.cron")
-status_mod = importlib.import_module(f"{PKG.__name__}.secretary_status")
+status_mod = importlib.import_module(f"{PKG.__name__}.secretary.secretary_status")
 
 ROUTES = {"primary_provider": "provider-a", "primary_model": "model-a",
           "fallback_provider": "provider-b", "fallback_model": "model-b"}

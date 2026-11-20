@@ -55,12 +55,12 @@ def _load_package():
 
 
 PKG = _load_package()
-conversation = importlib.import_module(f"{PKG.__name__}.secretary_conversation")
-onboarding = importlib.import_module(f"{PKG.__name__}.secretary_onboarding")
-sc = importlib.import_module(f"{PKG.__name__}.secretary_cli")
+conversation = importlib.import_module(f"{PKG.__name__}.secretary.secretary_conversation")
+onboarding = importlib.import_module(f"{PKG.__name__}.secretary.secretary_onboarding")
+sc = importlib.import_module(f"{PKG.__name__}.secretary.secretary_cli")
 cron_mod = importlib.import_module(f"{PKG.__name__}.cron")
 runner_install = importlib.import_module(f"{PKG.__name__}.runner_install")
-responsibilities = importlib.import_module(f"{PKG.__name__}.secretary_responsibilities")
+responsibilities = importlib.import_module(f"{PKG.__name__}.secretary.secretary_responsibilities")
 release_export = importlib.import_module("release_export")
 
 
@@ -457,10 +457,10 @@ class OnboardingAndDiscoveryTests(Workspace):
 
 class PackagingTests(Workspace):
     def test_reproducible_code_only_package_and_doctor(self):
-        out = self.root / "secretary-1.0.2.tar.gz"
+        out = self.root / "secretary-1.0.3.tar.gz"
         result = release_export.build_package(out, root=ROOT)
         self.assertTrue(result["ok"])
-        self.assertEqual(result["version"], "1.0.2")
+        self.assertEqual(result["version"], "1.0.3")
         with tarfile.open(out) as archive:
             names = archive.getnames()
             self.assertTrue(any(name.endswith("plugin.yaml") for name in names))
@@ -471,7 +471,7 @@ class PackagingTests(Workspace):
             archive.extractall(install)
         doctor = release_export.doctor(install)
         self.assertTrue(doctor["ok"], doctor)
-        self.assertEqual(doctor["version"], "1.0.2")
+        self.assertEqual(doctor["version"], "1.0.3")
         self.assertEqual(doctor["identity"], "hermes-proactive-secretary")
 
 
@@ -774,6 +774,7 @@ class LastMilePackagingTruthTests(Workspace):
         self.assertTrue(doctor["entrypoint_import_registration"]["ok"])
         self.assertTrue(doctor["native_host_doctor"]["ok"])
         self.assertFalse((install / "FINALIZATION_PREPARATION.md").exists())
+        self.assertFalse((install / "docs" / "FINALIZATION_PREPARATION.md").exists())
 
     def test_invalid_policy_timezone_falls_back_to_neutral_utc(self):
         from zoneinfo import ZoneInfo

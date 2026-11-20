@@ -45,7 +45,7 @@ def _load_package():
 
 PKG = _load_package()
 paths = importlib.import_module(f"{PKG.__name__}.paths")
-onboarding = importlib.import_module(f"{PKG.__name__}.secretary_onboarding")
+onboarding = importlib.import_module(f"{PKG.__name__}.secretary.secretary_onboarding")
 
 _NATIVE_REQUIRED = unittest.skipUnless(
     NATIVE is not None, "actual hermes_constants is not installed")

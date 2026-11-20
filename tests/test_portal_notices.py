@@ -48,7 +48,7 @@ def _load_plugin_package(name: str):
 _PKG = _load_plugin_package("hermes_proactive_secretary_notices_qa")
 cron = importlib.import_module(f"{_PKG.__name__}.cron")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
-notices = importlib.import_module(f"{_PKG.__name__}.secretary_portal_notices")
+notices = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal_notices")
 
 from proactive_pilot import main as main_mod  # noqa: E402
 from proactive_pilot import ownerpaths  # noqa: E402

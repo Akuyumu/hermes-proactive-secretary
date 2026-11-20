@@ -33,7 +33,7 @@ from proactive_pilot.policy import DEFAULT_POLICY  # noqa: E402
 from proactive_pilot.state import StateStore  # noqa: E402
 
 main_mod = importlib.import_module("proactive_pilot.main")
-autonomy = importlib.import_module(f"{agentic._PKG.__name__}.secretary_autonomy")
+autonomy = importlib.import_module(f"{agentic._PKG.__name__}.secretary.secretary_autonomy")
 
 T0 = datetime.fromisoformat("2026-10-20T12:00:00+00:00")
 TENTATIVE_RE = re.compile(r"tentative:[0-9a-f]{24}")

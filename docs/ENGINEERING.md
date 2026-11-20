@@ -2,7 +2,19 @@
 
 This document is the developer and host-owner view of Hermes Proactive Portal. It complements [Installation](INSTALLATION.md) and the read-only [portal behaviour guide](NATIVE-PORTAL.md). It contains no owner-specific identifiers, accounts, production summaries or private filesystem roots.
 
-The package version is **1.0.0**. The native plugin id is `hermes-proactive-secretary`; the product and repository are now `hermes-proactive-portal`. Existing job names, state paths and CLI commands remain compatible. This is a branding and repository change, not an installed-state identity migration.
+The package version is **1.0.3**. The native plugin id is `hermes-proactive-secretary`; the product and repository are now `hermes-proactive-portal`. Existing job names, state paths and CLI commands remain compatible. This is a branding and repository change, not an installed-state identity migration.
+
+## Repository layout
+
+The repository root **is** the plugin package Hermes loads: `__init__.py` is the
+entry point and defines `register(ctx)`. `secretary/` holds the Hermes-facing
+surface modules registered by that entry point. `src/proactive_pilot/` is the
+engine. `runners/` contains the shipped cron scripts. `scripts/` is developer
+tooling excluded from the release archive, and `docs/` holds documentation.
+
+Root runtime modules (`paths`, `cron`, `runtime_gate`, `state_import`,
+`runner_install`) must not be relocated: `runners/*.py` execute as scripts with
+the plugin root on `sys.path` and import them by top-level name.
 
 ## Architecture ownership
 
@@ -64,7 +76,7 @@ skill, the conversation tools and the proposal tool, and registers the
 message, arm a job or change access. Optional surfaces fail without taking down
 the deterministic CLI.
 
-The native portal lifecycle lives in `secretary_portal.py:410`. Its actions are
+The native portal lifecycle lives in `secretary/secretary_portal.py:410`. Its actions are
 `preview`, `enable`, `status`, `pause`, `resume` and `remove`. `preview` and
 `enable` require a schedule; there is no hidden default cadence. The job is a
 normal native agent job, not a `--no-agent` script job, and it pins
@@ -74,7 +86,7 @@ in progress in the native transport.
 
 ### Independent initiative
 
-The work contract in `secretary_portal.py:29` tells the scheduled session to
+The work contract in `secretary/secretary_portal.py:29` tells the scheduled session to
 inspect accepted responsibilities, standing instructions, authorised sources,
 prior progress and existing artifacts, and to investigate and prepare private
 work proactively. It may consult active follow-ups through the typed tool; when
@@ -86,7 +98,7 @@ schedule or mutate the per-watch prompt.
 ### Shared follow-up tool and data
 
 There is one tool, `secretary_followup`, defined in
-`secretary_followups.py:34`. Foreground actions (`create`, `list`, `inspect`,
+`secretary/secretary_followups.py:34`. Foreground actions (`create`, `list`, `inspect`,
 `stop`) require the current private human turn and a matching evidence quote;
 background, shared or stale turns are refused. Desktop create and stop therefore
 require a captured private owner turn. The approval-prompt fallback remains
@@ -101,6 +113,15 @@ The durable store is `src/proactive_pilot/followups.py`, persisted as
 atomic writes, a lock, an explicit schema and a monotonic version. It holds at
 most 20 active follow-ups and bounded text, hints, evidence and seen
 fingerprints. It does not schedule checks, call models or touch the network.
+
+The delivery ledger lives in `src/proactive_pilot/deliveries.py` and is
+persisted as `deliveries.json` through the same shared state store: owner-only
+directory and file modes, atomic temp-file write plus `os.replace`, a dedicated
+`deliveries.lock`, strict reads that refuse symlinks and malformed shapes, at most
+50 rows, 14-day retention, 350-character message text and at most 8 evidence
+refs. It records only emissions that actually reached the delivery boundary.
+Requested-reminder dispatch is not ledgered in this release. A ledger failure is
+diagnostic only and never blocks or rewrites a notice.
 
 A **one-shot** follow-up is a single semantic event. Queueing freezes it before
 the enqueue attempt and its event key depends only on its durable id, so a

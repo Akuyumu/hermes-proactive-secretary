@@ -41,10 +41,10 @@ def _load_plugin_package():
 
 _PKG = _load_plugin_package()
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
-sc = importlib.import_module(f"{_PKG.__name__}.secretary_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
-portal = importlib.import_module(f"{_PKG.__name__}.secretary_portal")
-controls = importlib.import_module(f"{_PKG.__name__}.secretary_portal_controls")
+portal = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal")
+controls = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal_controls")
 ownerpaths = paths._owner
 
 PORTAL = cron_mod.PORTAL_JOB_NAME

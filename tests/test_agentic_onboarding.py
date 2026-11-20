@@ -34,10 +34,10 @@ def _load_package():
 
 
 _PKG = _load_package()
-onboarding = importlib.import_module(f"{_PKG.__name__}.secretary_onboarding")
-conversation = importlib.import_module(f"{_PKG.__name__}.secretary_conversation")
-responsibilities = importlib.import_module(f"{_PKG.__name__}.secretary_responsibilities")
-approvals = importlib.import_module(f"{_PKG.__name__}.secretary_approvals")
+onboarding = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_onboarding")
+conversation = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_conversation")
+responsibilities = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_responsibilities")
+approvals = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_approvals")
 userconfig = importlib.import_module("proactive_pilot.userconfig")
 native_runtime = importlib.import_module("proactive_pilot.native_runtime")
 
@@ -329,7 +329,7 @@ class FinalIntegrationBoundaryTests(unittest.TestCase):
                          "source_consent": False})) + (route,)
 
     def test_tentative_request_is_json_mode_and_shared_bounded_budget(self):
-        from secretary_preparation import DRAFT_MAX_TOKENS, DRAFT_TIMEOUT_SECONDS
+        from secretary.secretary_preparation import DRAFT_MAX_TOKENS, DRAFT_TIMEOUT_SECONDS
         ctx, tools, route = self._ctx()
         text = "The conference deadline is mentioned in this chat."
         ctx.hooks["pre_llm_call"](platform="telegram", user_message=text,
@@ -419,7 +419,7 @@ class FinalIntegrationBoundaryTests(unittest.TestCase):
             "user_confirmed": True, "apply_settings": True})
         self.assertEqual(confirmed.get("status"), "pending_verification", confirmed)
         self.assertFalse(confirmed["schedule_armed"])
-        cli = importlib.import_module(f"{_PKG.__name__}.secretary_cli")
+        cli = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
         arm_text = "Yes, arm the schedule now."
         hook(platform="telegram", user_message=arm_text, session_id="s-1",
              chat_type="dm")

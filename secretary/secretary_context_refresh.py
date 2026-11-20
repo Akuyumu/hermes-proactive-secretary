@@ -45,7 +45,7 @@ class ContextRefreshError(ValueError):
 
 def _paths_module():
     try:
-        from . import paths as plugin_paths
+        from .. import paths as plugin_paths
     except ImportError:  # pragma: no cover - direct module execution
         import paths as plugin_paths  # type: ignore[no-redef]
     return plugin_paths

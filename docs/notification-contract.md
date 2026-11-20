@@ -85,6 +85,24 @@ truly new incident may alert once. Generic evaluator failures notify once per
 failure streak and remain armed while the envelope is suppressed. This contract
 does not add a self-healing or retry system.
 
+## Continuity after delivery
+
+A notice emitted into the ordinary assistant conversation remains resolvable on a
+later interactive turn through an owner-only delivery ledger
+(`deliveries.json` beside the other profile state). Recording happens only when
+text is actually handed to the delivery boundary; blocked, suppressed,
+queued-but-unemitted and diagnostic paths record nothing. The delivered message
+is byte-identical with or without the ledger.
+
+The `pre_llm_call` hook never injects notice text. The host passes no chat id or
+chat type to that hook, and a single platform value covers both direct messages
+and groups, so injected continuity is deliberately content-free: only a recency
+count, the newest timestamp and the on-demand read surface. The owner can resolve
+an old referent with `hermes secretary deliveries --since <ISO> --limit <n>`.
+
+Ledger rows stay `emitted-unconfirmed`. Remembering an emission is not a delivery
+receipt and does not change any delivery gate.
+
 ## Rejected alternatives
 
 - **Cooldown as deduplication**: cooldown only spaces messages; it re-arms after

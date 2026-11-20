@@ -42,7 +42,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-_ROOT = Path(__file__).resolve().parent
+_ROOT = Path(__file__).resolve().parent.parent
 _SRC = _ROOT / "src"
 if _SRC.is_dir() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
@@ -184,17 +184,17 @@ def _load_runtime_services(package_name: str) -> dict[str, Any]:
         return services
     try:
         import importlib
-        services["status"] = importlib.import_module(f"{package_name}.secretary_status")
+        services["status"] = importlib.import_module(f"{package_name}.secretary.secretary_status")
     except Exception as exc:  # noqa: BLE001 - status degrades, never invents
         services["status_error"] = type(exc).__name__
     try:
         import importlib
-        services["cli"] = importlib.import_module(f"{package_name}.secretary_cli")
+        services["cli"] = importlib.import_module(f"{package_name}.secretary.secretary_cli")
     except Exception as exc:  # noqa: BLE001
         services["cli_error"] = type(exc).__name__
     try:
         import importlib
-        services["onboarding"] = importlib.import_module(f"{package_name}.secretary_onboarding")
+        services["onboarding"] = importlib.import_module(f"{package_name}.secretary.secretary_onboarding")
     except Exception as exc:  # noqa: BLE001
         services["onboarding_error"] = type(exc).__name__
     return services
@@ -425,7 +425,7 @@ class SetupActions:
             from proactive_pilot.native_runtime import bound_model_lane_status
             route = dict(bound_model_lane_status(self.ctx) or {})
             if not route and self.package_name:
-                models = importlib.import_module(f"{self.package_name}.secretary_models")
+                models = importlib.import_module(f"{self.package_name}.secretary.secretary_models")
                 route = dict(models.effective_route_status(self.ctx, strict_active=False) or {})
             primary = route.get("primary") if isinstance(route.get("primary"), Mapping) else {}
             fallback = route.get("fallback") if isinstance(route.get("fallback"), Mapping) else None

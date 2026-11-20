@@ -1035,6 +1035,28 @@ def _run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) -
         store.save("notify_state.json", state)
         if decision.get("message"):
             _remember_emitted_alert(args, decision, packet, clock, policy)
+            # This is the single ordinary candidate/alert emission site: record
+            # only text that is actually handed to stdout. Suppressed, blocked,
+            # diagnostic and queued-only paths never reach this block. The
+            # ledger is diagnostic-only and cannot change or block delivery.
+            try:
+                from . import deliveries as _deliveries
+                _deliveries.record_emission(
+                    store,
+                    message=decision.get("message", ""),
+                    kind="alert",
+                    event_key=str(decision.get("key") or decision.get("signature") or ""),
+                    notice_id=str(decision.get("signature") or ""),
+                    evidence_refs=(),
+                    job_id=str(getattr(args, "job_id", "") or ""),
+                    destination=str(
+                        policy.get("deliver_target")
+                        or policy.get("destination") or ""),
+                    now=clock.now(),
+                    status="emitted-unconfirmed",
+                )
+            except Exception:  # noqa: BLE001 - ledger is diagnostic only
+                pass
             _emit(decision.get("message", ""))
             return 0
         _emit(decision.get("message", ""))

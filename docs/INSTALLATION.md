@@ -2,7 +2,7 @@
 
 This guide is for the person using Hermes. It covers a normal installation, the optional host compatibility update, first setup and upgrades. Developer and host-level detail lives in [Engineering](ENGINEERING.md).
 
-Hermes Proactive Portal is version **1.0.0**. The native plugin id remains `hermes-proactive-secretary`, and the commands remain `hermes secretary`. Existing jobs and state keep working; the new repository and product name do not require an installed-state migration.
+Hermes Proactive Portal is version **1.0.3**. The native plugin id remains `hermes-proactive-secretary`, and the commands remain `hermes secretary`. Existing jobs and state keep working; the new repository and product name do not require an installed-state migration.
 
 ## 1. Check host compatibility first
 
@@ -111,4 +111,4 @@ hermes plugins remove hermes-proactive-secretary
 
 This removes only plugin-owned jobs and runners and preserves private runtime data by default. `hermes secretary uninstall --purge` deletes runtime state and requires separate explicit consent. Reinstallation can preserve a previous global pause, so review state and resume deliberately.
 
-For agent-assisted installation, see [AGENT_SETUP.md](../AGENT_SETUP.md). For architecture, host prerequisites and patch rollback, see [Engineering](ENGINEERING.md).
+For agent-assisted installation, see [AGENT_SETUP.md](AGENT_SETUP.md). For architecture, host prerequisites and patch rollback, see [Engineering](ENGINEERING.md).

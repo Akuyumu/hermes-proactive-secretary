@@ -196,7 +196,7 @@ These are optional and off by default; they do not ship with credentials.
 - **Google Workspace calendar**: enable `adapters.gws_calendar` only after the installed `productivity/google-workspace` skill and its existing authorisation are confirmed. The adapter is calendar-read only; there is no verified Google Tasks command and no invented Tasks support.
 - **LTA/regional public feeds**: generic examples of supported public-source kinds, not defaults and not tied to any user's location.
 
-See the connector limits and configuration sections in [AGENT_SETUP.md](../AGENT_SETUP.md) before enabling a private connector.
+See the connector limits and configuration sections in [AGENT_SETUP.md](AGENT_SETUP.md) before enabling a private connector.
 
 ## Data, privacy and paths
 
@@ -245,7 +245,7 @@ Maintainer commands from the source tree, using a Python environment with the He
 PYTHONPATH=src python3 -m unittest discover -s tests
 PYTHONPATH=src python3 -m proactive_pilot.selftest
 python3 scripts/release_export.py scan
-python3 scripts/release_export.py build --output ./dist/hermes-proactive-portal-1.0.0.tar.gz
+python3 scripts/release_export.py build --output ./dist/hermes-proactive-portal-1.0.3.tar.gz
 python3 scripts/release_export.py doctor --installed /path/to/extracted-package
 ```
 
@@ -266,7 +266,7 @@ separate installation-specific qualification.
 
 Source coverage is bounded, quiet/attention behavior is deterministic but not omniscient, and model-dependent features require a compatible host exposing the strict configured auxiliary lane. Validate the exact connectors and messaging route you intend to use. Configuration proposals remain foreground-approved typed handoffs, not automatic settings changes. A defective official source with no verified equivalent remains honestly unresolved. The custom settings page, grouped editable controls and confirmed reset retain their synthetic host/API/Node qualification; no live Desktop visual, accessibility or physical-device result is claimed by the package.
 
-For agent-assisted installation, give your agent [AGENT_SETUP.md](../AGENT_SETUP.md). The operational skill is [skills/proactive-secretary/SKILL.md](../skills/proactive-secretary/SKILL.md).
+For agent-assisted installation, give your agent [AGENT_SETUP.md](AGENT_SETUP.md). The operational skill is [skills/proactive-secretary/SKILL.md](../skills/proactive-secretary/SKILL.md).
 
 ## License
 

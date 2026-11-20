@@ -14,7 +14,7 @@ class ReminderBridgeParserContract(unittest.TestCase):
             import importlib
             from test_final_runtime_seams import _load_plugin_package
             _load_plugin_package('parent_parser_probe_plugin')
-            secretary_cli = importlib.import_module('parent_parser_probe_plugin.secretary_cli')
+            secretary_cli = importlib.import_module('parent_parser_probe_plugin.secretary.secretary_cli')
             runner = runpy.run_path(str(ROOT / 'runners/proactive_secretary_reminder_runner.py'), run_name='bridge_test')
             captured = []
             def parse_actual_cli(argv, **kwargs):

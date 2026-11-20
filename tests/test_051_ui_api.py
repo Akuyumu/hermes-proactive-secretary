@@ -38,7 +38,7 @@ class PackagingAndSchemaTests(unittest.TestCase):
         module_version = _version_from(ROOT / "src" / "proactive_pilot" / "__init__.py",
                                        r'__version__\s*=\s*"([^"]+)"')
         self.assertEqual(manifest_version, module_version)
-        self.assertEqual(manifest_version, "1.0.2")
+        self.assertEqual(manifest_version, "1.0.3")
         report = exporter.scan(ROOT)
         self.assertTrue(report["ok"], report["problems"])
         for name in ("desktop/plugin.js", "dashboard/plugin_api.py", "dashboard/manifest.json"):
@@ -70,7 +70,7 @@ class PackagingAndSchemaTests(unittest.TestCase):
         imported = exporter._import_registration(extracted)
         self.assertTrue(imported["ok"], imported)
         dashboard = json.loads((extracted / "dashboard" / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(dashboard["version"], "1.0.2")
+        self.assertEqual(dashboard["version"], "1.0.3")
         self.assertEqual(dashboard["api"], "plugin_api.py")
 
     def test_doctor_requires_the_real_custom_ui_and_api(self):
@@ -80,8 +80,11 @@ class PackagingAndSchemaTests(unittest.TestCase):
         self.addCleanup(scratch.cleanup)
         extracted = Path(scratch.name) / "package"
         extracted.mkdir()
-        for name in ("plugin.yaml", "__init__.py", "secretary_cli.py", "paths.py", "LICENSE"):
+        for name in ("plugin.yaml", "__init__.py", "paths.py", "LICENSE"):
             shutil.copy(ROOT / name, extracted / name)
+        (extracted / "secretary").mkdir()
+        shutil.copy(ROOT / "secretary" / "secretary_cli.py",
+                    extracted / "secretary" / "secretary_cli.py")
         src = extracted / "src" / "proactive_pilot"
         src.mkdir(parents=True)
         shutil.copy(ROOT / "src" / "proactive_pilot" / "__init__.py", src / "__init__.py")

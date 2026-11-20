@@ -33,8 +33,8 @@ def _load_plugin_package():
 
 
 _PKG = _load_plugin_package()
-sa = importlib.import_module(f"{_PKG.__name__}.secretary_setup_actions")
-onb = importlib.import_module(f"{_PKG.__name__}.secretary_onboarding")
+sa = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_setup_actions")
+onb = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_onboarding")
 
 
 class _State:

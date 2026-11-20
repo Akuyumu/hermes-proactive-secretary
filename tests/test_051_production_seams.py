@@ -20,7 +20,7 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from proactive_pilot import userconfig  # noqa: E402
-from secretary_setup_actions import SetupActionError  # noqa: E402
+from secretary.secretary_setup_actions import SetupActionError  # noqa: E402
 
 PLUGIN_NAME = "hermes-proactive-secretary"
 

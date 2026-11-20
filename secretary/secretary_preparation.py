@@ -17,11 +17,11 @@ from pathlib import Path
 from typing import Any
 
 try:  # package import or direct/top-level test import
-    from . import paths
+    from .. import paths
 except ImportError:  # pragma: no cover - direct module execution
     import paths  # type: ignore[no-redef]
 
-_SRC_DIR = Path(__file__).resolve().parent / "src"
+_SRC_DIR = Path(__file__).resolve().parent.parent / "src"
 if _SRC_DIR.is_dir() and str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 

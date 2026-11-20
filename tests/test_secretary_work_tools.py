@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-import secretary_work as W  # noqa: E402
+import secretary.secretary_work as W  # noqa: E402
 from proactive_pilot import responsibilities as R  # noqa: E402
 from proactive_pilot.clock import SeededClock  # noqa: E402
 from proactive_pilot.state import StateStore  # noqa: E402
@@ -204,7 +204,7 @@ class ToolTests(unittest.TestCase):
             f"sys.path[:] = [p for p in sys.path if p not in ({str(ROOT)!r}, '' )]\n"
             f"sys.path.insert(0, {str(ROOT / 'src')!r})\n"
             f"spec=importlib.util.spec_from_file_location('secretary_work_probe',"
-            f"{str(ROOT / 'secretary_work.py')!r})\n"
+            f"{str(ROOT / 'secretary' / 'secretary_work.py')!r})\n"
             "mod=importlib.util.module_from_spec(spec)\n"
             "spec.loader.exec_module(mod)\n"
             "store=mod._store()\n"

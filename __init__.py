@@ -20,20 +20,20 @@ def _plugin_root() -> Path:
 
 
 def _setup_secretary_cli(subparser) -> None:
-    from .secretary_cli import register_cli
+    from .secretary.secretary_cli import register_cli
     register_cli(subparser)
 
 
 def _handle_secretary_cli(args):
-    from .secretary_cli import secretary_command
+    from .secretary.secretary_cli import secretary_command
     return secretary_command(args)
 
 
 def _register_conversation(ctx) -> dict:
-    from .secretary_context_refresh import register_context_tool
-    from .secretary_conversation import register_conversation_surfaces, register_onboarding_tool
-    from .secretary_followups import register_tool as register_followup_tool
-    from .secretary_responsibilities import register_tool as register_responsibility_tool
+    from .secretary.secretary_context_refresh import register_context_tool
+    from .secretary.secretary_conversation import register_conversation_surfaces, register_onboarding_tool
+    from .secretary.secretary_followups import register_tool as register_followup_tool
+    from .secretary.secretary_responsibilities import register_tool as register_responsibility_tool
     result = register_onboarding_tool(ctx)
     result.update(register_context_tool(ctx))
     result.update(register_responsibility_tool(ctx))
@@ -51,7 +51,7 @@ def register(ctx) -> None:
         if src_str not in sys.path:
             sys.path.insert(0, src_str)
 
-    from . import secretary_cli as _cli
+    from .secretary import secretary_cli as _cli
     _cli.set_native_context(ctx)
 
     # Model routing is optional, but it is never silently replaced by an
@@ -60,7 +60,7 @@ def register(ctx) -> None:
     # configured-only contract is registered. Deterministic controls and
     # reminders do not depend on this block.
     try:
-        from .secretary_models import register_configured_models
+        from .secretary.secretary_models import register_configured_models
         _MODEL_REGISTRATION.update(register_configured_models(ctx))
     except Exception as exc:  # noqa: BLE001 - guard, never a permissive fallback
         _MODEL_REGISTRATION.update({
@@ -92,7 +92,7 @@ def register(ctx) -> None:
     # The proposal tool is optional: an old/fake host without native cron
     # execution context must still load the CLI and existing tools.
     try:
-        from .secretary_portal_notices import register_tool as register_portal_notice_tool
+        from .secretary.secretary_portal_notices import register_tool as register_portal_notice_tool
         _PORTAL_NOTICE_REGISTRATION.update(register_portal_notice_tool(ctx))
     except Exception as exc:  # noqa: BLE001 - registration stays optional
         _PORTAL_NOTICE_REGISTRATION.update({

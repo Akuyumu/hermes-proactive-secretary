@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 try:  # package import (installed host) or top-level test import
-    from . import paths
+    from .. import paths
 except ImportError:  # pragma: no cover - direct module execution
     import paths  # type: ignore[no-redef]
 
@@ -380,7 +380,7 @@ def _revocation_check(ctx: Any):
         try:
             import sys
             from pathlib import Path as _Path
-            src = str(_Path(__file__).resolve().parent / "src")
+            src = str(_Path(__file__).resolve().parent.parent / "src")
             if src not in sys.path:
                 sys.path.insert(0, src)
             from proactive_pilot.feedback import load_preferences_file

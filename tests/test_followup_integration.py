@@ -41,9 +41,9 @@ def _load_plugin_package(name: str):
 _PKG = _load_plugin_package("hermes_proactive_secretary_followup_qa")
 cron = importlib.import_module(f"{_PKG.__name__}.cron")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
-portal = importlib.import_module(f"{_PKG.__name__}.secretary_portal")
+portal = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal")
 responsibility_surface = importlib.import_module(
-    f"{_PKG.__name__}.secretary_responsibilities")
+    f"{_PKG.__name__}.secretary.secretary_responsibilities")
 
 from proactive_pilot import followups as F  # noqa: E402
 from proactive_pilot import ownerpaths  # noqa: E402
@@ -1168,7 +1168,7 @@ class FollowupIntegrationTests(unittest.TestCase):
         before = portal.PROMPT
         tool = ctx.tools["secretary_followup"]
         self.assertEqual(tool["schema"], importlib.import_module(
-            f"{_PKG.__name__}.secretary_followups").TOOL_SCHEMA)
+            f"{_PKG.__name__}.secretary.secretary_followups").TOOL_SCHEMA)
         self.assertEqual(tool["schema"]["type"], "object")
         self.assertIs(tool["schema"]["additionalProperties"], False)
         self.assertIn("action", tool["schema"]["required"])

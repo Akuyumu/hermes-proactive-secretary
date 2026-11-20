@@ -54,7 +54,7 @@ def _load_plugin_package(name: str):
 
 
 _PKG = _load_plugin_package("hermes_proactive_secretary_seams_test")
-sc = importlib.import_module(f"{_PKG.__name__}.secretary_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
 runner_install = importlib.import_module(f"{_PKG.__name__}.runner_install")

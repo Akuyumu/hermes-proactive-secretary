@@ -884,6 +884,31 @@ def dispatch_notice(
                     "reason": "portal queue save failed",
                 }
 
+            # Record what this run actually handed to the delivery boundary.
+            # The delivered message itself is unchanged; the owner-only ledger
+            # only makes an earlier notice resolvable on a later turn. A ledger
+            # failure is diagnostic and must never block this emission.
+            origin = item.get("origin") if isinstance(item.get("origin"), dict) else {}
+            try:
+                from . import deliveries as _deliveries
+                _deliveries.record_emission(
+                    store,
+                    message=item["message"],
+                    kind="portal-notice",
+                    event_key=event_key,
+                    notice_id=str(item["id"]),
+                    evidence_refs=item.get("evidence_refs") or (),
+                    job_id=str(origin.get("job_id") or ""),
+                    job_name=str(origin.get("job_name") or ""),
+                    destination=str(
+                        policy.get("deliver_target")
+                        or policy.get("destination") or ""),
+                    now=now,
+                    status="emitted-unconfirmed",
+                )
+            except Exception:  # noqa: BLE001 - ledger is diagnostic only
+                pass
+
             return {
                 "schema": 1,
                 "message": item["message"],

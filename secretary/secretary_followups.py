@@ -39,11 +39,11 @@ from pathlib import Path
 from typing import Any, Mapping
 
 try:  # package import (installed host) or top-level test import
-    from . import paths
+    from .. import paths
     from . import secretary_responsibilities as responsibilities
 except ImportError:  # pragma: no cover - direct module execution
     import paths  # type: ignore[no-redef]
-    import secretary_responsibilities as responsibilities  # type: ignore[no-redef]
+    from secretary import secretary_responsibilities as responsibilities  # type: ignore[no-redef]
 
 TOOL_NAME = "secretary_followup"
 MAX_ID = 96
@@ -235,7 +235,7 @@ def _portal_identity(ctx: Any, store: Any) -> tuple[dict[str, str] | None, dict[
     try:
         from .secretary_portal_notices import _host_identity
     except ImportError:  # pragma: no cover - direct module execution
-        from secretary_portal_notices import _host_identity  # type: ignore[no-redef]
+        from secretary.secretary_portal_notices import _host_identity  # type: ignore[no-redef]
     identity, refusal = _host_identity(ctx)
     if refusal is not None:
         return None, refusal

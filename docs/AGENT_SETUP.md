@@ -1,6 +1,6 @@
 # Hermes Proactive Portal: agent-assisted installation and setup
 
-> **Human setup:** start with [docs/INSTALLATION.md](docs/INSTALLATION.md). Host compatibility, the reviewed patch base and safe apply/reverse steps are in [docs/ENGINEERING.md](docs/ENGINEERING.md) and [docs/compatibility/hermes-host-portal.patch](docs/compatibility/hermes-host-portal.patch).
+> **Human setup:** start with [INSTALLATION.md](INSTALLATION.md). Host compatibility, the reviewed patch base and safe apply/reverse steps are in [ENGINEERING.md](ENGINEERING.md) and [compatibility/hermes-host-portal.patch](compatibility/hermes-host-portal.patch).
 
 Give this file to your Hermes agent with:
 
@@ -62,7 +62,7 @@ hermes://plugin/install?repo=Akuyumu/hermes-proactive-portal&enable=1
 The [official plugin guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins#one-click-install-links-desktop) describes a confirmation dialog that detects agent and Desktop components and lets the user choose. Older clients may expose different controls. There is no separate native `--desktop` CLI flag. Client-side private-repository downloads require working Git access on the client; backend access alone does not prove that. Never create marker files, bypass a scanner or weaken a security check. Conversational onboarding works without the Desktop component and must not be blocked by a missing button.
 
 
-The plugin bundles its operational skill at `skills/proactive-secretary/SKILL.md`. Load that installed file through your skill system if available; otherwise read it directly. Do not accidentally load an unrelated skill with the same short name.
+The plugin bundles its operational skill at `../skills/proactive-secretary/SKILL.md`. Load that installed file through your skill system if available; otherwise read it directly. Do not accidentally load an unrelated skill with the same short name.
 
 ## 4. Prepare configuration before arming schedules
 

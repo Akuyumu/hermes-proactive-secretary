@@ -35,9 +35,9 @@ def _load_package():
 
 
 PKG = _load_package()
-models = importlib.import_module(f"{PKG.__name__}.secretary_models")
-sc = importlib.import_module(f"{PKG.__name__}.secretary_cli")
-status_mod = importlib.import_module(f"{PKG.__name__}.secretary_status")
+models = importlib.import_module(f"{PKG.__name__}.secretary.secretary_models")
+sc = importlib.import_module(f"{PKG.__name__}.secretary.secretary_cli")
+status_mod = importlib.import_module(f"{PKG.__name__}.secretary.secretary_status")
 
 ROUTES = {"primary_provider": "provider-a", "primary_model": "model-a",
           "fallback_provider": "provider-b", "fallback_model": "model-b"}

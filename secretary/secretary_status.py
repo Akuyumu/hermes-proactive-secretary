@@ -40,7 +40,7 @@ def _bounded_list(values: Any, *, limit: int = MAX_LIST) -> list[str]:
 def _read_prefs() -> dict[str, Any]:
     try:
         from proactive_pilot.feedback import load_preferences_file
-        from . import paths
+        from .. import paths
         return load_preferences_file(paths.preferences_path(), strict=False)
     except Exception:  # noqa: BLE001 - status degrades, never crashes
         return {}
@@ -66,7 +66,7 @@ def _config_summary(ctx: Any, service: Any = None,
                 summary["destination"] = str(destination)
             return summary, ""
         from proactive_pilot.userconfig import load_user_config
-        from . import paths
+        from .. import paths
         loaded = load_user_config(paths.user_config_path(), native=ctx)
         return loaded.summary(), ""
     except Exception as exc:  # noqa: BLE001 - a broken config is reported, not guessed
@@ -219,8 +219,8 @@ def _owned_jobs(backend: Any = None, *, probe_empty: bool = False) -> dict[str, 
     """
     recorded: list[dict[str, str]] = []
     try:
-        from . import cron as cron_mod
-        from . import paths
+        from .. import cron as cron_mod
+        from .. import paths
         ownership = cron_mod.load_job_ownership(paths.job_ownership_path())
         jobs = ownership.get("jobs") if isinstance(ownership, dict) else ownership
         rows = jobs.values() if isinstance(jobs, dict) else jobs or []
@@ -252,8 +252,8 @@ def _owned_jobs(backend: Any = None, *, probe_empty: bool = False) -> dict[str, 
         }
     previous_timeout = None
     try:
-        from . import cron as cron_mod
-        from . import paths
+        from .. import cron as cron_mod
+        from .. import paths
         if backend is None:
             backend = cron_mod.HermesCronBackend(timeout=MAX_NATIVE_SECONDS)
         status_reader = getattr(backend, "list_jobs_for_status", None)
@@ -313,7 +313,7 @@ def _health_and_queue() -> tuple[dict[str, Any], dict[str, Any]]:
         from proactive_pilot.modelhealth import status as model_health_status
         from proactive_pilot.preparation import list_ready
         from proactive_pilot.state import StateStore
-        from . import paths
+        from .. import paths
         store = StateStore(paths.state_dir(), Clock())
         current = model_health_status(store)
         incident = current.get("incident")

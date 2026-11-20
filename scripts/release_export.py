@@ -1,4 +1,4 @@
-"""Reproducible code-only 1.0.2 export builder and installed-candidate doctor.
+"""Reproducible code-only 1.0.3 export builder and installed-candidate doctor.
 
 This is not a new package manager. It uses the plugin's existing manifest and
 Python modules, applies the same export rules the release review requires, and
@@ -10,7 +10,7 @@ Rules enforced by :func:`build_package`:
 * every shipped file comes from an explicit allowlist of code/docs/policy/skill/
   runner trees (no ``.build-context``, tests, git metadata, caches, private
   runtime state or scratch files);
-* the manifest and ``src/proactive_pilot/__init__.py`` both say 1.0.2;
+* the manifest and ``src/proactive_pilot/__init__.py`` both say 1.0.3;
 * sanitisation terms and absolute personal home paths are rejected;
 * file order, timestamps and hashes are deterministic.
 """
@@ -35,9 +35,9 @@ from pathlib import Path
 from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = "1.0.2"
-SHIPPED_DIRS = ("src", "policy", "skills", "runners", "public_samples", "fixtures",
-                "desktop", "dashboard", "docs")
+VERSION = "1.0.3"
+SHIPPED_DIRS = ("src", "policy", "skills", "runners", "secretary", "public_samples",
+                "fixtures", "desktop", "dashboard", "docs")
 # Nested trees contain executable/assets as well as docs. Keep the same
 # conservative extension allowlist as root files so an editor backup, source map
 # or unrelated binary cannot be swept into a release by accident.
@@ -53,7 +53,7 @@ EXCLUDED_NAMES = {
 }
 # Obsolete 0.4.0 finalization notes stay in the source tree for history but are
 # NOT shipped as current release documentation.
-EXCLUDED_ROOT_FILES = {"FINALIZATION_PREPARATION.md"}
+EXCLUDED_PATHS = {"docs/FINALIZATION_PREPARATION.md"}
 FORBIDDEN = ("Kuyu", "-sama")
 HOME_RE = re.compile(r"/(?:home|Users)/[A-Za-z0-9._-]+")
 
@@ -61,7 +61,8 @@ HOME_RE = re.compile(r"/(?:home|Users)/[A-Za-z0-9._-]+")
 def _shipped_files(root: Path = ROOT) -> list[Path]:
     files: list[Path] = []
     for path in root.iterdir():
-        if path.name == "release_export.py" or path.name in EXCLUDED_ROOT_FILES:
+        if (path.name == "release_export.py"
+                or path.relative_to(root).as_posix() in EXCLUDED_PATHS):
             continue
         if path.is_file() and (path.suffix.lower() in ROOT_SUFFIXES
                                or path.name in ROOT_NAMES):
@@ -72,6 +73,9 @@ def _shipped_files(root: Path = ROOT) -> list[Path]:
             continue
         for path in base.rglob("*"):
             if not path.is_file():
+                continue
+            rel = path.relative_to(root).as_posix()
+            if rel in EXCLUDED_PATHS:
                 continue
             parts = set(path.relative_to(root).parts)
             if parts & EXCLUDED_NAMES or "__pycache__" in parts:
@@ -177,7 +181,7 @@ sys.path.insert(0, str(root / "src"))
 import proactive_pilot.preparation as prep
 import proactive_pilot.native_runtime as runtime
 pkg = spec.name
-cli = importlib.import_module(pkg + ".secretary_cli")
+cli = importlib.import_module(pkg + ".secretary.secretary_cli")
 runners = importlib.import_module(pkg + ".runner_install")
 assert callable(getattr(prep, "preflight", None))
 assert (root / "runners" / "proactive_secretary_prepare_runner.py").is_file()
@@ -356,7 +360,7 @@ def doctor(installed: Path) -> dict[str, Any]:
     ``hermes plugins doctor --ci`` under a synthetic offline profile.
     """
     installed = Path(installed)
-    required = ("plugin.yaml", "__init__.py", "secretary_cli.py", "paths.py",
+    required = ("plugin.yaml", "__init__.py", "secretary/secretary_cli.py", "paths.py",
                 "LICENSE", "src/proactive_pilot/__init__.py",
                 "runners/proactive_secretary_prepare_runner.py",
                 "desktop/plugin.js", "dashboard/plugin_api.py",

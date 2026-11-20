@@ -34,16 +34,16 @@ def _load_package():
 
 
 _PKG = _load_package()
-onboarding = importlib.import_module(f"{_PKG.__name__}.secretary_onboarding")
-responsibilities = importlib.import_module(f"{_PKG.__name__}.secretary_responsibilities")
-approvals = importlib.import_module(f"{_PKG.__name__}.secretary_approvals")
+onboarding = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_onboarding")
+responsibilities = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_responsibilities")
+approvals = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_approvals")
 userconfig = importlib.import_module("proactive_pilot.userconfig")
 R = importlib.import_module("proactive_pilot.responsibilities")
 feedback = importlib.import_module("proactive_pilot.feedback")
 clock_mod = importlib.import_module("proactive_pilot.clock")
 state_mod = importlib.import_module("proactive_pilot.state")
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
-cli = importlib.import_module(f"{_PKG.__name__}.secretary_cli")
+cli = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
 plugin_paths = importlib.import_module(f"{_PKG.__name__}.paths")
 
 _ENV_KEYS = ("HOME", "HERMES_HOME", "HERMES_PROACTIVE_SECRETARY_DATA")

@@ -44,9 +44,9 @@ def _load_package():
 
 
 PKG = _load_package()
-onboarding = importlib.import_module(f"{PKG.__name__}.secretary_onboarding")
-models = importlib.import_module(f"{PKG.__name__}.secretary_models")
-conversation = importlib.import_module(f"{PKG.__name__}.secretary_conversation")
+onboarding = importlib.import_module(f"{PKG.__name__}.secretary.secretary_onboarding")
+models = importlib.import_module(f"{PKG.__name__}.secretary.secretary_models")
+conversation = importlib.import_module(f"{PKG.__name__}.secretary.secretary_conversation")
 
 
 class MemoryState:

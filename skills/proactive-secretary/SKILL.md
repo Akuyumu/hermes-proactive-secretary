@@ -1,7 +1,7 @@
 ---
 name: proactive-secretary
 description: "Use when a user sets up, runs, tunes, pauses or troubleshoots the proactive secretary plugin (proactive alerts and requested reminders)."
-version: 1.0.0
+version: 1.0.3
 author: Hermes Plugin Community
 license: MIT
 platforms: [linux, macos]
@@ -70,7 +70,7 @@ Load it when the user wants to:
 
 ## First-time agent-assisted installation
 
-Read the repository's `AGENT_SETUP.md` before installing or configuring a new
+Read the repository's `docs/AGENT_SETUP.md` before installing or configuring a new
 user's deployment. Discover the active profile and existing connectors, obtain
 an explicitly authorised destination, review timezone/quiet hours and public
 interests, and prepare with `setup --no-cron` before arming jobs. The repository

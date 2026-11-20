@@ -30,7 +30,7 @@ except ModuleNotFoundError as exc:
 
 import paths  # noqa: E402
 import runtime_gate  # noqa: E402
-import secretary_work  # noqa: E402
+import secretary.secretary_work as secretary_work  # noqa: E402
 from proactive_pilot import collectors  # noqa: E402
 from proactive_pilot import evaluator  # noqa: E402
 from proactive_pilot import gws_calendar  # noqa: E402

@@ -53,9 +53,9 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-# The four own-task route fields are declared in secretary_models.py at the
-# plugin root. They are repeated here only as opaque key names so this backup
-# helper stays inside the stdlib-only runtime package.
+# The four own-task route fields are declared in secretary/secretary_models.py in
+# the secretary/ subpackage. They are repeated here only as opaque key names so
+# this backup helper stays inside the stdlib-only runtime package.
 _ROUTE_KEYS = ("primary_provider", "primary_model",
                "fallback_provider", "fallback_model")
 
