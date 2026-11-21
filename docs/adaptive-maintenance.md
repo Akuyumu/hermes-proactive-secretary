@@ -40,7 +40,7 @@ Rules:
 - A strict zero-tool structured decision on the existing model lane must verify
   SAME purpose, authority class and date/deadline scope against fetched evidence.
   If the strict lane is missing or uncertain, nothing is adopted. Official
-  SMRT/NTU/weather sources require an official authority match on an
+  SMRT, university or weather sources require an official authority match on an
   already-vetted official host; forum chatter cannot replace them.
 - Adoption also requires a real bounded fetch of the candidate with fresh,
   non-cached, non-empty usable evidence. That evidence/cache is preserved on the

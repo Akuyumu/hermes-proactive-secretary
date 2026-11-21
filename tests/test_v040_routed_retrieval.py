@@ -38,7 +38,7 @@ PRIVATE_URL = "https://10.0.0.5/hidden"
 GOOD_HTML = (
     b"<html><head><title>Campus update</title>"
     b"<meta name=\"description\" content=\"A real public page\"></head>"
-    b"<body><a href=\"https://www.ntu.edu.sg/news/x\">Latest news</a></body></html>"
+    b"<body><a href=\"https://www.university.example/news/x\">Latest news</a></body></html>"
 )
 JS_SHELL = b"<html><body>JavaScript is required to view this content.</body></html>"
 BLOCKED_PAGE = b"<html><body>Enable JavaScript and cookies to continue</body></html>"

@@ -1,11 +1,11 @@
 # Operations guide
 
 Detailed setup, configuration, controls and troubleshooting for Hermes
-Proactive Portal. For the product overview, features and quick install, see
+Proactive Secretary. For the product overview, features and quick install, see
 the [README](../README.md). For step-by-step human setup and upgrades, see
 [Installation](INSTALLATION.md). For per-version change history and
 qualification totals, see
-[GitHub Releases](https://github.com/Akuyumu/hermes-proactive-secretary/releases).
+[GitHub Releases](https://github.com/Akuyumu/hermes-proactive-portal/releases).
 
 ## First run: prepare, preview, consent
 
@@ -33,12 +33,12 @@ The unified package ships a custom Settings ▸ Plugins page (`desktop/plugin.js
 
 The custom page and backend appear only after the package is installed in the active profile’s `plugins/` root, `hermes-proactive-secretary` is added to `plugins.enabled`, the desktop half is enabled in Capabilities ▸ Plugins, and the gateway is restarted (backend routes mount at startup). Reload or rescan desktop plugins so the app copies and loads the `desktop/` half. These are host/app activation steps and are not performed by packaging.
 
-### Missing the Proactive Portal settings page
+### Missing the Proactive Secretary settings page
 
 Install and enable the backend with the native command:
 
 ```bash
-hermes plugins install Akuyumu/hermes-proactive-secretary --no-enable
+hermes plugins install Akuyumu/hermes-proactive-portal --no-enable
 hermes plugins enable hermes-proactive-secretary
 hermes secretary doctor
 ```
@@ -46,10 +46,10 @@ hermes secretary doctor
 For the Desktop component, use **Capabilities → Plugins → Install from Git** or the documented unified link:
 
 ```text
-hermes://plugin/install?repo=Akuyumu/hermes-proactive-secretary&enable=1
+hermes://plugin/install?repo=Akuyumu/hermes-proactive-portal&enable=1
 ```
 
-Current Hermes documentation describes one confirmation dialog that detects both components and lets the user choose them. Older Desktop builds can differ; use the controls your installed version exposes rather than assume a component checkbox exists. A private-repository download requires Git access on the machine doing the download; backend access alone does not prove client access. Do not use internal marker files, bypass scanners or weaken checks. See the [official installation and Desktop-link guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins#one-click-install-links-desktop).
+Current Hermes documentation describes one confirmation dialog that detects both components and lets the user choose them. Older Desktop builds can differ; use the controls your installed version exposes rather than assume a component checkbox exists. A repository download requires the public Git URL to be reachable on the machine doing the download; backend access alone does not prove client access. Do not use internal marker files, bypass scanners or weaken checks. See the [official installation and Desktop-link guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins#one-click-install-links-desktop).
 
 The conversational setup interview works without the Desktop half. If the button
 is absent, setup is still available from any eligible one-to-one chat; the page
@@ -115,7 +115,7 @@ Keep these states distinct: **installed** (plugin present), **configured** (sett
 
 ## Settings, model routes and attention
 
-The ordinary settings surface is the **native plugin form** (Settings -> Plugins -> Proactive Portal), projected from the `config_schema` in `plugin.yaml`. It includes timezone, destination, daily ceiling, quiet hours, cooldown, source toggles, public interests/sources, discovery, budgets, preparation and the four model-route fields. The validated `user_config` remains the single owner; the form is not a second store.
+The ordinary settings surface is the **native plugin form** (Settings -> Plugins -> Proactive Secretary), projected from the `config_schema` in `plugin.yaml`. It includes timezone, destination, daily ceiling, quiet hours, cooldown, source toggles, public interests/sources, discovery, budgets, preparation and the four model-route fields. The validated `user_config` remains the single owner; the form is not a second store.
 
 Configuration precedence: native `plugins.entries.hermes-proactive-secretary.settings.user_config` and ordinary flat form fields, then local `user_config.json` beside `policy.json`, then neutral defaults. A present-but-malformed native setting fails closed; it never silently falls back. See [`policy/user-config.example.json`](../policy/user-config.example.json) for the neutral shape. The plugin form and onboarding write the same validated owner, so a later form edit and a resumed onboarding review converge on the current effective values rather than an old snapshot.
 
@@ -173,7 +173,7 @@ Handoff never executes. `hermes secretary responsibilities handoff --id <opaque-
 
 ## Public discovery and privacy
 
-Public discovery is off by default. Add only public, keyless sources you trust, for example through `hermes secretary watch add "<public topic>"` or explicit `public_sources` entries. Supported parser kinds include `github_releases`, `reddit_rss`, `rss_atom`, `web_page`, `nea_forecast`, `ntu_json`, `ntu_opportunity`, `smrt_notice` and `cna_rss`.
+Public discovery is off by default. Add only public, keyless sources you trust, for example through `hermes secretary watch add "<public topic>"` or explicit `public_sources` entries. Supported parser kinds include `github_releases`, `reddit_rss`, `rss_atom`, `web_page`, `nea_forecast`, `university_json`, `university_opportunity`, `smrt_notice` and `cna_rss`.
 
 When adaptive discovery is explicitly enabled, its query boundary is public and bounded. Queries come from explicit public interests/watches, or tentative inferred goals only if you separately enable them; private facts are never turned into public queries, and a broad public grant never authorises a private source or scope. Discovered content is untrusted evidence, never instructions. Enabling a source does not grant permission to read a different source.
 
@@ -181,7 +181,7 @@ When adaptive discovery is explicitly enabled, its query boundary is public and 
 
 Status/doctor reports per-public-source truth rather than a single newest success. Cached-but-not-due, budget-deferred, transient/rate-limited and intentional LTA transport-gate skips are not reported as global failure; an unsupported adaptive route is an explicit unresolved limitation.
 
-Within standing public-maintenance consent **and** enabled broad public discovery, a persistently defective **public** source may be replaced automatically only when the existing bounded discovery path finds a candidate, a real fetch yields fresh usable evidence, and a strict zero-tool structured decision verifies the same purpose, authority and date scope. A same-topic search hit is not an equivalent; official SMRT/NTU/weather sources cannot be replaced by forum or project chatter. Missing strict decision, privacy rejection, transient/rate-limit/deferred observations, or disabled/revoked/paused/snoozed sources cause no replacement. The old source is parked with preserved failure history and stable lineage, its evidence/cache is preserved on the adopted source, one concise notice is emitted at most once per change through the ordinary envelope, and `hermes secretary feedback --feedback source-dispute --id <stable-ref>` performs a locked idempotent restore that blocks the same rejected replacement from returning.
+Within standing public-maintenance consent **and** enabled broad public discovery, a persistently defective **public** source may be replaced automatically only when the existing bounded discovery path finds a candidate, a real fetch yields fresh usable evidence, and a strict zero-tool structured decision verifies the same purpose, authority and date scope. A same-topic search hit is not an equivalent; official SMRT, university or weather sources cannot be replaced by forum or project chatter. Missing strict decision, privacy rejection, transient/rate-limit/deferred observations, or disabled/revoked/paused/snoozed sources cause no replacement. The old source is parked with preserved failure history and stable lineage, its evidence/cache is preserved on the adopted source, one concise notice is emitted at most once per change through the ordinary envelope, and `hermes secretary feedback --feedback source-dispute --id <stable-ref>` performs a locked idempotent restore that blocks the same rejected replacement from returning.
 
 Feedback also changes subsequent adaptive acquisition and relevance: explicit corrections revise the plan, explicit suppression or a scoped temporary snooze blocks the watch/evidence without retiring it, and the snooze expires automatically. "Thanks" or silence is not disinterest. Conditional rules are not blanket suppressions.
 
@@ -219,7 +219,7 @@ Import refuses conflicting targets, rejects symlinks and path traversal, copies 
 
 ### Identity cutover from `hermes-proactive-portal`
 
-On the first load of 1.0.6 the plugin copies the legacy owner-only data root
+On the first load of 1.0.7 the plugin copies the legacy owner-only data root
 (`plugin-data/hermes-proactive-portal/`) once into
 `plugin-data/hermes-proactive-secretary/`. The copy is idempotent, uses owner-only
 modes, and leaves the legacy tree unchanged as a rollback copy. A second load
@@ -269,7 +269,7 @@ Maintainer commands from the source tree, using a Python environment with the He
 PYTHONPATH=src python3 -m unittest discover -s tests
 PYTHONPATH=src python3 -m proactive_pilot.selftest
 python3 scripts/release_export.py scan
-python3 scripts/release_export.py build --output ./dist/hermes-proactive-secretary-1.0.6.tar.gz
+python3 scripts/release_export.py build --output ./dist/hermes-proactive-secretary-1.0.7.tar.gz
 python3 scripts/release_export.py doctor --installed /path/to/extracted-package
 ```
 
@@ -282,7 +282,7 @@ Keep three script locations distinct. Repository scripts such as `scripts/releas
 ## Qualification and limitations
 
 Qualification results are recorded per version in
-[GitHub Releases](https://github.com/Akuyumu/hermes-proactive-secretary/releases).
+[GitHub Releases](https://github.com/Akuyumu/hermes-proactive-portal/releases).
 They do not establish that a particular user's sources have useful live
 alternatives or that a physical device received a notification. Real connector
 access, model calls, messaging delivery and Desktop/device interaction require

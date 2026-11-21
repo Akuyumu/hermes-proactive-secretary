@@ -208,7 +208,7 @@ class OrdinaryAttemptCharging(unittest.TestCase):
         self.assertNotIn("reddit.com", second[0])
 
     def test_expired_structured_cache_stays_stale_when_deferred(self):
-        rec = _rec("ntu_json", "www.ntu.edu.sg", "https://www.ntu.edu.sg/news/",
+        rec = _rec("university_json", "www.university.example", "https://www.university.example/news/",
                    cache_at=(NOW - timedelta(minutes=10)).isoformat(),
                    items=[{"category": "weather_forecast",
                            "valid_from": (NOW - timedelta(hours=2)).isoformat(),

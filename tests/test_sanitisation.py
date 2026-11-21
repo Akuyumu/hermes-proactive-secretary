@@ -26,9 +26,9 @@ EXCLUDED_FILES = {
     "release_export.py",
 }
 
-# Release operators may provide private forbidden terms without shipping them.
-FORBIDDEN_TERMS = ("-sama", "Kuyu",
-                   *filter(None, os.environ.get("SECRETARY_FORBIDDEN_IDENTIFIERS", "").split(",")))
+# Release operators may provide forbidden terms without shipping them.
+FORBIDDEN_TERMS = tuple(filter(
+    None, os.environ.get("SECRETARY_FORBIDDEN_IDENTIFIERS", "").split(",")))
 ABSOLUTE_HOME_RE = re.compile(r"/(?:home|Users)/[A-Za-z0-9._-]+")
 
 SHIPPED_DIRS = ("src", "policy", "skills", "runners", "public_samples")
@@ -98,7 +98,7 @@ class PolicyDefaultTests(unittest.TestCase):
         policy = json.loads(_read(ROOT / "policy" / "policy.default.json"))
         self.assertEqual(policy.get("feed_seed_sources"), [])
         blob = json.dumps(policy).lower()
-        for forbidden in ("ntu.edu.sg", "channelnewsasia", "smrt.com.sg", "scholarship"):
+        for forbidden in ("university.example", "channelnewsasia", "smrt.com.sg", "scholarship"):
             self.assertNotIn(forbidden, blob)
         self.assertEqual(policy.get("persona"), "Hermes")
         self.assertEqual(policy.get("notify_address"), "the user")

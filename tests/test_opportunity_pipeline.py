@@ -35,23 +35,23 @@ from proactive_pilot.publicfeeds import (  # noqa: E402
     FeedExpired,
     FeedFailed,
     FetchResponse,
-    NTU_SCHOLARSHIP_PROCESS_URL,
+    UNIVERSITY_SCHOLARSHIP_PROCESS_URL,
     URLRejected,
     WebPageUnavailable,
     collect_public_feeds,
-    parse_ntu_opportunity,
+    parse_university_opportunity,
     validate_public_url,
 )
 from proactive_pilot.state import StateStore  # noqa: E402
 
 SG = "+08:00"
 NOW = datetime.fromisoformat("2026-10-05T12:00:00" + SG)
-PROCESS_BODY = _sample("ntu_scholarship_process.html")
-LKY_REDIRECT_BODY = _sample("ntu_lky_step.html")
+PROCESS_BODY = _sample("scholarship_process_sample.html")
+REDIRECT_BODY = _sample("scholarship_redirect_sample.html")
 # Parent-fetched immutable public fixture of the real official opportunity page.
-TRAVEL_AWARD_BODY = _sample("ntu_travel_award.html")
+TRAVEL_AWARD_BODY = _sample("scholarship_award_sample.html")
 TRAVEL_AWARD_URL = (
-    "https://www.ntu.edu.sg/admissions/undergraduate/fees-and-funding/"
+    "https://www.university.example/admissions/undergraduate/fees-and-funding/"
     "financial-aid/overseas-student-programme-loan-travel-award"
 )
 
@@ -70,15 +70,15 @@ def _table_page(heading, rows):
 FUTURE_PAGE = (
     b"<html><head><title>Future Scholarship</title></head><body>"
     b"<h1>Future Scholarship 2027</h1>"
-    b"<p>Audience: current NTU undergraduates who are Singapore Citizens or PRs.</p>"
+    b"<p>Audience: current university undergraduates who are Citizens or permanent residents.</p>"
     b"<p>Applications open from 1 March 2027 to 30 April 2027.</p>"
     b"</body></html>"
 )
-LKY_PAGE = (
-    b"<html><head><title>LKY-STEP Award</title></head><body>"
-    b"<h1>LKY-STEP Award 2026</h1>"
-    b"<p>Eligibility: Singapore Citizen or Permanent Resident; outstanding "
-    b"diploma from a Singapore polytechnic; full-time first degree.</p>"
+PAST_AWARD_PAGE = (
+    b"<html><head><title>Legacy Award</title></head><body>"
+    b"<h1>Legacy Award 2026</h1>"
+    b"<p>Eligibility: Citizen or permanent resident; outstanding "
+    b"diploma from a polytechnic; full-time first degree.</p>"
     b"<p>Applications from 11 May 2026 to 2 June 2026.</p>"
     b"</body></html>"
 )
@@ -101,7 +101,7 @@ NO_YEAR_PAGE = (
 NATIONALITY_PAGE = (
     b"<html><head><title>National Scholarship</title></head><body>"
     b"<h1>National Scholarship</h1>"
-    b"<p>Open to Singapore Citizens and Singapore Permanent Residents only.</p>"
+    b"<p>Open to Citizens and permanent residents only.</p>"
     b"<p>Applications from 1 March 2027 to 30 April 2027.</p></body></html>"
 )
 NO_AUDIENCE_PAGE = (
@@ -150,7 +150,7 @@ LOOSE_TIME_PAGE = (
 
 class OpportunityParserTests(unittest.TestCase):
     def test_future_synthetic_explicit_deadline_positive(self):
-        row = parse_ntu_opportunity(FUTURE_PAGE, now=NOW)[0]
+        row = parse_university_opportunity(FUTURE_PAGE, now=NOW)[0]
         self.assertEqual(row["category"], "opportunity")
         self.assertEqual(row["valid_from"], "2027-03-01")
         self.assertEqual(row["valid_until"], "2027-04-30")
@@ -162,11 +162,11 @@ class OpportunityParserTests(unittest.TestCase):
 
     def test_exact_deadline_and_expired_are_negative(self):
         with self.assertRaises(FeedExpired):
-            parse_ntu_opportunity(EXACT_DEADLINE_PAGE, now=NOW)
+            parse_university_opportunity(EXACT_DEADLINE_PAGE, now=NOW)
         with self.assertRaises(FeedExpired):
-            parse_ntu_opportunity(LKY_PAGE, now=NOW)
+            parse_university_opportunity(PAST_AWARD_PAGE, now=NOW)
         # One day before the deadline is still open (not expired).
-        row = parse_ntu_opportunity(
+        row = parse_university_opportunity(
             EXACT_DEADLINE_PAGE,
             now=datetime.fromisoformat("2026-10-04T12:00:00" + SG),
         )[0]
@@ -174,55 +174,55 @@ class OpportunityParserTests(unittest.TestCase):
 
     def test_missing_year_and_missing_date_fail_closed(self):
         with self.assertRaises(FeedFailed):
-            parse_ntu_opportunity(NO_YEAR_PAGE, now=NOW)
+            parse_university_opportunity(NO_YEAR_PAGE, now=NOW)
         with self.assertRaises(FeedFailed):
-            parse_ntu_opportunity(
+            parse_university_opportunity(
                 b"<html><body><h1>Scholarship</h1><p>Apply now.</p></body></html>",
                 now=NOW,
             )
 
     def test_multiple_date_ambiguity_fails_closed(self):
         with self.assertRaises(FeedFailed):
-            parse_ntu_opportunity(MULTI_DATE_PAGE, now=NOW)
+            parse_university_opportunity(MULTI_DATE_PAGE, now=NOW)
 
     def test_annual_recurrence_is_not_a_fabricated_opening(self):
         # The supplied process page states a recurring 1-31 July window with no
         # explicit year; it must never become a currently open opportunity.
         self.assertIn(b"1 to 31 July every year", PROCESS_BODY)
         with self.assertRaises(FeedFailed):
-            parse_ntu_opportunity(PROCESS_BODY, now=NOW)
+            parse_university_opportunity(PROCESS_BODY, now=NOW)
 
     def test_nationality_audience_uncertainty_is_evidence_not_personal_fit(self):
-        row = parse_ntu_opportunity(NATIONALITY_PAGE, now=NOW)[0]
+        row = parse_university_opportunity(NATIONALITY_PAGE, now=NOW)[0]
         self.assertTrue(row["audience_declared"])
         self.assertIn("Citizen", row["audience"])
         self.assertFalse(row["personal_qualification"])
         self.assertNotIn("Alex", row["audience"])
-        plain = parse_ntu_opportunity(NO_AUDIENCE_PAGE, now=NOW)[0]
+        plain = parse_university_opportunity(NO_AUDIENCE_PAGE, now=NOW)[0]
         self.assertFalse(plain["audience_declared"])
         self.assertEqual(plain["audience"], "")
 
-    def test_lky_fixture_redirect_fails_closed_and_lky2026_expired(self):
+    def test_redirect_fixture_fails_closed_and_past_award_expired(self):
         with self.assertRaises(WebPageUnavailable):
-            parse_ntu_opportunity(LKY_REDIRECT_BODY, now=NOW)
+            parse_university_opportunity(REDIRECT_BODY, now=NOW)
         with self.assertRaises(FeedExpired):
-            parse_ntu_opportunity(LKY_PAGE, now=NOW)
+            parse_university_opportunity(PAST_AWARD_PAGE, now=NOW)
 
     def test_non_application_windows_are_not_fabricated_deadlines(self):
         # Defect 1: interview/programme/event/award dates must never become an
         # application window merely because "Scholarship" appears on the page.
         for page in (INTERVIEW_PAGE, PROGRAMME_PAGE, AWARD_EVENT_PAGE):
             with self.assertRaises(FeedFailed):
-                parse_ntu_opportunity(page, now=NOW)
+                parse_university_opportunity(page, now=NOW)
         # A real application window alongside an interview window keeps only the
         # application window.
-        row = parse_ntu_opportunity(APP_PLUS_INTERVIEW_PAGE, now=NOW)[0]
+        row = parse_university_opportunity(APP_PLUS_INTERVIEW_PAGE, now=NOW)[0]
         self.assertEqual(row["valid_from"], "2027-03-01")
         self.assertEqual(row["deadline"], "2027-04-30")
 
     def test_explicit_local_closing_time_is_not_falsely_expired(self):
         # Defect 2: noon on the close day is still open at 23:59 SGT.
-        row = parse_ntu_opportunity(TIME_DEADLINE_PAGE, now=NOW)[0]
+        row = parse_university_opportunity(TIME_DEADLINE_PAGE, now=NOW)[0]
         self.assertEqual(row["deadline_precision"], "time")
         self.assertTrue(row["closing_time_known"])
         self.assertEqual(row["valid_from"], "",
@@ -230,7 +230,7 @@ class OpportunityParserTests(unittest.TestCase):
         self.assertIn("2026-10-05T23:59:00+08:00", row["deadline"])
         # At the exact closing minute it is closed.
         with self.assertRaises(FeedExpired):
-            parse_ntu_opportunity(
+            parse_university_opportunity(
                 TIME_DEADLINE_PAGE,
                 now=datetime.fromisoformat("2026-10-05T23:59:00" + SG),
             )
@@ -240,7 +240,7 @@ class OpportunityParserTests(unittest.TestCase):
         # is unsupported precision; it must not be silently declared expired.
         for page in (NAIVE_TIME_PAGE, LOOSE_TIME_PAGE):
             try:
-                parse_ntu_opportunity(page, now=NOW)
+                parse_university_opportunity(page, now=NOW)
             except FeedExpired as exc:  # pragma: no cover - guard against regression
                 self.fail(f"unsupported time precision raised FeedExpired: {exc}")
             except FeedFailed:
@@ -249,7 +249,7 @@ class OpportunityParserTests(unittest.TestCase):
                 self.fail("unsupported time precision was accepted")
 
     def test_date_only_single_deadline_discloses_unknown_closing_time(self):
-        row = parse_ntu_opportunity(
+        row = parse_university_opportunity(
             EXACT_DEADLINE_PAGE,
             now=datetime.fromisoformat("2026-10-04T12:00:00" + SG),
         )[0]
@@ -258,16 +258,16 @@ class OpportunityParserTests(unittest.TestCase):
         self.assertFalse(row["closing_time_known"])
         self.assertIn("closing time not stated", row["summary"])
 
-    def test_ntu_static_allowlist_is_exact_reviewed_pages_only(self):
-        validate_public_url(NTU_SCHOLARSHIP_PROCESS_URL)
+    def test_university_static_allowlist_is_exact_reviewed_pages_only(self):
+        validate_public_url(UNIVERSITY_SCHOLARSHIP_PROCESS_URL)
         validate_public_url(
-            "https://www.ntu.edu.sg/admissions/undergraduate/"
+            "https://www.university.example/admissions/undergraduate/"
             "scholarships-and-awards/scholarship-opportunities"
         )
         # The prior broad scholarships-and-awards prefix is no longer allowlisted.
         with self.assertRaises(URLRejected):
             validate_public_url(
-                "https://www.ntu.edu.sg/admissions/undergraduate/"
+                "https://www.university.example/admissions/undergraduate/"
                 "scholarships-and-awards/faqs-about-scholarships"
             )
 
@@ -277,7 +277,7 @@ class OpportunityParserTests(unittest.TestCase):
         # date tied to its own "Application Details" cell, so the real Application
         # Period window is accepted; no owner-specific qualification is asserted.
         self.assertIn(b"Application Period", TRAVEL_AWARD_BODY)
-        row = parse_ntu_opportunity(TRAVEL_AWARD_BODY, now=NOW)[0]
+        row = parse_university_opportunity(TRAVEL_AWARD_BODY, now=NOW)[0]
         self.assertEqual(row["category"], "opportunity")
         self.assertEqual(row["valid_from"], "2026-09-07")
         self.assertEqual(row["valid_until"], "2026-10-12")
@@ -296,14 +296,14 @@ class OpportunityParserTests(unittest.TestCase):
     def test_real_travel_award_expires_on_deadline_day(self):
         # Date-only deadline: day before is still open, the deadline day is closed
         # with the unknown closing time disclosed.
-        open_row = parse_ntu_opportunity(
+        open_row = parse_university_opportunity(
             TRAVEL_AWARD_BODY,
             now=datetime.fromisoformat("2026-10-11T23:00:00" + SG),
         )[0]
         self.assertEqual(open_row["deadline"], "2026-10-12")
         self.assertFalse(open_row["closing_time_known"])
         with self.assertRaises(FeedExpired):
-            parse_ntu_opportunity(
+            parse_university_opportunity(
                 TRAVEL_AWARD_BODY,
                 now=datetime.fromisoformat("2026-10-12T09:00:00" + SG),
             )
@@ -332,7 +332,7 @@ class OpportunityParserTests(unittest.TestCase):
         for page in (interview, programme, unrelated_row):
             with self.subTest(page=page[:40]):
                 with self.assertRaises(FeedFailed):
-                    parse_ntu_opportunity(page, now=NOW)
+                    parse_university_opportunity(page, now=NOW)
 
     def test_multiple_plausible_application_rows_are_ambiguous(self):
         page = _table_page("Application Period", [
@@ -340,7 +340,7 @@ class OpportunityParserTests(unittest.TestCase):
             ("GEM Explorer Award", "Applications from 1 June 2027 to 30 June 2027."),
         ])
         with self.assertRaises(FeedFailed):
-            parse_ntu_opportunity(page, now=NOW)
+            parse_university_opportunity(page, now=NOW)
 
 
 class _FakeFetcher:
@@ -367,13 +367,13 @@ def _policy(seeds, *, per_run=1, enabled=True):
 
 
 def _seed(url, cadence=360):
-    return {"kind": "ntu_opportunity", "url": url, "provenance": "fixture source",
+    return {"kind": "university_opportunity", "url": url, "provenance": "fixture source",
             "interest": "opportunity", "cadence_minutes": cadence}
 
 
 class OrdinaryOpportunityPipelineTests(unittest.TestCase):
     def test_collector_to_packet_carries_deadline_and_audience_evidence(self):
-        url = "https://www.ntu.edu.sg/admissions/undergraduate/scholarships-and-awards/scholarship-application-process"
+        url = "https://www.university.example/admissions/undergraduate/scholarships-and-awards/scholarship-application-process"
         with tempfile.TemporaryDirectory(dir=str(ROOT)) as temp:
             store = StateStore(Path(temp), SeededClock(NOW.isoformat()))
             fetcher = _FakeFetcher({url: FUTURE_PAGE})
@@ -391,7 +391,7 @@ class OrdinaryOpportunityPipelineTests(unittest.TestCase):
             self.assertTrue(opp[0]["audience_declared"])
 
     def test_cached_opportunity_expires_between_fetches(self):
-        url = "https://www.ntu.edu.sg/admissions/undergraduate/scholarships-and-awards/scholarship-application-process"
+        url = "https://www.university.example/admissions/undergraduate/scholarships-and-awards/scholarship-application-process"
         page = (b"<html><head><title>Window Scholarship</title></head><body>"
                 b"<h1>Window Scholarship</h1>"
                 b"<p>Applications from 1 October 2026 to 30 November 2026.</p>"
@@ -414,8 +414,8 @@ class OrdinaryOpportunityPipelineTests(unittest.TestCase):
             self.assertEqual(packet["candidates"], [])
 
     def test_source_budget_cadence_and_pause_are_unchanged(self):
-        u1 = "https://www.ntu.edu.sg/admissions/undergraduate/scholarships-and-awards/scholarship-application-process"
-        u2 = "https://www.ntu.edu.sg/admissions/undergraduate/scholarships-and-awards/scholarship-opportunities"
+        u1 = "https://www.university.example/admissions/undergraduate/scholarships-and-awards/scholarship-application-process"
+        u2 = "https://www.university.example/admissions/undergraduate/scholarships-and-awards/scholarship-opportunities"
         with tempfile.TemporaryDirectory(dir=str(ROOT)) as temp:
             store = StateStore(Path(temp), SeededClock(NOW.isoformat()))
             fetcher = _FakeFetcher({u1: FUTURE_PAGE, u2: NATIONALITY_PAGE})
@@ -478,7 +478,7 @@ class OrdinaryMainOpportunityTests(unittest.TestCase):
                 "feed_max_items": 5,
                 "feed_cadence_minutes": 360,
                 "feed_seed_sources": [
-                    {"kind": "ntu_opportunity", "url": NTU_SCHOLARSHIP_PROCESS_URL,
+                    {"kind": "university_opportunity", "url": UNIVERSITY_SCHOLARSHIP_PROCESS_URL,
                      "provenance": "fixture source", "interest": "opportunity",
                      "cadence_minutes": 360},
                 ],
@@ -488,7 +488,7 @@ class OrdinaryMainOpportunityTests(unittest.TestCase):
                 "schema": 1, "version": 0, "explicit": [], "inferred": [],
                 "snoozes": [], "paused": {"active": False},
             }), encoding="utf-8")
-            fetcher = _FakeFetcher({NTU_SCHOLARSHIP_PROCESS_URL: FUTURE_PAGE})
+            fetcher = _FakeFetcher({UNIVERSITY_SCHOLARSHIP_PROCESS_URL: FUTURE_PAGE})
             evaluator = FakeEvaluator(EvaluatorResult("silence", reason="synthetic evaluator"))
             args = M.build_parser().parse_args([
                 "--dry-run", "--seeded-clock", NOW.isoformat(),
@@ -506,7 +506,7 @@ class OrdinaryMainOpportunityTests(unittest.TestCase):
                 M.default_sources = old_sources
 
         self.assertEqual(code, 0)
-        self.assertEqual(fetcher.calls, [NTU_SCHOLARSHIP_PROCESS_URL])
+        self.assertEqual(fetcher.calls, [UNIVERSITY_SCHOLARSHIP_PROCESS_URL])
         opp = [c for c in evaluator.calls[-1]["candidates"] if c.get("category") == "opportunity"]
         self.assertEqual(len(opp), 1)
         self.assertFalse(opp[0]["personal_qualification"])
@@ -528,7 +528,7 @@ class OrdinaryMainOpportunityTests(unittest.TestCase):
                 "feed_max_items": 5,
                 "feed_cadence_minutes": 360,
                 "feed_seed_sources": [
-                    {"kind": "ntu_opportunity", "url": TRAVEL_AWARD_URL,
+                    {"kind": "university_opportunity", "url": TRAVEL_AWARD_URL,
                      "provenance": "fixture source", "interest": "opportunity",
                      "cadence_minutes": 360},
                 ],

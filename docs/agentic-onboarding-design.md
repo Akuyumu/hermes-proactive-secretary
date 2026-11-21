@@ -129,14 +129,14 @@ Desktop plugin form may differ between client versions.
 The current native install URI is the unified plugin link:
 
 ```
-hermes://plugin/install?repo=Akuyumu/hermes-proactive-secretary&enable=1
+hermes://plugin/install?repo=Akuyumu/hermes-proactive-portal&enable=1
 ```
 
 An older Desktop-only URI was previously documented, but it is deprecated in
 favour of the unified native link above. The optional client component and
 refresh behaviour depend on the installed client. The download runs on the
-client computer, so that computer needs working private Git access; a backend
-cannot fetch the private repository for the user.
+client computer, so that computer needs ordinary read access to the public Git
+URL; a backend cannot fetch the repository for the user.
 
 Onboarding never depends on the Desktop page. The conversational interview runs
 from any eligible one-to-one foreground chat and remains available when only the

@@ -3,9 +3,9 @@ import unittest
 from proactive_pilot.publicfeeds import validate_public_url, URLRejected
 
 
-class ReviewedNTUPaths(unittest.TestCase):
+class ReviewedUniversityPaths(unittest.TestCase):
     def test_reviewed_pages_exact_only(self):
-        base = 'https://www.ntu.edu.sg/admissions/undergraduate/scholarships-and-awards/'
+        base = 'https://www.university.example/admissions/undergraduate/scholarships-and-awards/'
         for name in ('scholarship-application-process', 'scholarship-opportunities'):
             self.assertEqual(validate_public_url(base + name).path, '/admissions/undergraduate/scholarships-and-awards/' + name)
             for suffix in ('-unreviewed', '/unreviewed'):
@@ -14,4 +14,4 @@ class ReviewedNTUPaths(unittest.TestCase):
                         validate_public_url(base + name + suffix)
 
     def test_existing_news_prefix_unchanged(self):
-        self.assertEqual(validate_public_url('https://www.ntu.edu.sg/news/news-detail/example').path, '/news/news-detail/example')
+        self.assertEqual(validate_public_url('https://www.university.example/news/news-detail/example').path, '/news/news-detail/example')

@@ -27,14 +27,14 @@ GENERIC_ROUTES: tuple[str, ...] = ("rss", "web_json", "web_page")
 
 # The kinds already wired in ``publicfeeds.parse_source``.
 WIRED_KINDS: tuple[str, ...] = (
-    "github_releases", "github_search", "ntu_json", "web_json", "web_page",
-    "rss_atom", "nea_forecast", "smrt_notice", "ntu_opportunity",
+    "github_releases", "github_search", "university_json", "web_json", "web_page",
+    "rss_atom", "nea_forecast", "smrt_notice", "university_opportunity",
     "lta_train_alerts",
 )
 
 ACQUISITION_COVERAGE: dict[str, dict[str, Any]] = {
     "opportunity": {
-        # A conservative, explicitly-bounded ``ntu_opportunity`` parser is wired
+        # A conservative, explicitly-bounded ``university_opportunity`` parser is wired
         # over fixed reviewed public pages, in addition to the generic vetted
         # page/feed route; mail-side opportunity follow-through is already handled
         # by obligations.py. It emits deadline/audience evidence only when a
@@ -51,8 +51,8 @@ ACQUISITION_COVERAGE: dict[str, dict[str, Any]] = {
         "acquisition": "parser_ready",
         "verified_active": False,
         "route": list(GENERIC_ROUTES),
-        "wired_kinds": ["ntu_opportunity"],
-        "integration_point": "fixed EXACT reviewed NTU page -> parse_ntu_opportunity -> packet/evaluator; discovery.classify_hit -> publicfeeds.parse_source",
+        "wired_kinds": ["university_opportunity"],
+        "integration_point": "fixed EXACT reviewed example-university page -> parse_university_opportunity -> packet/evaluator; discovery.classify_hit -> publicfeeds.parse_source",
         "note": "not an opportunity-specific live feed and not active verified acquisition; explicit-year application-context deadline required; single deadline never invents a start; audience is source-declared and never a personal qualification",
     },
     "weather": {

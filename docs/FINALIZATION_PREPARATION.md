@@ -19,7 +19,7 @@ All new files live under `finalization/` (excluded from the release/export via
 | `finalization/build_release.py` | clean code-only `release-0.4.0/` + sha256 manifest | workspace only |
 | `finalization/native_mcp_benchmark.py` | real `ctx.call_mcp` benchmark in isolated teststate | parent, isolated teststate |
 | `finalization/apply_cutover.py` | guarded code-only install with backup/rollback + job pause/resume | parent, live |
-| `finalization/publish_private.py` | code-only push to the existing private repo, no force | parent, GitHub |
+| `finalization/publish_private.py` | code-only push to the existing repository, no force | parent, GitHub |
 | `finalization/acceptance.example.json` | shape of the mandatory independent gate | none |
 
 The prior cutover references copied into `host-references/prior_*.py` were read
@@ -96,7 +96,7 @@ HERMES_CUTOVER_OWNER_ACK=1 python3 finalization/apply_cutover.py --confirm \
     --firecrawl-tool firecrawl_scrape --schema-verified
 # -> finalization/cutover-applied.json
 
-# 4. private code-only publication (no force, no visibility change)
+# 4. code-only publication (no force, no visibility change)
 python3 finalization/publish_private.py --confirm
 # -> finalization/private-publication.json
 ```
@@ -145,7 +145,7 @@ no-send report to show zero notifications, `suite_exit_code == 0`, and
   tracked paths abort (no deletion); staged diff limited to the manifest; plain
   `git push` (never `--force`); remote SHA readback equals local HEAD;
   repository privacy is verified with `gh` BEFORE the push and read back AFTER
-  (gh unavailable/error or a non-private repo aborts, never `ok`).
+  (gh unavailable/error or a repository that is not public aborts, never `ok`).
 
 ## Remaining blockers / deferred (honest)
 

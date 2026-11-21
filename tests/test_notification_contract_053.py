@@ -250,7 +250,7 @@ class NotificationContractTests(unittest.TestCase):
     def test_rendered_notice_contains_no_raw_identifiers(self):
         rec = self.accepted(
             desired_outcome=("Prepare artifact:resp:secret.docx for mail:msg-1 "
-                             "using /home/hermes/private/notes.md"),
+                             "using /home/example/private/notes.md"),
             acceptance_criterion=("Meet https://example.test/private and cite "
                                   "conversation:turn-3"))
         artifact = self.attach(rec, title="Secret Title", content="Secret body")

@@ -116,7 +116,7 @@ class SkillRoutingTests(unittest.TestCase):
         self.assertEqual(SKILL.relative_to(ROOT).as_posix(),
                          "skills/proactive-secretary/SKILL.md")
         self.assertEqual(self.frontmatter.get("name"), "proactive-secretary")
-        self.assertEqual(self.frontmatter.get("version"), "1.0.6")
+        self.assertEqual(self.frontmatter.get("version"), "1.0.7")
 
     def test_description_carries_the_routing_triggers(self):
         lowered = self.description.lower()

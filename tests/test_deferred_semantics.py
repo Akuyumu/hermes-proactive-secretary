@@ -20,8 +20,8 @@ NOW = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
 
 def _expired_rec():
     return {
-        "id": "s1", "kind": "ntu_json", "url": "https://www.ntu.edu.sg/news/",
-        "host": "www.ntu.edu.sg", "cadence_minutes": 60,
+        "id": "s1", "kind": "university_json", "url": "https://www.university.example/news/",
+        "host": "www.university.example", "cadence_minutes": 60,
         "last_fetch_at": (NOW - timedelta(hours=3)).isoformat(),
         "cache_at": (NOW - timedelta(minutes=10)).isoformat(),
         "cache_items": [{"category": "weather_forecast",

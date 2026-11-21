@@ -66,7 +66,7 @@ class DefaultAndSchemaTests(unittest.TestCase):
         self.assertEqual(cfg["adaptive"]["mode"], "disabled")
         self.assertFalse(cfg["sources"]["mail"])
         blob = json.dumps(cfg).lower()
-        for forbidden in ("singapore", "-sama", "/home/", "api_key", "password", "client_secret"):
+        for forbidden in ("singapore", "/home/", "api_key", "password", "client_secret"):
             self.assertNotIn(forbidden, blob)
 
     def test_example_config_validates(self):

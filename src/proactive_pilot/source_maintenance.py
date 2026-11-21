@@ -4,7 +4,7 @@ Correction pass: a same-topic search hit is NOT an equivalent source. This modul
 now uses the EXISTING bounded broad-discovery path (``discovery.py``), a strict
 zero-tool structured equivalence decision on the existing model lane, and a real
 bounded fetch before adoption. It preserves source purpose/authority/date scope:
-official SMRT/NTU/weather sources can only be replaced by a candidate the
+official SMRT, university or weather sources can only be replaced by a candidate the
 decision marks official on an already-vetted official host, never by chatter.
 
 Safety:
@@ -37,7 +37,7 @@ ADAPTIVE_REGISTRY = "adaptive_registry.json"
 _LINEAGE_LIMIT = 50
 _CREDENTIALED_KINDS = {"lta_train_alerts"}
 _TYPED_DATE_OFFICIAL_KINDS = {
-    "ntu_json", "ntu_opportunity", "nea_forecast", "smrt_notice",
+    "university_json", "university_opportunity", "nea_forecast", "smrt_notice",
 }
 # Authority-bearing official feeds (but ordinary RSS/news/releases are NOT
 # required to carry a forecast/deadline validity window).

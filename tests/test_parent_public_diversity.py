@@ -1,6 +1,6 @@
 """Parent controls for the stage-only diverse public rollout.
 
-Covers the vetted NTU newsroom JSON adapter + the single vetted CNA category RSS
+Covers the vetted UNIVERSITY newsroom JSON adapter + the single vetted CNA category RSS
 with deterministic relevance/date/link safety controls. EVERY test injects a
 synthetic fake fetcher: no live HTTP, no network, no SubprocessRunner, no
 personal account, no /tmp. Standalone:
@@ -26,8 +26,8 @@ from proactive_pilot.policy import active_snooze, in_quiet_hours, load_policy  #
 from proactive_pilot.publicfeeds import (  # noqa: E402
     ARTICLE_HOSTS,
     CNA_BUSINESS_RSS,
-    NTU_BASE,
-    NTU_STORY_ENDPOINT,
+    UNIVERSITY_BASE,
+    UNIVERSITY_STORY_ENDPOINT,
     PUBLIC_HOST_PATHS,
     VETTED_NEWS_HOSTS,
     FeedFailed,
@@ -39,9 +39,9 @@ from proactive_pilot.publicfeeds import (  # noqa: E402
     cna_title_relevant,
     collect_public_feeds,
     default_seed_sources,
-    ntu_title_relevant,
-    parse_ntu_date,
-    parse_ntu_stories,
+    university_title_relevant,
+    parse_university_date,
+    parse_university_stories,
     parse_rss_atom,
     public_item_relevant,
     safe_article_link,
@@ -84,9 +84,9 @@ def _policy(seeds=None):
     return policy
 
 
-def _ntu_seed():
-    return [{"kind": "ntu_json", "url": NTU_STORY_ENDPOINT,
-             "provenance": "test", "interest": "ntu campus news", "cadence_minutes": 60}]
+def _university_seed():
+    return [{"kind": "university_json", "url": UNIVERSITY_STORY_ENDPOINT,
+             "provenance": "test", "interest": "university campus news", "cadence_minutes": 60}]
 
 
 def _cna_seed():
@@ -94,12 +94,12 @@ def _cna_seed():
              "provenance": "test", "interest": "cna technology news", "cadence_minutes": 60}]
 
 
-def _ntu_body(stories):
+def _university_body(stories):
     return json.dumps({"totalPages": 1, "totalItems": len(stories), "items": stories}).encode("utf-8")
 
 
-def _ntu_response(stories):
-    return FetchResponse(200, {"ETag": "ntu1"}, _ntu_body(stories), NTU_STORY_ENDPOINT)
+def _university_response(stories):
+    return FetchResponse(200, {"ETag": "university1"}, _university_body(stories), UNIVERSITY_STORY_ENDPOINT)
 
 
 def _cna_body(items):
@@ -120,86 +120,86 @@ def _cna_response(items):
     return FetchResponse(200, {"ETag": "cna1"}, _cna_body(items), CNA_BUSINESS_RSS)
 
 
-# -- NTU JSON adapter ----------------------------------------------------------
+# -- UNIVERSITY JSON adapter ----------------------------------------------------------
 
 
-def test_ntu_json_exact_shape_parses_and_normalizes():
+def test_university_json_exact_shape_parses_and_normalizes():
     stories = [{
-        "title": "NTU launches new AI scholarship for undergraduates",
+        "title": "UNIVERSITY launches new AI scholarship for undergraduates",
         "url": "/news/detail/ai-scholarship",
         "description": "A <b>new</b> scholarship for students.",
         "date": "02 Oct 2026",
         "contentType": "News",
         "imageUrl": None,
     }]
-    items = parse_ntu_stories(_ntu_body(stories), now=NOW)
+    items = parse_university_stories(_university_body(stories), now=NOW)
     assert len(items) == 1
     it = items[0]
-    assert it["title"] == "NTU launches new AI scholarship for undergraduates"
-    assert it["link"] == "https://www.ntu.edu.sg/news/detail/ai-scholarship"
+    assert it["title"] == "UNIVERSITY launches new AI scholarship for undergraduates"
+    assert it["link"] == "https://www.university.example/news/detail/ai-scholarship"
     assert it["published"] == "2026-10-02"
     assert it["date_precision"] == "date"
     assert it["content_type"] == "News"
     assert "<b>" not in it["summary"]
 
 
-def test_ntu_json_null_and_malformed_tolerated():
+def test_university_json_null_and_malformed_tolerated():
     nulls = [{"title": None, "url": None, "description": None, "date": None, "contentType": None}]
-    items = parse_ntu_stories(_ntu_body(nulls), now=NOW)
+    items = parse_university_stories(_university_body(nulls), now=NOW)
     assert items and items[0]["title"] == "" and items[0]["link"] == ""
     assert items[0]["published"] == "" and items[0]["date_precision"] == "unknown"
     for bad in (b"{not-json", b"[]", b'{"items": {}}', b'{"items": null}'):
         try:
-            parse_ntu_stories(bad, now=NOW)
+            parse_university_stories(bad, now=NOW)
         except FeedFailed:
             continue
         raise AssertionError(f"expected FeedFailed for {bad!r}")
 
 
-def test_ntu_relative_and_unsafe_links():
-    # Relative/absolute safe NTU links normalize to the official https base.
-    assert safe_article_link(NTU_BASE, "/news/x") == "https://www.ntu.edu.sg/news/x"
-    assert safe_article_link(NTU_BASE, "news/x") == "https://www.ntu.edu.sg/news/x"
-    assert safe_article_link(NTU_BASE, "//www.ntu.edu.sg/news/x") == "https://www.ntu.edu.sg/news/x"
-    assert safe_article_link(NTU_BASE, "https://www.ntu.edu.sg/news/x") == "https://www.ntu.edu.sg/news/x"
+def test_university_relative_and_unsafe_links():
+    # Relative/absolute safe UNIVERSITY links normalize to the official https base.
+    assert safe_article_link(UNIVERSITY_BASE, "/news/x") == "https://www.university.example/news/x"
+    assert safe_article_link(UNIVERSITY_BASE, "news/x") == "https://www.university.example/news/x"
+    assert safe_article_link(UNIVERSITY_BASE, "//www.university.example/news/x") == "https://www.university.example/news/x"
+    assert safe_article_link(UNIVERSITY_BASE, "https://www.university.example/news/x") == "https://www.university.example/news/x"
     # Private / metadata / credentials / http / off-host all rejected.
     for bad in (
         "http://169.254.169.254/latest/meta-data",
-        "http://www.ntu.edu.sg/news/x",
+        "http://www.university.example/news/x",
         "https://127.0.0.1/news/x",
         "https://10.0.0.5/news/x",
-        "https://user:pass@www.ntu.edu.sg/news/x",
+        "https://user:pass@www.university.example/news/x",
         "javascript:alert(1)",
         "//evil.example/news/x",
         "https://evil.example/news/x",
-        "https://www.ntu.edu.sg.evil.example/news/x",
-        "https://www.ntu.edu.sg/news/x?access_token=leak",
+        "https://www.university.example.evil.example/news/x",
+        "https://www.university.example/news/x?access_token=leak",
     ):
-        assert safe_article_link(NTU_BASE, bad) == "", bad
+        assert safe_article_link(UNIVERSITY_BASE, bad) == "", bad
 
 
-def test_ntu_date_only_normalization_and_future_rejection():
-    assert parse_ntu_date("02 Oct 2026") == "2026-10-02"
-    assert parse_ntu_date("2 October 2026") == "2026-10-02"
-    assert parse_ntu_date("2026-10-02T09:00:00Z") == "2026-10-02"
+def test_university_date_only_normalization_and_future_rejection():
+    assert parse_university_date("02 Oct 2026") == "2026-10-02"
+    assert parse_university_date("2 October 2026") == "2026-10-02"
+    assert parse_university_date("2026-10-02T09:00:00Z") == "2026-10-02"
     for bad in ("", None, "not a date", "32 Feb 2026", "2026-13-01"):
-        assert parse_ntu_date(bad) == "", bad
+        assert parse_university_date(bad) == "", bad
     # A malformed/fabricated future date is blanked (never fresh).
-    future = [{"title": "NTU career fair", "url": "/news/x", "date": "01 Jan 2027",
+    future = [{"title": "UNIVERSITY career fair", "url": "/news/x", "date": "01 Jan 2027",
                "description": "", "contentType": "News"}]
-    items = parse_ntu_stories(_ntu_body(future), now=NOW)
+    items = parse_university_stories(_university_body(future), now=NOW)
     assert items[0]["published"] == "" and items[0]["date_precision"] == "unknown"
     # An absent date can never masquerade as fresh.
-    absent = [{"title": "NTU campus update", "url": "/news/y", "date": "",
+    absent = [{"title": "UNIVERSITY campus update", "url": "/news/y", "date": "",
                "description": "", "contentType": "News"}]
-    assert parse_ntu_stories(_ntu_body(absent), now=NOW)[0]["published"] == ""
+    assert parse_university_stories(_university_body(absent), now=NOW)[0]["published"] == ""
 
 
-def test_ntu_date_only_stable_across_polls():
-    stories = [{"title": "NTU library extends hours", "url": "/news/lib",
+def test_university_date_only_stable_across_polls():
+    stories = [{"title": "UNIVERSITY library extends hours", "url": "/news/lib",
                 "description": "", "date": "02 Oct 2026", "contentType": "News"}]
-    a = parse_ntu_stories(_ntu_body(stories), now=NOW)[0]
-    b = parse_ntu_stories(_ntu_body(stories), now=NOW + timedelta(days=3))[0]
+    a = parse_university_stories(_university_body(stories), now=NOW)[0]
+    b = parse_university_stories(_university_body(stories), now=NOW + timedelta(days=3))[0]
     assert a["published"] == b["published"] == "2026-10-02"
     assert a["date_precision"] == b["date_precision"] == "date"
 
@@ -210,7 +210,7 @@ def test_ntu_date_only_stable_across_polls():
 def test_cna_relevance_rejects_generic_business_and_keeps_tech():
     for title in (
         "Singapore tech firm launches new AI chip",
-        "NUS and NTU to open quantum computing laboratory",
+        "Two universities to open quantum computing laboratory",
         "New cybersecurity rules for banks take effect",
         "Startup raises funds to expand electric vehicle battery output",
     ):
@@ -227,25 +227,25 @@ def test_cna_relevance_rejects_generic_business_and_keeps_tech():
     assert not cna_title_relevant("Man said to have chaired the meeting")
 
 
-def test_ntu_campus_kept_researcher_achievement_excluded():
+def test_university_campus_kept_researcher_achievement_excluded():
     for title in (
-        "NTU student wins national scholarship",
-        "NTU to hold annual career fair for students",
-        "NTU launches new AI laboratory for undergraduates",
-        "NTU researchers develop new battery technology",
-        "NTU students win national sports championship",
+        "UNIVERSITY student wins national scholarship",
+        "UNIVERSITY to hold annual career fair for students",
+        "UNIVERSITY launches new AI laboratory for undergraduates",
+        "UNIVERSITY researchers develop new battery technology",
+        "UNIVERSITY students win national sports championship",
     ):
-        assert ntu_title_relevant(title), title
+        assert university_title_relevant(title), title
     for title in (
-        "NTU professor named fellow of national academy",
-        "NTU researchers publish paper in top journal",
-        "NTU scientist receives prestigious award",
-        "NTU climbs in global university ranking",
+        "UNIVERSITY professor named fellow of national academy",
+        "UNIVERSITY researchers publish paper in top journal",
+        "UNIVERSITY scientist receives prestigious award",
+        "UNIVERSITY climbs in global university ranking",
     ):
-        assert not ntu_title_relevant(title), title
+        assert not university_title_relevant(title), title
     # Any-campus-news blanket drop is forbidden: at least one plain campus item
     # survives, and a non-news source class is never gated.
-    assert ntu_title_relevant("NTU orientation week schedule announced")
+    assert university_title_relevant("UNIVERSITY orientation week schedule announced")
     assert public_item_relevant("www.reddit.com", "anything at all") is True
 
 
@@ -253,16 +253,16 @@ def test_ntu_campus_kept_researcher_achievement_excluded():
 
 
 def test_vetted_hosts_and_ssrf_unchanged():
-    validate_public_url(NTU_STORY_ENDPOINT)
+    validate_public_url(UNIVERSITY_STORY_ENDPOINT)
     validate_public_url(CNA_BUSINESS_RSS)
     for bad in (
-        "http://www.ntu.edu.sg/news/GetStories/?page=1",
-        "https://user:pass@www.ntu.edu.sg/news/GetStories/",
-        "https://www.ntu.edu.sg:8443/news/GetStories/",
+        "http://www.university.example/news/GetStories/?page=1",
+        "https://user:pass@www.university.example/news/GetStories/",
+        "https://www.university.example:8443/news/GetStories/",
         "https://127.0.0.1/news/GetStories/",
         "https://10.0.0.5/news/GetStories/",
         "https://evil.example/news/GetStories/",
-        "https://www.ntu.edu.sg/news/GetStories/?token=leak",
+        "https://www.university.example/news/GetStories/?token=leak",
         "https://www.channelnewsasia.com/secret/feed",
     ):
         try:
@@ -271,14 +271,14 @@ def test_vetted_hosts_and_ssrf_unchanged():
             continue
         raise AssertionError(f"expected rejection for {bad}")
     # Vetted hosts are allowlisted; arbitrary hosts still need the opt-in.
-    assert auto_added_ok("www.ntu.edu.sg") and auto_added_ok("www.channelnewsasia.com")
+    assert auto_added_ok("www.university.example") and auto_added_ok("www.channelnewsasia.com")
     assert not auto_added_ok("evil.example")
     assert "data.gov.sg" not in PUBLIC_HOST_PATHS
     assert VETTED_NEWS_HOSTS == ARTICLE_HOSTS
     # Redirect hops remain re-validated.
     handler = _SafeRedirectHandler(dict(PUBLIC_HOST_PATHS))
     import urllib.request
-    req = urllib.request.Request(NTU_STORY_ENDPOINT)
+    req = urllib.request.Request(UNIVERSITY_STORY_ENDPOINT)
     try:
         handler.redirect_request(req, None, 302, "Found", {}, "http://169.254.169.254/x")
     except URLRejected:
@@ -289,7 +289,7 @@ def test_vetted_hosts_and_ssrf_unchanged():
 def test_only_reviewed_weather_planned_and_live_transport_sources_claimed():
     seeds = default_seed_sources()
     kinds = {s["kind"] for s in seeds}
-    assert kinds == {"github_releases", "reddit_rss", "ntu_json", "cna_rss",
+    assert kinds == {"github_releases", "reddit_rss", "university_json", "cna_rss",
                      "nea_forecast", "smrt_notice", "lta_train_alerts"}, kinds
     blob = " ".join(f"{s['kind']} {s['url']} {s['interest']}" for s in seeds).lower()
     for forbidden in ("pm25", "psi", "opportunity feed", "internship feed"):
@@ -308,14 +308,14 @@ def test_only_reviewed_weather_planned_and_live_transport_sources_claimed():
 # -- end-to-end collection with fake fetcher only ------------------------------
 
 
-def test_collect_ntu_and_cna_only_relevant_and_vetted():
-    ntu_stories = [
-        {"title": "NTU launches new AI scholarship for undergraduates",
+def test_collect_university_and_cna_only_relevant_and_vetted():
+    university_stories = [
+        {"title": "UNIVERSITY launches new AI scholarship for undergraduates",
          "url": "/news/detail/ai", "description": "", "date": "02 Oct 2026", "contentType": "News"},
-        {"title": "NTU professor named fellow of national academy",
-         "url": "https://www.ntu.edu.sg/news/detail/fellow", "description": "",
+        {"title": "UNIVERSITY professor named fellow of national academy",
+         "url": "https://www.university.example/news/detail/fellow", "description": "",
          "date": "01 Oct 2026", "contentType": "News"},
-        {"title": "NTU students win national sports championship",
+        {"title": "UNIVERSITY students win national sports championship",
          "url": "http://169.254.169.254/latest/meta-data", "description": "",
          "date": "30 Sep 2026", "contentType": "News"},
     ]
@@ -326,23 +326,23 @@ def test_collect_ntu_and_cna_only_relevant_and_vetted():
         ("Man charged with homicide in Toa Payoh",
          "https://www.channelnewsasia.com/singapore/crime", "d"),
     ]
-    seeds = _ntu_seed() + _cna_seed()
+    seeds = _university_seed() + _cna_seed()
     with tempfile.TemporaryDirectory(dir=str(ROOT)) as tmp:
         store = StateStore(Path(tmp), SeededClock(NOW.isoformat()))
         policy = _policy(seeds)
         fetcher = FakeFetcher({
-            NTU_STORY_ENDPOINT: _ntu_response(ntu_stories),
+            UNIVERSITY_STORY_ENDPOINT: _university_response(university_stories),
             CNA_BUSINESS_RSS: _cna_response(cna_items),
         })
         results = collect_public_feeds(policy, SeededClock(NOW.isoformat()), store=store, fetcher=fetcher)
         # Only the two fixed official endpoints were fetched; no article bodies.
-        assert sorted(fetcher.calls) == sorted([NTU_STORY_ENDPOINT, CNA_BUSINESS_RSS]), fetcher.calls
+        assert sorted(fetcher.calls) == sorted([UNIVERSITY_STORY_ENDPOINT, CNA_BUSINESS_RSS]), fetcher.calls
         feeds = [r for r in results if r.name.startswith("feed:")]
         assert len(feeds) == 2
         all_items = [it for r in feeds for it in r.items]
         titles = [it["title"] for it in all_items]
-        assert "NTU launches new AI scholarship for undergraduates" in titles
-        assert "NTU students win national sports championship" in titles
+        assert "UNIVERSITY launches new AI scholarship for undergraduates" in titles
+        assert "UNIVERSITY students win national sports championship" in titles
         assert "Singapore tech firm launches new AI chip" in titles
         assert not any("professor named fellow" in t for t in titles)
         assert not any("shares fall" in t or "homicide" in t for t in titles)
@@ -372,13 +372,13 @@ def test_cna_relevance_gate_applies_to_packet_candidates():
         assert "quarterly profit" not in subjects
 
 
-def test_ntu_absent_date_candidate_is_not_fresh():
-    stories = [{"title": "NTU campus update", "url": "/news/x", "description": "",
+def test_university_absent_date_candidate_is_not_fresh():
+    stories = [{"title": "UNIVERSITY campus update", "url": "/news/x", "description": "",
                 "date": "", "contentType": "News"}]
     with tempfile.TemporaryDirectory(dir=str(ROOT)) as tmp:
         store = StateStore(Path(tmp), SeededClock(NOW.isoformat()))
-        policy = _policy(_ntu_seed())
-        fetcher = FakeFetcher({NTU_STORY_ENDPOINT: _ntu_response(stories)})
+        policy = _policy(_university_seed())
+        fetcher = FakeFetcher({UNIVERSITY_STORY_ENDPOINT: _university_response(stories)})
         results = collect_public_feeds(policy, SeededClock(NOW.isoformat()), store=store, fetcher=fetcher)
         packet = build_packet(results, clock=SeededClock(NOW.isoformat()), policy=policy, baseline={})
         cand = packet["candidates"][0]
@@ -404,14 +404,14 @@ def test_cadence_retention_quiet_pause_caps_unchanged():
     assert active_snooze({"paused": {"active": True}}, NOW) is True
 
 
-def test_ntu_cadence_caches_and_does_not_refetch():
-    stories = [{"title": "NTU AI lab opens", "url": "/news/x", "description": "",
+def test_university_cadence_caches_and_does_not_refetch():
+    stories = [{"title": "UNIVERSITY AI lab opens", "url": "/news/x", "description": "",
                 "date": "02 Oct 2026", "contentType": "News"}]
     with tempfile.TemporaryDirectory(dir=str(ROOT)) as tmp:
         store = StateStore(Path(tmp), SeededClock(NOW.isoformat()))
-        policy = _policy([{"kind": "ntu_json", "url": NTU_STORY_ENDPOINT, "provenance": "t",
-                           "interest": "ntu campus news", "cadence_minutes": 60}])
-        fetcher = FakeFetcher({NTU_STORY_ENDPOINT: _ntu_response(stories)})
+        policy = _policy([{"kind": "university_json", "url": UNIVERSITY_STORY_ENDPOINT, "provenance": "t",
+                           "interest": "university campus news", "cadence_minutes": 60}])
+        fetcher = FakeFetcher({UNIVERSITY_STORY_ENDPOINT: _university_response(stories)})
         collect_public_feeds(policy, SeededClock(NOW.isoformat()), store=store, fetcher=fetcher)
         assert len(fetcher.calls) == 1
         later = SeededClock((NOW + timedelta(minutes=10)).isoformat())
@@ -427,14 +427,14 @@ def test_initial_bootstrap_defers_and_never_fakes_health():
          "provenance": "t", "interest": "r", "cadence_minutes": 60},
         {"kind": "reddit_rss", "url": "https://www.reddit.com/r/a/.rss",
          "provenance": "t", "interest": "c", "cadence_minutes": 60},
-    ] + _ntu_seed() + _cna_seed()
+    ] + _university_seed() + _cna_seed()
     with tempfile.TemporaryDirectory(dir=str(ROOT)) as tmp:
         store = StateStore(Path(tmp), SeededClock(NOW.isoformat()))
         policy = _policy(seeds)
         fetcher = FakeFetcher({
             "https://api.github.com/repos/a/b/releases": FetchResponse(200, {}, b"[]", ""),
             "https://www.reddit.com/r/a/.rss": FetchResponse(200, {}, b"<rss></rss>", ""),
-            NTU_STORY_ENDPOINT: _ntu_response([{"title": "NTU AI lab opens", "url": "/news/x",
+            UNIVERSITY_STORY_ENDPOINT: _university_response([{"title": "UNIVERSITY AI lab opens", "url": "/news/x",
                                                 "description": "", "date": "02 Oct 2026",
                                                 "contentType": "News"}]),
             CNA_BUSINESS_RSS: _cna_response([("Singapore tech firm launches AI chip",

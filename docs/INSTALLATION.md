@@ -1,8 +1,8 @@
-# Installing Hermes Proactive Portal
+# Installing Hermes Proactive Secretary
 
 This guide is for the person using Hermes. It covers a normal installation, the optional host compatibility update, first setup and upgrades. Developer and host-level detail lives in [Engineering](ENGINEERING.md).
 
-Hermes Proactive Portal is version **1.0.6**. The plugin id is `hermes-proactive-secretary` and the commands are `hermes secretary`. On first load after an upgrade, existing state under `plugin-data/hermes-proactive-portal/` is copied once and idempotently into the new `plugin-data/hermes-proactive-secretary/` root; the legacy tree is left untouched as a rollback copy. Old owner-facing cron jobs are retired by `setup` (and the portal job by `hermes secretary job enable`) using the ownership ledger, then recreated under the new names. If you had enabled the old portal job, re-run `hermes secretary job enable --schedule "<your schedule>"` after the upgrade to recreate it under the new name.
+Hermes Proactive Secretary is version **1.0.7**. The plugin id is `hermes-proactive-secretary` and the commands are `hermes secretary`. On first load after an upgrade, existing state under `plugin-data/hermes-proactive-portal/` is copied once and idempotently into the new `plugin-data/hermes-proactive-secretary/` root; the legacy tree is left untouched as a rollback copy. Old owner-facing cron jobs are retired by `setup` (and the portal job by `hermes secretary job enable`) using the ownership ledger, then recreated under the new names. If you had enabled the old portal job, re-run `hermes secretary job enable --schedule "<your schedule>"` after the upgrade to recreate it under the new name.
 
 ## 1. Check host compatibility first
 
@@ -20,14 +20,14 @@ The current host has been validated with this package, but no fresh-machine cert
 
 ## 2. Confirm repository access
 
-The repository is private. Installation requires Git access that already works for `Akuyumu/hermes-proactive-secretary` on the machine doing the install. There is no visibility change, new account or new credential flow in this guide. If Git cannot reach the repository, stop and resolve access first; do not bypass the requirement.
+The repository is public at `Akuyumu/hermes-proactive-portal`. Installation uses the public Git URL, and no Git access grant is required beyond ordinary read access. There is no new account or new credential flow in this guide. If Git cannot reach the public repository, check your network or Git configuration before retrying.
 
 ## 3. Install and enable the plugin
 
 With your approval, run:
 
 ```bash
-hermes plugins install Akuyumu/hermes-proactive-secretary --no-enable
+hermes plugins install Akuyumu/hermes-proactive-portal --no-enable
 hermes plugins enable hermes-proactive-secretary
 hermes secretary doctor
 ```
@@ -84,14 +84,14 @@ Use `hermes secretary pause` and `hermes secretary resume` for the global pause,
 On Desktop, the native plugin flow is **Capabilities → Plugins → Install from Git**, or the consent link:
 
 ```text
-hermes://plugin/install?repo=Akuyumu/hermes-proactive-secretary&enable=1
+hermes://plugin/install?repo=Akuyumu/hermes-proactive-portal&enable=1
 ```
 
 The optional client component and refresh behaviour depend on your installed client; this guide does not claim parity across clients. The [official plugin guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins) describes the native flow. Conversational setup works without the Desktop component.
 
 ## 7. Upgrading
 
-`main` is the production/stable branch and the source of released installs. A `dev` branch, if one is used later, is experimental and is not the live install source. Release tag `v1.0.0` marks the tested `main` commit. For a controlled pin, use the resolved immutable 40-character SHA with `--ref`.
+`main` is the production/stable branch and the source of released installs; `dev` is the active development branch. Release tags mark tested `main` commits. For a controlled pin, use the resolved immutable 40-character SHA with `--ref`.
 
 There is no automatic-update promise. After a Hermes upgrade:
 

@@ -1,9 +1,9 @@
 """Bounded public-source discovery + monitoring (read-only, standard library).
 
 Scope:
-- Public RSS/Atom feeds, the unauthenticated GitHub API, and TWO fixed vetted
-  official news endpoints: the NTU newsroom JSON and one CNA category RSS
-  (technology-relevance gated). No new credentials, no login, no Graph/private
+- Public RSS/Atom feeds, the unauthenticated GitHub API, and two fixed vetted
+  example news endpoints: an example university newsroom JSON and one CNA
+  category RSS (technology-relevance gated). No new credentials, no login, no Graph/private
   access, no proxies, no loops, no article-body following.
 - Strict HTTPS canonical URL allowlist. Credentials, non-443 ports, IP
   literals, localhost/private hosts and secret-like query keys are rejected.
@@ -67,9 +67,9 @@ PUBLIC_HOST_PATHS: dict[str, tuple[str, ...]] = {
     # not a broad URL opt-in: arbitrary hosts still require the explicit generic
     # policy opt-in, and every SSRF/credential/port/redirect/secret-query check
     # below is unchanged.
-    "www.ntu.edu.sg": (
+    "www.university.example": (
         "/news/",
-        # EXACT reviewed NTU scholarship pages only (bounded opportunity evidence;
+        # EXACT reviewed example-university scholarship pages only (bounded opportunity evidence;
         # not authority to crawl the scholarships-and-awards subtree). The prior
         # broad "/admissions/undergraduate/scholarships-and-awards/" prefix was
         # wider than the claimed fixed-page scope and is deliberately removed.
@@ -98,13 +98,13 @@ REDDIT_HOSTS = {"www.reddit.com", "reddit.com", "old.reddit.com"}
 GITHUB_HOSTS = {"api.github.com", "github.com"}
 
 # Vetted fixed public news sources permitted in the registry (seed sources).
-VETTED_NEWS_HOSTS = {"www.ntu.edu.sg", "www.channelnewsasia.com"}
+VETTED_NEWS_HOSTS = {"www.university.example", "www.channelnewsasia.com"}
 VETTED_FIXED_PUBLIC_HOSTS = {"api-open.data.gov.sg", "www.smrt.com.sg", LTA_DATAMALL_HOST}
 # Hosts permitted for DISPLAY-ONLY article links. They are normalized/validated
 # but NEVER fetched and article bodies are NEVER followed.
-ARTICLE_HOSTS = {"www.ntu.edu.sg", "www.channelnewsasia.com"}
-NTU_BASE = "https://www.ntu.edu.sg"
-NTU_STORY_ENDPOINT = "https://www.ntu.edu.sg/news/GetStories/?page=1"
+ARTICLE_HOSTS = {"www.university.example", "www.channelnewsasia.com"}
+UNIVERSITY_BASE = "https://www.university.example"
+UNIVERSITY_STORY_ENDPOINT = "https://www.university.example/news/GetStories/?page=1"
 CNA_BUSINESS_RSS = (
     "https://www.channelnewsasia.com/api/v1/rss-outbound-feed"
     "?_format=xml&category=6936"
@@ -114,12 +114,12 @@ SMRT_F1_NOTICE_URL = (
     "https://www.smrt.com.sg/news-publications/newsroom/service-announcements/"
     "last-bus-train-timing-extension-for-2026-f1-singapore-grand-prix/"
 )
-NTU_SCHOLARSHIP_PROCESS_URL = (
-    "https://www.ntu.edu.sg/admissions/undergraduate/"
+UNIVERSITY_SCHOLARSHIP_PROCESS_URL = (
+    "https://www.university.example/admissions/undergraduate/"
     "scholarships-and-awards/scholarship-application-process"
 )
-NTU_TRAVEL_AWARD_URL = (
-    "https://www.ntu.edu.sg/admissions/undergraduate/fees-and-funding/"
+UNIVERSITY_TRAVEL_AWARD_URL = (
+    "https://www.university.example/admissions/undergraduate/fees-and-funding/"
     "financial-aid/travel-award-overseas-student-programme-exchange"
 )
 
@@ -225,7 +225,7 @@ def validate_public_url(
     if host in allow:
         path = parsed.path or "/"
         prefixes = allow.get(host, ())
-        if host == "www.ntu.edu.sg" and not path.startswith("/news/"):
+        if host == "www.university.example" and not path.startswith("/news/"):
             # Scholarship entries are reviewed individual pages, not prefixes.
             if path not in prefixes:
                 raise URLRejected(f"path not exactly allowlisted for {host}: {path}")
@@ -642,8 +642,8 @@ _ISO_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 _DISPLAY_DATE_RE = re.compile(r"^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$")
 
 
-def parse_ntu_date(raw: Any) -> str:
-    """Conservative known-SG date normalization for NTU display dates.
+def parse_university_date(raw: Any) -> str:
+    """Conservative known-SG date normalization for example-university display dates.
 
     Accepts an ISO date prefix or the exact displayed ``DD Mon YYYY`` form (e.g.
     ``02 Oct 2026``) and returns a stable ``YYYY-MM-DD`` string. The date is
@@ -673,13 +673,13 @@ def parse_ntu_date(raw: Any) -> str:
     return ""
 
 
-def parse_ntu_stories(
+def parse_university_stories(
     body: bytes,
     *,
     max_items: int = DEFAULT_MAX_ITEMS,
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """Parse the NTU newsroom JSON envelope into bounded evidence dicts.
+    """Parse the example-university newsroom JSON envelope into bounded evidence dicts.
 
     Expected top-level keys are ``totalPages``/``totalItems``/``items[]`` with
     per-story ``title``/``url``/``description``/``date``/``contentType`` (plus
@@ -694,20 +694,20 @@ def parse_ntu_stories(
     try:
         data = json.loads(body.decode("utf-8", "replace"))
     except ValueError as exc:
-        raise FeedFailed(f"ntu json parse error: {exc}") from exc
+        raise FeedFailed(f"university json parse error: {exc}") from exc
     if not isinstance(data, dict):
-        raise FeedFailed("ntu json: expected an object")
+        raise FeedFailed("university json: expected an object")
     stories = data.get("items")
     if not isinstance(stories, list):
-        raise FeedFailed("ntu json: items is not a list")
+        raise FeedFailed("university json: items is not a list")
     out: list[dict[str, Any]] = []
     for story in stories[: max(1, int(max_items))]:
         if not isinstance(story, dict):
             continue
         title = strip_html(story.get("title"), max_chars=200)
         summary = strip_html(story.get("description"), max_chars=400)
-        link = safe_article_link(NTU_BASE, story.get("url"))
-        published = parse_ntu_date(story.get("date"))
+        link = safe_article_link(UNIVERSITY_BASE, story.get("url"))
+        published = parse_university_date(story.get("date"))
         precision = "date" if published else "unknown"
         if published and now is not None:
             try:
@@ -761,7 +761,7 @@ _NORMALIZED_CONTENT_TYPES: dict[str, tuple[str, ...]] = {
     "cna_rss": ("xml", "rss", "atom", "html"),
     "nea_forecast": ("json",),
     "smrt_notice": ("html",),
-    "ntu_opportunity": ("html", "xml", "xhtml"),
+    "university_opportunity": ("html", "xml", "xhtml"),
     # Official credentialed LTA DataMall live train alerts: JSON only.
     "lta_train_alerts": ("json",),
 }
@@ -1569,8 +1569,8 @@ def _opp_audience(text: str, *, max_chars: int = 300) -> tuple[str, bool]:
     return (best[:max_chars], True) if best else ("", False)
 
 
-def parse_ntu_opportunity(body: bytes, *, now: datetime) -> list[dict[str, Any]]:
-    """Project one bounded, explicit NTU opportunity deadline/eligibility record.
+def parse_university_opportunity(body: bytes, *, now: datetime) -> list[dict[str, Any]]:
+    """Project one bounded, explicit example-university opportunity deadline/eligibility record.
 
     Conservative fail-closed rules:
     - redirect/challenge/error skeletons and non-opportunity pages are unusable;
@@ -1657,7 +1657,7 @@ def parse_ntu_opportunity(body: bytes, *, now: datetime) -> list[dict[str, Any]]
             f"Explicit application window {start.isoformat()} to {end.isoformat()} "
             f"(deadline {end.isoformat()})."
         )
-    title = _opp_title(text, body) or "NTU scholarship opportunity"
+    title = _opp_title(text, body) or "University scholarship opportunity"
     audience, audience_declared = _opp_audience(text)
     quote = str(window.get("context") or "").strip()
     evidence_text = f' Source row evidence: "{quote}".' if quote else ""
@@ -1670,11 +1670,11 @@ def parse_ntu_opportunity(body: bytes, *, now: datetime) -> list[dict[str, Any]]
         "title": title,
         "summary": summary[:700],
         "link": "",
-        "id": f"ntu-opportunity:{valid_from_iso or 'unknown'}:{deadline_iso}:{title[:80]}",
+        "id": f"university-opportunity:{valid_from_iso or 'unknown'}:{deadline_iso}:{title[:80]}",
         "published": "",
         "date_precision": precision,
         "category": "opportunity",
-        "publisher": "Nanyang Technological University (NTU)",
+        "publisher": "Example University",
         "valid_from": valid_from_iso,
         "valid_until": deadline_iso,
         "deadline": deadline_iso,
@@ -1850,14 +1850,14 @@ def parse_source(
         return parse_github_releases(body, max_items=max_items)
     if kind == "github_search":
         return parse_github_search(body, max_items=max_items)
-    if kind == "ntu_json":
-        return parse_ntu_stories(body, max_items=max_items, now=now)
+    if kind == "university_json":
+        return parse_university_stories(body, max_items=max_items, now=now)
     if kind == "nea_forecast":
         return parse_nea_forecast(body, now=now or datetime.now(timezone.utc))
     if kind == "smrt_notice":
         return parse_smrt_planned_notice(body, now=now or datetime.now(timezone.utc))
-    if kind == "ntu_opportunity":
-        return parse_ntu_opportunity(body, now=now or datetime.now(timezone.utc))
+    if kind == "university_opportunity":
+        return parse_university_opportunity(body, now=now or datetime.now(timezone.utc))
     if kind == LTA_TRAIN_ALERTS_KIND:
         return parse_lta_train_alerts(body, now=now, max_items=max_items)
     if kind == "web_json":
@@ -2045,7 +2045,7 @@ def _matches_any(text: str, terms: tuple[str, ...]) -> bool:
 
 def _news_class(source: Any) -> str:
     text = str(source or "").strip().lower()
-    if text in {"campus", "ntu", "ntu_json", "www.ntu.edu.sg"}:
+    if text in {"campus", "university", "university_json", "www.university.example"}:
         return "campus"
     if text in {"technology", "tech", "cna", "cna_rss", "www.channelnewsasia.com"}:
         return "technology"
@@ -2057,7 +2057,7 @@ def public_item_relevant(source: Any, title: Any, summary: Any = "", content_typ
 
     - ``technology`` (CNA): the TITLE must carry a concrete technology term;
       generic business/crime headlines are rejected regardless of source.
-    - ``campus`` (NTU): student-life/opportunity/tech titles are kept; a pure
+    - ``campus`` (example university): student-life/opportunity/tech titles are kept; a pure
       researcher-achievement title is rejected unless a strong technology term
       is present. This is not a blanket campus-news drop.
     - any other source: unchanged (returns True) so existing feeds are unaffected.
@@ -2081,7 +2081,7 @@ def cna_title_relevant(title: Any) -> bool:
     return public_item_relevant("technology", title)
 
 
-def ntu_title_relevant(title: Any) -> bool:
+def university_title_relevant(title: Any) -> bool:
     return public_item_relevant("campus", title)
 
 
@@ -2641,7 +2641,7 @@ def _collect_one(
         parse_body = response.body
         parse_kind = kind
         if (renderer is not None
-                and kind in {"web_page", "ntu_opportunity"}
+                and kind in {"web_page", "university_opportunity"}
                 and bool(policy.get("native_render_fallback_enabled", False))
                 and bool(policy.get("native_render_consent", False))
                 and classify_web_page(parse_body) == PAGE_DYNAMIC):
@@ -2663,7 +2663,7 @@ def _collect_one(
         # concurrency and the provider 429 cooldown. A `blocked` challenge or a
         # private/rejected URL is never eligible here and never consumes budget.
         if (firecrawl is not None
-                and kind in {"web_page", "ntu_opportunity"}
+                and kind in {"web_page", "university_opportunity"}
                 and classify_web_page(parse_body) == PAGE_DYNAMIC):
             try:
                 scraped = firecrawl.scrape(
@@ -2729,7 +2729,7 @@ def _collect_one(
     # candidate merely because it arrived on a vetted news feed. Non-news sources
     # are unaffected (public_item_relevant returns True for unknown classes).
     item_class = _news_class(host) or _news_class(kind)
-    if item_class and kind != "ntu_opportunity":
+    if item_class and kind != "university_opportunity":
         parsed = [
             row for row in parsed
             if public_item_relevant(item_class, row.get("title"), row.get("summary"),
@@ -2741,7 +2741,7 @@ def _collect_one(
         link = str(row.get("link") or "")
         if host in ARTICLE_HOSTS:
             # Display-only: normalize/validate the link; never fetch it.
-            link = safe_article_link(NTU_BASE, link)
+            link = safe_article_link(UNIVERSITY_BASE, link)
         rid = str(row.get("id") or "").strip() or hashlib.sha256(
             str(link or row.get("title") or "").encode("utf-8")
         ).hexdigest()[:16]
@@ -2757,7 +2757,7 @@ def _collect_one(
             "provenance": str(rec.get("provenance") or ""),
             "tentative": bool(rec.get("tentative", True)),
             "source": sid,
-            # Explicit date precision: date-only NTU evidence is labelled so it
+            # Explicit date precision: date-only example-university evidence is labelled so it
             # is never mistaken for an exact timestamp.
             "date_precision": str(row.get("date_precision") or ""),
             "content_type": str(row.get("content_type") or ""),
@@ -3068,13 +3068,13 @@ def default_seed_sources() -> list[dict[str, Any]]:
             "cadence_minutes": 60,
         },
         {
-            # Official NTU newsroom JSON. Campus NEWS only: it is explicitly NOT
+            # Example university newsroom JSON. Campus NEWS only: it is explicitly NOT
             # a student internship/scholarship/opportunity or calendar feed, and
             # dates are date-only. Relevance-gated to campus/student/tech titles.
-            "kind": "ntu_json",
-            "url": NTU_STORY_ENDPOINT,
-            "provenance": "public vetted seed (official NTU newsroom JSON; campus news, not an opportunity feed)",
-            "interest": "ntu campus news",
+            "kind": "university_json",
+            "url": UNIVERSITY_STORY_ENDPOINT,
+            "provenance": "example seed (example university newsroom JSON; campus news, not an opportunity feed)",
+            "interest": "university campus news",
             "cadence_minutes": 360,
         },
         {

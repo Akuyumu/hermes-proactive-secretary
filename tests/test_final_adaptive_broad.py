@@ -25,7 +25,7 @@ from proactive_pilot.state import StateStore  # noqa: E402
 from proactive_pilot.watchstore import apply_action  # noqa: E402
 
 NOW = "2026-10-03T12:00:00"
-DISCOVERED = "https://www.ntu.edu.sg/news/GetStories/?page=1"
+DISCOVERED = "https://www.university.example/news/GetStories/?page=1"
 PAGE = (
     "<html><head><title>Research update</title>"
     "<meta name=\"description\" content=\"quantum networking\"></head>"
@@ -72,7 +72,7 @@ class FinalAdaptiveBroadTests(unittest.TestCase):
                                    "scope": "public", "semantic": True, "provenance": "model"})
             bridge = FakeSearchBridge({
                 "quantum networking": {"success": True, "data": {"web": [
-                    {"title": "NTU research", "url": DISCOVERED, "description": "d"}]}}})
+                    {"title": "UNIVERSITY research", "url": DISCOVERED, "description": "d"}]}}})
             fetcher = FakeFetcher({
                 "https://www.reddit.com/search.rss": FetchResponse(200, {}, b"<rss></rss>", ""),
                 "https://api.github.com/search/repositories": FetchResponse(200, {}, b'{"items": []}', ""),
@@ -115,7 +115,7 @@ class FinalAdaptiveBroadTests(unittest.TestCase):
             self.assertEqual(discovery["status"], "failed")
             self.assertEqual(discovery["discovered"], 0)
             # No discovered URL was ever fetched.
-            self.assertFalse(any("ntu.edu.sg" in c for c in fetcher.calls))
+            self.assertFalse(any("university.example" in c for c in fetcher.calls))
 
 
 if __name__ == "__main__":

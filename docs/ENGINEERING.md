@@ -1,8 +1,8 @@
 # Engineering
 
-This document is the developer and host-owner view of Hermes Proactive Portal. It complements [Installation](INSTALLATION.md) and the read-only [portal behaviour guide](NATIVE-PORTAL.md). It contains no owner-specific identifiers, accounts, production summaries or private filesystem roots.
+This document is the developer and host-owner view of Hermes Proactive Secretary. It complements [Installation](INSTALLATION.md) and the read-only [portal behaviour guide](NATIVE-PORTAL.md). It contains no owner-specific identifiers, accounts, production summaries or private filesystem roots.
 
-The package version is **1.0.6**. The plugin id is `hermes-proactive-secretary`; the product and repository are also `hermes-proactive-secretary`. The retired `hermes-proactive-portal` id is not read or registered. On first plugin load, owner-only state is copied once from the legacy data root into the new root, without modifying the legacy tree; old owner-facing job names are retired through the ownership ledger.
+The package version is **1.0.7**. The plugin id is `hermes-proactive-secretary`; the public repository is `Akuyumu/hermes-proactive-portal`. The retired legacy plugin id `hermes-proactive-portal` is not read or registered. On first plugin load, owner-only state is copied once from the legacy data root into the new root, without modifying the legacy tree; old owner-facing job names are retired through the ownership ledger.
 
 ## Repository layout
 
@@ -279,7 +279,7 @@ Never use `git reset --hard`, `git clean`, or a blanket checkout to undo this ch
 
 ## Release and packaging
 
-Package version and metadata are authoritative in `plugin.yaml` and the release-export inputs; this documentation does not set them. `main` is the production/stable branch; a `dev` branch, if used later, is experimental and not the live install source. Release tag `v1.0.0` marks the tested `main` commit. For an immutable pin, resolve the immutable 40-character commit SHA and pass it through the native `--ref` argument.
+Package version and metadata are authoritative in `plugin.yaml` and the release-export inputs; this documentation does not set them. `main` is the production/stable branch and the source of released installs; `dev` is the active development branch. Release tags mark tested `main` commits. For an immutable pin, resolve the immutable 40-character commit SHA and pass it through the native `--ref` argument.
 
 Repository developer tooling lives under `scripts/` (for example `scripts/release_export.py`) and is excluded from the exported archive; the old root `release_export.py` is a compatibility shim only. This is distinct from the shipped `runners/*.py` templates and from the profile-installed scripts under the active profile's `scripts/` directory, which the native scheduler runs after an explicit setup.
 

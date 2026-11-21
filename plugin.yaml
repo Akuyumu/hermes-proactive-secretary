@@ -1,5 +1,5 @@
 name: hermes-proactive-secretary
-version: 1.0.6
+version: 1.0.7
 kind: standalone
 platforms:
   - linux

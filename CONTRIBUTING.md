@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Hermes Proactive Portal. This is a Hermes plugin, not a separate assistant: it inherits the owning profile's tools, connectors, memory and approval rules. Please keep that boundary intact.
+Thanks for helping improve Hermes Proactive Secretary. This is a Hermes plugin, not a separate assistant: it inherits the owning profile's tools, connectors, memory and approval rules. Please keep that boundary intact.
 
 ## Start here
 

@@ -1,49 +1,52 @@
-# Hermes Proactive Portal
+# Hermes Proactive Secretary
 
 **A little less checking. A little more done.**
 
-Hermes Proactive Portal helps Hermes stay useful between conversations. It works alongside your Hermes profile, follows the sources you have authorised, prepares useful work, and brings you a short update when something genuinely deserves attention.
-
-Think of it as a private secretary with your existing access — not a separate assistant and not a second memory or permission system. It uses the same profile, model, skills, tools, connectors and memory as an ordinary Hermes session. Sources that are unavailable or not connected stay unavailable, and your existing approvals still apply.
-
-Before installing, read [Installation](docs/INSTALLATION.md). It covers the host compatibility requirement and the optional host patch, so you can check compatibility before running any command.
+Hermes Proactive Secretary keeps Hermes useful between conversations. It works alongside your existing Hermes profile, follows the sources you authorise, prepares useful work, and brings you a short update when something deserves attention. It uses the same profile, model, skills, tools, connectors and memory as any other Hermes session.
 
 ![How the portal works: authorised sources feed a scheduled Hermes session that prepares useful work and proposes a notice through your existing notification gates](docs/assets/how-it-works.svg)
 
 ## What it does
 
 - **Keeps watch over what matters.** Follow selected mail, calendars, tasks, public feeds and topics in one place.
-- **Gives you a head start.** Prepare private briefings, checklists and drafts for responsibilities you have accepted.
-- **Suggests the next useful move.** Within your existing authority, it can look beyond explicitly accepted responsibilities to notice a change, prepare the follow-up, and suggest what to do next.
-- **Carries corrections and follow-up into later runs.** It keeps your correction and the follow-up, while temporary scope stays temporary.
+- **Gives you a head start.** Prepare briefings, checklists and drafts for responsibilities you have accepted.
+- **Suggests the next useful move.** Within your existing authority, it can notice a change, prepare the follow-up and suggest what to do next.
+- **Carries corrections and follow-up into later runs.** Corrections stick, follow-ups stay open, and temporary scope stays temporary.
 - **Respects your pace.** Quiet hours, cooldowns, an optional daily cap and simple pause controls.
+- **Keeps you in control.** Every external send, publication, purchase, booking or calendar/task change still needs your approval through the normal Hermes gates.
 
-For example, it might prepare a short checklist before a recurring meeting, flag a changed deadline in an authorised calendar, or draft a follow-up for something you asked it to track. These are illustrations. The portal only sees what your profile can already access.
+For example, it can prepare a short checklist before a recurring meeting, flag a changed deadline in an authorised calendar, or draft a follow-up for something you asked it to track. These are illustrations. The portal only sees what your profile can already access.
 
-## Getting started
+## Current state
 
-Install the plugin, enable it, then check the result:
+- Version: **1.0.7**
+- Plugin id: `hermes-proactive-secretary`
+- Command: `hermes secretary`
+- `main` carries stable releases; `dev` is the active development branch.
+
+## Install
 
 ```bash
-hermes plugins install Akuyumu/hermes-proactive-secretary --no-enable
+hermes plugins install Akuyumu/hermes-proactive-portal --no-enable
 hermes plugins enable hermes-proactive-secretary
 hermes secretary doctor
 ```
 
-Prepare a local setup so you can try it without messaging anyone. This normal setup creates the routine monitoring and reminder schedules and keeps output local rather than sending it externally:
+Then prepare your first-run setup:
 
 ```bash
-hermes secretary setup --deliver local
+hermes secretary setup
 ```
 
-The background portal itself remains separately opt-in. Preview a schedule and enable it explicitly; nothing is created for the portal until you do. This example runs every two hours:
+The setup flow asks for the few choices it cannot safely guess, such as timezone, delivery and which sources you want it to read. You can start with local-only output and enable delivery later.
 
-```bash
-hermes secretary job preview --schedule "0 */2 * * *"
-hermes secretary job enable --schedule "0 */2 * * *"
+Desktop users can use the native consent link:
+
+```text
+hermes://plugin/install?repo=Akuyumu/hermes-proactive-portal&enable=1
 ```
 
-Setup does not activate the portal by itself, and private sources stay off until you choose them.
+The [Installation guide](docs/INSTALLATION.md) covers host compatibility, optional setup, upgrades and removal.
 
 ## Everyday controls
 
@@ -58,35 +61,26 @@ In chat:
 From the terminal:
 
 ```bash
+hermes secretary status
 hermes secretary job status
 hermes secretary job pause
 hermes secretary job resume
 ```
 
-A global `hermes secretary pause` stops collection and future notices too. The portal's own final answer stays local; when something is worth telling you, it proposes a notice through the existing monitoring gates rather than sending through two paths.
+A global `hermes secretary pause` stops collection and future notices too.
 
-## A note on installation
+## What it will not do
 
-This is a real Hermes plugin, with a native CLI, tools and hooks. On some Hermes versions, the current deployment also needs the included host compatibility patch. You decide separately whether to apply that host update; without it, the strict model lane may be unavailable. See [Installation](docs/INSTALLATION.md) for the step-by-step setup and [Engineering](docs/ENGINEERING.md) for the host details.
-
-The repository is private, so installation needs your existing GitHub access. There is no new account or OAuth connection. Desktop users can also use the native consent link:
-
-```text
-hermes://plugin/install?repo=Akuyumu/hermes-proactive-secretary&enable=1
-```
-
-The optional client component and refresh behaviour depend on your installed client. The [official plugin guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins) describes the native flow.
-
-The native plugin id is `hermes-proactive-secretary`, and commands are `hermes secretary`; existing state is copied once from the legacy data root on first load. This release is version 1.0.6.
+It will not send, publish, book, purchase or change your calendar or tasks without your approval. It will not read an account or source you have not authorised, and it does not create a second memory, permission system or approval path. It reports blocked, failed and deferred sources honestly rather than pretending coverage is complete.
 
 ## Learn more
 
 - [Installation](docs/INSTALLATION.md)
 - [Agent-assisted setup](docs/AGENT_SETUP.md)
-- [Repository layout](docs/ENGINEERING.md#repository-layout)
-- [Contributing](CONTRIBUTING.md)
 - [Operations guide](docs/operations.md)
 - [Background portal details](docs/NATIVE-PORTAL.md)
+- [Engineering notes](docs/ENGINEERING.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## License
 
