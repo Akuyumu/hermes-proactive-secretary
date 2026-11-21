@@ -39,7 +39,7 @@ QUEUE_SCHEMA = 1
 # Must stay identical to cron.PORTAL_JOB_NAME.  Kept as a local literal so this
 # transport never imports a top-level ``cron`` module that could be the native
 # scheduler package or this plugin's wrapper depending on launch context.
-PORTAL_JOB_NAME = "hermes-proactive-portal-portal"
+PORTAL_JOB_NAME = "hermes-proactive-secretary-portal"
 
 MAX_PENDING = 32
 MAX_SEEN = 512

@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_plugin_package():
-    name = "hermes_proactive_portal_cron_test"
+    name = "hermes_proactive_secretary_cron_test"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)]
     )
@@ -33,37 +33,37 @@ def _load_plugin_package():
 
 
 _PKG = _load_plugin_package()
-sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
 runner_install = importlib.import_module(f"{_PKG.__name__}.runner_install")
 
 SPEC = cron_mod.CronJobSpec(
-    name="proactive-portal-pilot",
+    name="proactive-secretary-pilot",
     schedule="*/15 * * * *",
     script=cron_mod.PILOT_SCRIPT,
     deliver="origin",
-    workdir="/plugins/hermes-proactive-portal",
+    workdir="/plugins/hermes-proactive-secretary",
 )
 
 SAMPLE_LIST = """\
   job-7 [active]
-    Name:      proactive-portal-pilot
+    Name:      proactive-secretary-pilot
     Schedule:  */15 * * * *
     Next run:  2026-10-05T12:15:00+08:00
     Deliver:   origin
-    Script:    proactive_portal_runner.py
+    Script:    proactive_secretary_runner.py
     Mode:      no-agent (script stdout delivered directly)
-    Workdir:   /plugins/hermes-proactive-portal
+    Workdir:   /plugins/hermes-proactive-secretary
     Last run:  2026-10-05T12:00:00+08:00  ok
   job-9 [paused]
-    Name:      proactive-portal-reminders
+    Name:      proactive-secretary-reminders
     Schedule:  * * * * *
     Next run:
     Deliver:   local
-    Script:    proactive_portal_reminder_runner.py
+    Script:    proactive_secretary_reminder_runner.py
     Mode:      no-agent (script stdout delivered directly)
-    Workdir:   /plugins/hermes-proactive-portal
+    Workdir:   /plugins/hermes-proactive-secretary
     Last run:    never
 """
 
@@ -203,12 +203,12 @@ class ListParsingTests(FakeHermesMixin, unittest.TestCase):
         first, second = jobs
         self.assertEqual(first["id"], "job-7")
         self.assertEqual(first["state"], "active")
-        self.assertEqual(first["name"], "proactive-portal-pilot")
+        self.assertEqual(first["name"], "proactive-secretary-pilot")
         self.assertEqual(first["schedule"], "*/15 * * * *")
         self.assertEqual(first["deliver"], "origin")
         self.assertEqual(first["script"], cron_mod.PILOT_SCRIPT)
         self.assertEqual(first["mode"], "no-agent (script stdout delivered directly)")
-        self.assertEqual(first["workdir"], "/plugins/hermes-proactive-portal")
+        self.assertEqual(first["workdir"], "/plugins/hermes-proactive-secretary")
         self.assertIn("2026-10-05T12:00:00", first["last_run"])
         self.assertEqual(second["id"], "job-9")
         self.assertEqual(second["state"], "paused")

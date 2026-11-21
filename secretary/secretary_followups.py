@@ -9,7 +9,7 @@ module is the thin authority seam:
   or shared turn, or reuse a stale/foreign session.
 * ``due``/``record_check``/``queue_notice``/``resolve_notice`` are portal-only.
   They require the same verified owned native portal execution identity used by
-  ``portal_propose_notice`` before any follow-up or notice state is written.
+  ``secretary_propose_notice`` before any follow-up or notice state is written.
 * Notice proposals go through the existing gated ``portal_notices`` transport.
   A one-shot follow-up is frozen durably (same stable event key/id) before the
   enqueue attempt, so a restart can never create a second send path. An
@@ -40,12 +40,12 @@ from typing import Any, Mapping
 
 try:  # package import (installed host) or top-level test import
     from .. import paths
-    from . import portal_responsibilities as responsibilities
+    from . import secretary_responsibilities as responsibilities
 except ImportError:  # pragma: no cover - direct module execution
     import paths  # type: ignore[no-redef]
-    from portal import portal_responsibilities as responsibilities  # type: ignore[no-redef]
+    from secretary import secretary_responsibilities as responsibilities  # type: ignore[no-redef]
 
-TOOL_NAME = "portal_followup"
+TOOL_NAME = "secretary_followup"
 MAX_ID = 96
 MAX_QUOTE = 2000
 MAX_MESSAGE = 350
@@ -237,9 +237,9 @@ def _resolve_stop_target(store: Any, text: str) -> tuple[dict[str, Any] | None, 
 def _portal_identity(ctx: Any, store: Any) -> tuple[dict[str, str] | None, dict[str, Any] | None]:
     """Reuse the existing verified owned portal execution identity."""
     try:
-        from .portal_portal_notices import _host_identity
+        from .secretary_portal_notices import _host_identity
     except ImportError:  # pragma: no cover - direct module execution
-        from portal.portal_portal_notices import _host_identity  # type: ignore[no-redef]
+        from secretary.secretary_portal_notices import _host_identity  # type: ignore[no-redef]
     identity, refusal = _host_identity(ctx)
     if refusal is not None:
         return None, refusal
@@ -867,7 +867,7 @@ def register_tool(ctx: Any, *, register_tool: Any = None) -> dict[str, Any]:
     try:
         register(
             TOOL_NAME,
-            "portal",
+            "secretary",
             TOOL_SCHEMA,
             tool_handler(ctx),
             description=TOOL_DESCRIPTION,

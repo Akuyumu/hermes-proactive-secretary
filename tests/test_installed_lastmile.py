@@ -114,7 +114,7 @@ class InstalledLastMileTests(unittest.TestCase):
     def _env(self, **extra: str) -> dict[str, str]:
         env = dict(os.environ, HOME=str(self.home), HERMES_HOME=str(self.profile),
                    TMPDIR=str(self.root), PYTHONDONTWRITEBYTECODE="1",
-                   HERMES_PROACTIVE_PORTAL_DATA=str(self.data),
+                   HERMES_PROACTIVE_SECRETARY_DATA=str(self.data),
                    UV_OFFLINE="1", TZ="UTC")
         # The bootstrap is already isolated; never pass candidate source/test/CWD
         # paths or a managed-venv facade through to the native child.
@@ -135,13 +135,13 @@ class InstalledLastMileTests(unittest.TestCase):
     def test_code_only_package_loads_through_actual_plugin_manager(self):
         package = self.root / "secretary.tar.gz"
         release_export.build_package(package, root=ROOT)
-        plugin_dir = self.profile / "plugins" / "hermes-proactive-portal"
+        plugin_dir = self.profile / "plugins" / "hermes-proactive-secretary"
         plugin_dir.mkdir(parents=True)
         with tarfile.open(package) as archive:
             archive.extractall(plugin_dir)
-        self.assertTrue((plugin_dir / "runners" / "proactive_portal_prepare_runner.py").is_file())
+        self.assertTrue((plugin_dir / "runners" / "proactive_secretary_prepare_runner.py").is_file())
         (self.profile / "config.yaml").write_text(
-            "plugins:\n  enabled:\n    - hermes-proactive-portal\n", encoding="utf-8")
+            "plugins:\n  enabled:\n    - hermes-proactive-secretary\n", encoding="utf-8")
         code = r'''
 import argparse, contextlib, io, json, os, sys
 from pathlib import Path
@@ -162,7 +162,7 @@ from hermes_cli.plugins import discover_plugins, get_plugin_manager
 discover_plugins(force=True)
 mgr = get_plugin_manager()
 loaded = [p for p in mgr._plugins.values()
-          if p.manifest and p.manifest.name == "hermes-proactive-portal"]
+          if p.manifest and p.manifest.name == "hermes-proactive-secretary"]
 assert len(loaded) == 1, loaded
 assert not loaded[0].error, loaded[0].error
 plugin_paths = []
@@ -188,11 +188,11 @@ for obj in (loaded[0], loaded[0].manifest):
 assert plugin_paths, ("plugin not loaded from extracted install", str(plugin_dir))
 assert any(plugin_dir == Path(path) or plugin_dir in Path(path).parents
            for path in plugin_paths), plugin_paths
-assert "portal" in mgr._cli_commands
-assert "portal_responsibility" in loaded[0].tools_registered
-assert "portal_onboarding" in loaded[0].tools_registered
+assert "secretary" in mgr._cli_commands
+assert "secretary_responsibility" in loaded[0].tools_registered
+assert "secretary_onboarding" in loaded[0].tools_registered
 assert "pre_llm_call" in loaded[0].hooks_registered
-cmd = mgr._cli_commands["portal"]
+cmd = mgr._cli_commands["secretary"]
 parser = argparse.ArgumentParser()
 cmd["setup_fn"](parser)
 ns = parser.parse_args(["status", "--json"])
@@ -220,9 +220,9 @@ print("\nRESULT", json.dumps({"rc": rc, "tools": sorted(loaded[0].tools_register
         self.assertTrue(payload["plugin_paths"])
         self.assertTrue(any(str(plugin_dir.resolve()) in path
                             for path in payload["plugin_paths"]))
-        self.assertIn("portal_responsibility", payload["tools"])
+        self.assertIn("secretary_responsibility", payload["tools"])
         self.assertIn("pre_llm_call", payload["hooks"])
-        self.assertIn("portal", payload["commands"])
+        self.assertIn("secretary", payload["commands"])
         self.assertTrue(payload["jobs"]["available"])
         self.assertEqual(payload["jobs"]["state"], "none")
         self.assertNotIn("Traceback", proc.stderr)
@@ -230,7 +230,7 @@ print("\nRESULT", json.dumps({"rc": rc, "tools": sorted(loaded[0].tools_register
     def test_installed_cli_prepare_dispatches_with_fake_only_llm_wire(self):
         package = self.root / "secretary.tar.gz"
         release_export.build_package(package, root=ROOT)
-        plugin_dir = self.profile / "plugins" / "hermes-proactive-portal"
+        plugin_dir = self.profile / "plugins" / "hermes-proactive-secretary"
         plugin_dir.mkdir(parents=True)
         with tarfile.open(package) as archive:
             archive.extractall(plugin_dir)
@@ -256,7 +256,7 @@ print("\nRESULT", json.dumps({"rc": rc, "tools": sorted(loaded[0].tools_register
                     "provenance": "conversation", "observed_at": T0.isoformat()}],
             now=T0)
         (self.profile / "config.yaml").write_text(
-            "plugins:\n  enabled:\n    - hermes-proactive-portal\n", encoding="utf-8")
+            "plugins:\n  enabled:\n    - hermes-proactive-secretary\n", encoding="utf-8")
         code = r'''
 import argparse, json, os, sys
 from pathlib import Path
@@ -272,12 +272,12 @@ from hermes_cli.plugins import discover_plugins, get_plugin_manager
 discover_plugins(force=True)
 mgr = get_plugin_manager()
 loaded = [p for p in mgr._plugins.values()
-          if p.manifest and p.manifest.name == "hermes-proactive-portal"]
+          if p.manifest and p.manifest.name == "hermes-proactive-secretary"]
 assert len(loaded) == 1 and not loaded[0].error, loaded
-portal_cli = next(m for n, m in sys.modules.items()
-                     if n.endswith(".portal_cli")
+secretary_cli = next(m for n, m in sys.modules.items()
+                     if n.endswith(".secretary_cli")
                      and hasattr(m, "set_native_context"))
-assert plugin_dir in Path(portal_cli.__file__).resolve().parents
+assert plugin_dir in Path(secretary_cli.__file__).resolve().parents
 from proactive_pilot import responsibilities as R
 from proactive_pilot.clock import SeededClock
 from proactive_pilot.native_runtime import bind_model_lane
@@ -304,16 +304,16 @@ class Ctx:
         return self.settings.get(key, default)
 
 ctx = Ctx()
-portal_cli.set_native_context(ctx)
+secretary_cli.set_native_context(ctx)
 bind_model_lane(ctx, allowed=True, status={
     "strict_active": True, "configured_model_calls_allowed": True})
-cmd = mgr._cli_commands["portal"]
+cmd = mgr._cli_commands["secretary"]
 parser = argparse.ArgumentParser()
 cmd["setup_fn"](parser)
 ns = parser.parse_args(["prepare", "--now", os.environ["SEEDED_NOW"]])
 rc = cmd["handler_fn"](ns)
 from proactive_pilot.state import StateStore
-store = StateStore(os.path.join(os.environ["HERMES_PROACTIVE_PORTAL_DATA"], "var"),
+store = StateStore(os.path.join(os.environ["HERMES_PROACTIVE_SECRETARY_DATA"], "var"),
                    SeededClock(os.environ["SEEDED_NOW"]))
 records = R.list_records(store)
 print("\nRESULT", json.dumps({

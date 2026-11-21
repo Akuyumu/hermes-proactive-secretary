@@ -41,7 +41,7 @@ from urllib.parse import urlencode
 from . import ownerpaths as _ownerpaths
 
 
-class PortalLibraryUnavailable(RuntimeError):
+class SecretaryLibraryUnavailable(RuntimeError):
     """The shipped productivity-secretary library could not be located.
 
     Raised (or surfaced as a failed ``SourceResult``) instead of leaking a bare
@@ -115,7 +115,7 @@ def _insert_secretary_src() -> str:
     """Put the resolved library on ``sys.path`` or fail closed with a message."""
     src = resolve_secretary_src()
     if not Path(src).is_dir():
-        raise PortalLibraryUnavailable(secretary_library_error())
+        raise SecretaryLibraryUnavailable(secretary_library_error())
     if src not in sys.path:
         sys.path.insert(0, src)
     return src
@@ -309,7 +309,7 @@ def safe_source_error(exc: Any, *, kind: str = "source") -> str:
     """
     if isinstance(exc, SourceTimeout):
         return f"{kind} budget-deferred"
-    if isinstance(exc, PortalLibraryUnavailable):
+    if isinstance(exc, SecretaryLibraryUnavailable):
         return str(exc)
     text = exc if isinstance(exc, str) else str(exc)
     lowered = text.lower()

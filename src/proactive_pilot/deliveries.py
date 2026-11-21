@@ -57,7 +57,7 @@ def empty_store() -> dict[str, Any]:
 def _report(message: str) -> None:
     """Diagnostic only; never let a ledger problem break delivery."""
     try:
-        sys.stderr.write(f"proactive-portal: delivery ledger: {message}\n")
+        sys.stderr.write(f"proactive-secretary: delivery ledger: {message}\n")
         sys.stderr.flush()
     except Exception:  # noqa: BLE001 - diagnostics must never raise
         pass

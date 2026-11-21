@@ -27,7 +27,7 @@ from proactive_pilot.clock import SG  # noqa: E402
 from proactive_pilot.state import StateStore  # noqa: E402
 
 T0 = datetime(2026, 10, 2, 12, 0, 0, tzinfo=SG)
-LAUNCHER = ROOT / "runners" / "proactive_portal_reminder_runner.py"
+LAUNCHER = ROOT / "runners" / "proactive_secretary_reminder_runner.py"
 
 
 def iso(dt: datetime) -> str:
@@ -207,7 +207,7 @@ class TestAddEvent(ReminderTestCase):
 
     def test_real_getter_validates_alias_calendar_and_normalizes(self):
         client = SyntheticCalendarClient(confirmed(T0 + timedelta(hours=2)))
-        getter = R.PortalEventGetter(client_factory=lambda alias: client, aliases=["primary"])
+        getter = R.SecretaryEventGetter(client_factory=lambda alias: client, aliases=["primary"])
         self.assertFalse(getter.get("intruder", "primary", "e1")["ok"])
         self.assertFalse(getter.get("primary", "someone-else", "e1")["ok"])
         obs = getter.get("primary", "primary", "e1")
@@ -751,7 +751,7 @@ class TestSubprocessCli(ReminderTestCase):
         # fake profile that explicitly enables the plugin; never read a live
         # profile config.
         (self.root / "config.json").write_text(json.dumps(
-            {"plugins": {"enabled": ["hermes-proactive-portal"]}}), encoding="utf-8")
+            {"plugins": {"enabled": ["hermes-proactive-secretary"]}}), encoding="utf-8")
         self._old_home = os.environ.get("HERMES_HOME")
         os.environ["HERMES_HOME"] = str(self.root)
         self.addCleanup(self._restore_home)

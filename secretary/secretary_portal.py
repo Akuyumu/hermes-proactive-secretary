@@ -13,11 +13,11 @@ from typing import Any
 
 try:  # package import
     from .. import cron, paths
-    from . import portal_portal_controls as portal_controls
+    from . import secretary_portal_controls as portal_controls
 except ImportError:  # direct/standalone import
     import cron  # type: ignore
     import paths  # type: ignore
-    from portal import portal_portal_controls as portal_controls  # type: ignore
+    from secretary import secretary_portal_controls as portal_controls  # type: ignore
 
 LIMITATIONS = (
     "notifications depend on an already-enabled monitoring lane; a proposal is not "
@@ -54,7 +54,7 @@ PROMPT = (
     "Persist progress, evidence and any next due follow-up in native memory or "
     "existing work artifacts; never create a parallel memory, preference, "
     "scheduling or permission engine. Consult any additional active follow-ups "
-    "through the typed portal_followup tool; when there are none or it is "
+    "through the typed secretary_followup tool; when there are none or it is "
     "unavailable, use your original initiative independently. Follow-ups never "
     "grant new authority and must never add a schedule or mutate this per-watch "
     "prompt. Apply explicit corrections, preserve "
@@ -62,7 +62,7 @@ PROMPT = (
     "or non-response as a request to drop an obligation or as learned dislike. "
     "Leave every approval-required action unexecuted and surface a concrete "
     "pending blocker with the exact approval needed. For a user notice, use "
-    "portal_propose_notice so the existing monitoring gates decide delivery; "
+    "secretary_propose_notice so the existing monitoring gates decide delivery; "
     "never send directly or attempt to evade plugin controls. Keep the native "
     "final local. Prefer meaningful silence when no changed evidence warrants "
     "action; never spam or fill quotas. Learned comfort or preference never grants "
@@ -480,7 +480,7 @@ def portal_command(args: Any, *, backend: Any = None, native_ctx: Any = None) ->
             return _failure(
                 action, "globally-paused",
                 (why or "global pause is active")
-                + "; run `hermes portal resume` before this action",
+                + "; run `hermes secretary resume` before this action",
                 as_json, name=name)
 
     try:

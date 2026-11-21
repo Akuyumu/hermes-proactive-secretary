@@ -3,8 +3,8 @@
 This module is the thin foreground seam over the validated
 ``proactive_pilot.responsibilities`` ledger. It exposes:
 
-* ``hermes portal responsibilities ...`` for an explicit foreground caller;
-* one registered ``portal_responsibility`` tool for the ordinary
+* ``hermes secretary responsibilities ...`` for an explicit foreground caller;
+* one registered ``secretary_responsibility`` tool for the ordinary
   conversation surface; and
 * ``responsibility_context``/``remember_human_turn`` for the registered
   ``pre_llm_call`` hook.
@@ -292,7 +292,7 @@ def _prepare_after_capture(ctx: Any, rec: Mapping[str, Any], desired: str,
     if ctx is None:
         return {"attempted": False, "reason": "no foreground context"}
     try:
-        from . import portal_autonomy as autonomy
+        from . import secretary_autonomy as autonomy
         if accepted:
             return {"attempted": True, **autonomy.prepare_accepted(ctx, rec["id"])}
         provenance = rec.get("provenance") or {}
@@ -420,7 +420,7 @@ def dispatch(args: Mapping[str, Any], *, ctx: Any = None, now: Any = None) -> di
         rid = _clean(args.get("responsibility_id"), 96)
         return {"ok": True, "responsibility": R.inspect(store, rid, include_claim=False)}
     if action == "request_approval":
-        from . import portal_approvals as approvals
+        from . import secretary_approvals as approvals
         if ctx is None:
             raise ValueError("approval questions require a foreground conversation context")
         return approvals.request(
@@ -430,12 +430,12 @@ def dispatch(args: Mapping[str, Any], *, ctx: Any = None, now: Any = None) -> di
             session_id=args.get("session_id"),
             responsibility_id=args.get("responsibility_id"))
     if action == "approvals":
-        from . import portal_approvals as approvals
+        from . import secretary_approvals as approvals
         if ctx is None:
             raise ValueError("approvals require a foreground conversation context")
         return approvals.pending(ctx)
     if action in {"approve", "approve_approval"}:
-        from . import portal_approvals as approvals
+        from . import secretary_approvals as approvals
         if ctx is None:
             raise ValueError("approval requires a foreground conversation context")
         return approvals.approve(
@@ -444,7 +444,7 @@ def dispatch(args: Mapping[str, Any], *, ctx: Any = None, now: Any = None) -> di
             session_id=args.get("session_id"),
             revoked=_revocation_check(ctx))
     if action in {"cancel_approval", "reject_approval"}:
-        from . import portal_approvals as approvals
+        from . import secretary_approvals as approvals
         if ctx is None:
             raise ValueError("approval requires a foreground conversation context")
         return approvals.cancel(ctx, reference=args.get("approval_ref"))
@@ -566,7 +566,7 @@ def register_tool(ctx: Any, *, register_tool: Any = None) -> dict[str, Any]:
         return {"responsibility_tool": False, "error": "register_tool unavailable"}
     try:
         register(
-            "portal_responsibility", "portal", TOOL_SCHEMA, tool_handler(ctx),
+            "secretary_responsibility", "secretary", TOOL_SCHEMA, tool_handler(ctx),
             description=("Capture or manage an accepted responsibility from a real current "
                          "human commitment. Tentative opportunities stay tentative. "
                          "Handoff only inspects a current artifact and never executes."),
@@ -620,7 +620,7 @@ def responsibility_context(ctx: Any, *, platform: Any, user_message: Any,
         return None
     pending_lines = ""
     try:
-        from .portal_approvals import pending as pending_approvals
+        from .secretary_approvals import pending as pending_approvals
         rows = pending_approvals(ctx).get("approvals") or []
         if rows:
             pending_lines = (
@@ -638,11 +638,11 @@ def responsibility_context(ctx: Any, *, platform: Any, user_message: Any,
     commitment = is_commitment(turn.get("text"))
     if not commitment and not pending_lines:
         return None
-    lines = ["[Proactive Portal responsibility]"]
+    lines = ["[Proactive Secretary responsibility]"]
     if commitment:
         lines.extend([
             "The user's current turn appears to contain a clear personal commitment. "
-            "Use the portal_responsibility tool with action=capture only if it really is "
+            "Use the secretary_responsibility tool with action=capture only if it really is "
             "a commitment the user made. Pass this exact session_id and quote the exact "
             f"user words in evidence_quote. Current session id: {sid}. "
             "If it is merely an inferred opportunity, use kind=opportunity (tentative) or "

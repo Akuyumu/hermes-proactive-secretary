@@ -20,7 +20,7 @@ class ParentReleaseControls(unittest.TestCase):
         self._home = tempfile.TemporaryDirectory(dir=ROOT)
         home = pathlib.Path(self._home.name)
         (home / "config.json").write_text(json.dumps(
-            {"plugins": {"enabled": ["hermes-proactive-portal"]}}), encoding="utf-8")
+            {"plugins": {"enabled": ["hermes-proactive-secretary"]}}), encoding="utf-8")
         self._old_home = os.environ.get("HERMES_HOME")
         os.environ["HERMES_HOME"] = str(home)
         self.addCleanup(self._restore)
@@ -34,7 +34,7 @@ class ParentReleaseControls(unittest.TestCase):
 
     def test_default_unchanged_stdout_is_empty(self):
         with tempfile.TemporaryDirectory(dir=ROOT) as d:
-            argv = [sys.executable, str(ROOT/'runners/proactive_portal_runner.py'), '--fixture', 'healthy_empty', '--state-dir', d, '--seeded-clock', '2026-10-03T10:00:00+08:00']
+            argv = [sys.executable, str(ROOT/'runners/proactive_secretary_runner.py'), '--fixture', 'healthy_empty', '--state-dir', d, '--seeded-clock', '2026-10-03T10:00:00+08:00']
             for _ in range(2):
                 p = subprocess.run(argv, capture_output=True, text=True, timeout=30)
                 self.assertEqual(p.returncode, 0, p.stderr)
@@ -44,7 +44,7 @@ class ParentReleaseControls(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT) as d:
             prefs = pathlib.Path(d)/'prefs.json'
             prefs.write_text(json.dumps({'schema':1,'paused':{'active':True,'provenance':'test'}}))
-            p = subprocess.run([sys.executable, str(ROOT/'runners/proactive_portal_runner.py'), '--fixture', 'healthy_empty', '--state-dir', d, '--preferences', str(prefs), '--seeded-clock', '2026-10-03T10:00:00+08:00'], capture_output=True, text=True, timeout=30)
+            p = subprocess.run([sys.executable, str(ROOT/'runners/proactive_secretary_runner.py'), '--fixture', 'healthy_empty', '--state-dir', d, '--preferences', str(prefs), '--seeded-clock', '2026-10-03T10:00:00+08:00'], capture_output=True, text=True, timeout=30)
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertEqual(p.stdout, '', 'Global pause is silent, not a user-facing debug message')
 

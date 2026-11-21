@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_plugin_package():
-    name = "hermes_proactive_portal_naming_test"
+    name = "hermes_proactive_secretary_naming_test"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)]
     )
@@ -35,7 +35,7 @@ def _load_plugin_package():
 
 
 _PKG = _load_plugin_package()
-sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
 
@@ -47,7 +47,7 @@ def _legacy_job(job_id="legacy-1"):
         "schedule": "*/15 * * * *",
         "deliver": "origin",
         "script": cron_mod.MONITORING_SCRIPT,
-        "workdir": "/plugins/hermes-proactive-portal",
+        "workdir": "/plugins/hermes-proactive-secretary",
         "mode": "no-agent",
         "state": "active",
         "enabled": True,
@@ -103,7 +103,7 @@ class CanonicalNamingTests(unittest.TestCase):
         self.assertEqual(names, [cron_mod.MONITORING_JOB_NAME,
                                  cron_mod.REMINDER_JOB_NAME])
         self.assertEqual(cron_mod.MONITORING_JOB_NAME,
-                         "hermes-proactive-portal-monitoring")
+                         "hermes-proactive-secretary-monitoring")
         self.assertNotIn("pilot", names[0])
         self.assertEqual(set(cron_mod.OWNED_JOB_NAMES), set(names))
         self.assertEqual(cron_mod.PILOT_JOB_NAME, cron_mod.MONITORING_JOB_NAME)

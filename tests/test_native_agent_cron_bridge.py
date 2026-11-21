@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_plugin_package():
-    name = "hermes_proactive_portal_native_agent_cron"
+    name = "hermes_proactive_secretary_native_agent_cron"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)]
     )
@@ -36,7 +36,7 @@ cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
 
 def _agent_spec(**overrides):
     values = dict(
-        name="hermes-proactive-portal-agent",
+        name="hermes-proactive-secretary-agent",
         schedule="*/5 * * * *",
         prompt="Summarise my day and report only actionable items.",
     )
@@ -69,7 +69,7 @@ class AgentArgvTests(unittest.TestCase):
         self.assertEqual(argv[4], "Summarise my day and report only actionable items.")
         self.assertNotIn("--no-agent", argv)
         self.assertNotIn("--script", argv)
-        self.assertEqual(argv[argv.index("--name") + 1], "hermes-proactive-portal-agent")
+        self.assertEqual(argv[argv.index("--name") + 1], "hermes-proactive-secretary-agent")
         self.assertEqual(argv[argv.index("--deliver") + 1], "local")
 
     def test_supplied_native_pins_are_individual_argv_tokens(self):
@@ -78,7 +78,7 @@ class AgentArgvTests(unittest.TestCase):
         spec = _agent_spec(
             model="native-model-x", provider="native-provider-y",
             reasoning="high", skills=["calendar", "email"],
-            workdir="/plugins/hermes-proactive-portal", deliver="origin",
+            workdir="/plugins/hermes-proactive-secretary", deliver="origin",
         )
         backend.add_job(spec)
 
@@ -87,7 +87,7 @@ class AgentArgvTests(unittest.TestCase):
             ("--model", "native-model-x"),
             ("--provider", "native-provider-y"),
             ("--reasoning-effort", "high"),
-            ("--workdir", "/plugins/hermes-proactive-portal"),
+            ("--workdir", "/plugins/hermes-proactive-secretary"),
             ("--deliver", "origin"),
         ):
             self.assertEqual(argv[argv.index(flag) + 1], value)

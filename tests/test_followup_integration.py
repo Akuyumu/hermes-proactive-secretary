@@ -1,7 +1,7 @@
 """Synthetic integration acceptance for the 1.0.2 follow-up slice.
 
 These tests exercise the real root registration, the real ``pre_llm_call`` hook,
-the real tool handlers and the real follow-up/portal transports. Only profile
+the real tool handlers and the real follow-up/secretary transports. Only profile
 paths, clock and the native cron execution/ledger are synthetic. Nothing here
 reads private mail, sends a message, touches a live Desktop/Telegram session,
 changes git, installs/releases or uses the network.
@@ -38,12 +38,12 @@ def _load_plugin_package(name: str):
     return module
 
 
-_PKG = _load_plugin_package("hermes_proactive_portal_followup_qa")
+_PKG = _load_plugin_package("hermes_proactive_secretary_followup_qa")
 cron = importlib.import_module(f"{_PKG.__name__}.cron")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
-portal = importlib.import_module(f"{_PKG.__name__}.portal.portal_job")
+portal = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal")
 responsibility_surface = importlib.import_module(
-    f"{_PKG.__name__}.portal.portal_responsibilities")
+    f"{_PKG.__name__}.secretary.secretary_responsibilities")
 
 from proactive_pilot import followups as F  # noqa: E402
 from proactive_pilot import ownerpaths  # noqa: E402
@@ -153,15 +153,15 @@ class FollowupIntegrationTests(unittest.TestCase):
         ctx = Ctx(execution=None)
         result = _PKG._register_conversation(ctx)
         self.assertTrue(result.get("followup_tool"), result)
-        self.assertIn("portal_followup", ctx.tools)
-        return ctx, ctx.tools["portal_followup"]["handler"]
+        self.assertIn("secretary_followup", ctx.tools)
+        return ctx, ctx.tools["secretary_followup"]["handler"]
 
     def _portal(self, **kwargs):
         ctx = Ctx(profile_name=kwargs.pop("profile_name", "A"),
                   execution=self._execution(**kwargs))
         result = _PKG._register_conversation(ctx)
         self.assertTrue(result.get("followup_tool"), result)
-        return ctx, ctx.tools["portal_followup"]["handler"]
+        return ctx, ctx.tools["secretary_followup"]["handler"]
 
     @staticmethod
     def _call(handler, payload):
@@ -989,7 +989,7 @@ class FollowupIntegrationTests(unittest.TestCase):
         self.assertEqual(receipt["event_key"], event_key)
         self.assertTrue(receipt["ref"].startswith("notice-receipt:"))
 
-        # A portal/cron execution can never confirm an owner receipt.
+        # A secretary/cron execution can never confirm an owner receipt.
         portal_denied = self._call(portal_handler, {
             "action": "confirm_receipt", "followup_id": fid,
             "session_id": "s-owner-ack", "evidence_quote": pending_ack,
@@ -1251,7 +1251,7 @@ class FollowupIntegrationTests(unittest.TestCase):
             with self.subTest(label=label):
                 result = _PKG._register_conversation(bad)
                 self.assertTrue(result.get("followup_tool"), result)
-                bad_handler = bad.tools["portal_followup"]["handler"]
+                bad_handler = bad.tools["secretary_followup"]["handler"]
                 refused = self._call(bad_handler, {
                     "action": "record_check", "followup_id": fid,
                     "result": "match", "fingerprint": "bad-fp"})
@@ -1273,7 +1273,7 @@ class FollowupIntegrationTests(unittest.TestCase):
                                quote="Please keep an eye on the secret raw watch marker.")
         self.assertTrue(created["ok"], created)
         prompt = portal.PROMPT
-        self.assertIn("portal_followup", prompt)
+        self.assertIn("secretary_followup", prompt)
         self.assertIn("original initiative", prompt)
         self.assertIn("never grant new authority", prompt)
         self.assertIn("never add a schedule", prompt)
@@ -1283,9 +1283,9 @@ class FollowupIntegrationTests(unittest.TestCase):
     def test_empty_followups_prompt_is_unchanged_and_schema_is_typed(self):
         ctx, _handler = self._foreground()
         before = portal.PROMPT
-        tool = ctx.tools["portal_followup"]
+        tool = ctx.tools["secretary_followup"]
         self.assertEqual(tool["schema"], importlib.import_module(
-            f"{_PKG.__name__}.portal.portal_followups").TOOL_SCHEMA)
+            f"{_PKG.__name__}.secretary.secretary_followups").TOOL_SCHEMA)
         self.assertEqual(tool["schema"]["type"], "object")
         self.assertIs(tool["schema"]["additionalProperties"], False)
         self.assertIn("action", tool["schema"]["required"])

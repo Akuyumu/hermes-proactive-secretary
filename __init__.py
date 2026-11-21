@@ -1,4 +1,4 @@
-"""hermes-proactive-portal plugin entry point.
+"""hermes-proactive-secretary plugin entry point.
 
 ``register(ctx)`` exposes the plugin surface only. It never reads private
 sources, sends messages, arms jobs or mutates access at registration time.
@@ -19,14 +19,14 @@ def _plugin_root() -> Path:
     return Path(__file__).resolve().parent
 
 
-def _setup_portal_cli(subparser) -> None:
-    from .portal.portal_cli import register_cli
+def _setup_secretary_cli(subparser) -> None:
+    from .secretary.secretary_cli import register_cli
     register_cli(subparser)
 
 
-def _handle_portal_cli(args):
-    from .portal.portal_cli import portal_cli_command
-    return portal_cli_command(args)
+def _handle_secretary_cli(args):
+    from .secretary.secretary_cli import secretary_command
+    return secretary_command(args)
 
 
 def _skill_description(skill: Path) -> str:
@@ -51,10 +51,10 @@ def _skill_description(skill: Path) -> str:
 
 
 def _register_conversation(ctx) -> dict:
-    from .portal.portal_context_refresh import register_context_tool
-    from .portal.portal_conversation import register_conversation_surfaces, register_onboarding_tool
-    from .portal.portal_followups import register_tool as register_followup_tool
-    from .portal.portal_responsibilities import register_tool as register_responsibility_tool
+    from .secretary.secretary_context_refresh import register_context_tool
+    from .secretary.secretary_conversation import register_conversation_surfaces, register_onboarding_tool
+    from .secretary.secretary_followups import register_tool as register_followup_tool
+    from .secretary.secretary_responsibilities import register_tool as register_responsibility_tool
     result = register_onboarding_tool(ctx)
     result.update(register_context_tool(ctx))
     result.update(register_responsibility_tool(ctx))
@@ -79,10 +79,10 @@ def register(ctx) -> None:
         from proactive_pilot.data_migration import migrate_for_load
         migrate_for_load()
     except Exception as exc:  # noqa: BLE001 - migration must never block load
-        print(f"proactive-portal: data migration skipped ({type(exc).__name__})",
+        print(f"proactive-secretary: data migration skipped ({type(exc).__name__})",
               file=sys.stderr)
 
-    from .portal import portal_cli as _cli
+    from .secretary import secretary_cli as _cli
     _cli.set_native_context(ctx)
 
     # Model routing is optional, but it is never silently replaced by an
@@ -91,7 +91,7 @@ def register(ctx) -> None:
     # configured-only contract is registered. Deterministic controls and
     # reminders do not depend on this block.
     try:
-        from .portal.portal_models import register_configured_models
+        from .secretary.secretary_models import register_configured_models
         _MODEL_REGISTRATION.update(register_configured_models(ctx))
     except Exception as exc:  # noqa: BLE001 - guard, never a permissive fallback
         _MODEL_REGISTRATION.update({
@@ -102,14 +102,14 @@ def register(ctx) -> None:
             from proactive_pilot.native_runtime import bind_model_lane
             bind_model_lane(
                 ctx, allowed=False, status=dict(_MODEL_REGISTRATION),
-                reason=f"portal model registration failed: {type(exc).__name__}")
+                reason=f"secretary model registration failed: {type(exc).__name__}")
         except Exception:  # noqa: BLE001 - runtime import failure also stays closed
             pass
 
-    skill = root / "skills" / "proactive-portal" / "SKILL.md"
+    skill = root / "skills" / "proactive-secretary" / "SKILL.md"
     if skill.is_file():
         try:
-            ctx.register_skill("proactive-portal", skill,
+            ctx.register_skill("proactive-secretary", skill,
                                description=_skill_description(skill))
         except Exception:  # noqa: BLE001
             pass
@@ -123,7 +123,7 @@ def register(ctx) -> None:
     # The proposal tool is optional: an old/fake host without native cron
     # execution context must still load the CLI and existing tools.
     try:
-        from .portal.portal_portal_notices import register_tool as register_portal_notice_tool
+        from .secretary.secretary_portal_notices import register_tool as register_portal_notice_tool
         _PORTAL_NOTICE_REGISTRATION.update(register_portal_notice_tool(ctx))
     except Exception as exc:  # noqa: BLE001 - registration stays optional
         _PORTAL_NOTICE_REGISTRATION.update({
@@ -132,10 +132,10 @@ def register(ctx) -> None:
         })
 
     ctx.register_cli_command(
-        name="portal",
-        help="Proactive portal: one-command setup, monitoring and reminders",
-        setup_fn=_setup_portal_cli,
-        handler_fn=_handle_portal_cli,
-        description=("Proactive portal over your own authorised mail, calendar and "
+        name="secretary",
+        help="Proactive secretary: one-command setup, monitoring and reminders",
+        setup_fn=_setup_secretary_cli,
+        handler_fn=_handle_secretary_cli,
+        description=("Proactive secretary over your own authorised mail, calendar and "
                      "tasks plus public sources, with native scheduled jobs."),
     )

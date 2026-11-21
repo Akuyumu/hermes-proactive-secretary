@@ -63,7 +63,7 @@ def _defaults() -> argparse.Namespace:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="proactive-portal-preparation",
+        prog="proactive-secretary-preparation",
         description="Deterministic private-preparation preflight (no model calls).")
     parser.add_argument("--state-dir")
     parser.add_argument("--policy")

@@ -23,7 +23,7 @@ import state_import  # noqa: E402
 
 
 def _load_plugin_package():
-    name = "hermes_proactive_portal_state_import"
+    name = "hermes_proactive_secretary_state_import"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)]
     )

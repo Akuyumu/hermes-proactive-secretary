@@ -34,7 +34,7 @@ _MODEL_LANES: dict[int, dict[str, Any]] = {}
 # failures without every caller threading a store into its planner/proposer.
 _HEALTH_LANES: dict[int, dict[str, Any]] = {}
 
-NATIVE_PLUGIN_ID = "hermes-proactive-portal"
+NATIVE_PLUGIN_ID = "hermes-proactive-secretary"
 # Paths that must never spend a model call, ever.
 MODEL_FREE_PATHS = frozenset({"reminder", "disabled", "paused", "public-only"})
 # Plugin-owned auxiliary slot (registered in __init__.register). Routing it is

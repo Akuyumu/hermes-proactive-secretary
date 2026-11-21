@@ -122,7 +122,7 @@ def _trusted_generation(ctx: Any, responsibility_id: str) -> int | None:
     if not responsibility_id:
         return None
     try:
-        from . import portal_responsibilities as responsibilities
+        from . import secretary_responsibilities as responsibilities
         R = responsibilities._resp()
         record = R.inspect(responsibilities._store(), responsibility_id,
                            include_claim=False)

@@ -30,7 +30,7 @@ except ModuleNotFoundError as exc:
 
 import paths  # noqa: E402
 import runtime_gate  # noqa: E402
-import portal.portal_work as portal_work  # noqa: E402
+import secretary.secretary_work as secretary_work  # noqa: E402
 from proactive_pilot import collectors  # noqa: E402
 from proactive_pilot import evaluator  # noqa: E402
 from proactive_pilot import gws_calendar  # noqa: E402
@@ -89,7 +89,7 @@ class ActualOwnerCallersTests(Workspace):
     def test_every_owner_reads_profile_b_and_never_creates_a(self):
         with _override(self.b):
             b_data = _data(self.b)
-            self.assertEqual(portal_work._data_root(), b_data)
+            self.assertEqual(secretary_work._data_root(), b_data)
             self.assertEqual(preparation._plugin_data_root(), b_data)
             self.assertEqual(preparation.default_artifact_root(),
                              b_data / "preparation" / "artifacts")
@@ -121,7 +121,7 @@ class ActualOwnerCallersTests(Workspace):
         with _override(self.b):
             paths.ensure_data_dirs()
             paths.preferences_path().write_text("B-preferences-sentinel", encoding="utf-8")
-            store = portal_work._store()
+            store = secretary_work._store()
             self.assertEqual(store.root, _data(self.b) / "var")
             artifact_root = preparation._ensure_owner_dir(
                 preparation.default_artifact_root())
@@ -148,7 +148,7 @@ class ActualOwnerCallersTests(Workspace):
             self.assertEqual(evaluator._default_agent_src(), str(external_agent))
             explicit_home = self.root / "explicit-gws-home"
             self.assertEqual(gws_calendar._hermes_home(explicit_home), explicit_home)
-            self.assertEqual(portal_work._data_root(), _data(self.b))
+            self.assertEqual(secretary_work._data_root(), _data(self.b))
         self.assertFalse(self.a_data.exists())
 
     def test_two_owning_contexts_route_actual_callers_across_thread_hops(self):
@@ -163,7 +163,7 @@ class ActualOwnerCallersTests(Workspace):
 
         def snapshot():
             return (paths.hermes_home(),
-                    portal_work._data_root(),
+                    secretary_work._data_root(),
                     preparation.default_artifact_root(),
                     collectors.secretary_src_candidates()[0],
                     evaluator._default_agent_src(),
@@ -204,7 +204,7 @@ class FailClosedOwnerTests(Workspace):
         with mock.patch.object(NATIVE, "get_hermes_home",
                                side_effect=RuntimeError("scoped home unavailable")):
             for call in (paths.hermes_home,
-                         portal_work._data_root,
+                         secretary_work._data_root,
                          preparation.default_artifact_root,
                          collectors.secretary_src_candidates,
                          evaluator._default_agent_src,
@@ -224,7 +224,7 @@ class FailClosedOwnerTests(Workspace):
                     NATIVE, "get_routing_process_hermes_home",
                     side_effect=RuntimeError("pinned launch unavailable")):
                 for call in (paths.data_root,
-                             portal_work._data_root,
+                             secretary_work._data_root,
                              preparation.default_artifact_root,
                              ownerpaths.data_root):
                     with self.subTest(call=call.__module__ + "." + call.__name__):

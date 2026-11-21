@@ -33,7 +33,7 @@ from proactive_pilot.planner import NativePlanner, PlannerError  # noqa: E402
 
 
 def _load_package():
-    name = "hermes_proactive_portal_050_integration"
+    name = "hermes_proactive_secretary_050_integration"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -44,9 +44,9 @@ def _load_package():
 
 
 PKG = _load_package()
-onboarding = importlib.import_module(f"{PKG.__name__}.portal.portal_onboarding")
-models = importlib.import_module(f"{PKG.__name__}.portal.portal_models")
-conversation = importlib.import_module(f"{PKG.__name__}.portal.portal_conversation")
+onboarding = importlib.import_module(f"{PKG.__name__}.secretary.secretary_onboarding")
+models = importlib.import_module(f"{PKG.__name__}.secretary.secretary_models")
+conversation = importlib.import_module(f"{PKG.__name__}.secretary.secretary_conversation")
 
 
 class MemoryState:
@@ -93,7 +93,7 @@ class Ctx:
         self.hooks = {}
         self.tools = []
         self.injected = []
-        self.plugin_id = "hermes-proactive-portal"
+        self.plugin_id = "hermes-proactive-secretary"
 
     def get_config(self, key, default=None):
         return self.settings.get(key, default)

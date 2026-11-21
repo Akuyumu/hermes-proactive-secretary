@@ -2,12 +2,12 @@
 
 This document is the developer and host-owner view of Hermes Proactive Portal. It complements [Installation](INSTALLATION.md) and the read-only [portal behaviour guide](NATIVE-PORTAL.md). It contains no owner-specific identifiers, accounts, production summaries or private filesystem roots.
 
-The package version is **1.0.5**. The plugin id is `hermes-proactive-portal`; the product and repository are also `hermes-proactive-portal`. The retired `hermes-proactive-secretary` id is not read or registered. On first plugin load, owner-only state is copied once from the legacy data root into the new root, without modifying the legacy tree; old owner-facing job names are retired through the ownership ledger.
+The package version is **1.0.6**. The plugin id is `hermes-proactive-secretary`; the product and repository are also `hermes-proactive-secretary`. The retired `hermes-proactive-portal` id is not read or registered. On first plugin load, owner-only state is copied once from the legacy data root into the new root, without modifying the legacy tree; old owner-facing job names are retired through the ownership ledger.
 
 ## Repository layout
 
 The repository root **is** the plugin package Hermes loads: `__init__.py` is the
-entry point and defines `register(ctx)`. `portal/` holds the Hermes-facing
+entry point and defines `register(ctx)`. `secretary/` holds the Hermes-facing
 surface modules registered by that entry point. `src/proactive_pilot/` is the
 engine. `runners/` contains the shipped cron scripts. `scripts/` is developer
 tooling excluded from the release archive, and `docs/` holds documentation.
@@ -20,14 +20,14 @@ the plugin root on `sys.path` and import them by top-level name.
 
 The plugin is a real Hermes plugin. Its `plugin.yaml` registers:
 
-- a native CLI command group (`hermes portal`);
-- native tools (`portal_onboarding`, `portal_context`, `portal_responsibility`, `portal_propose_notice`);
+- a native CLI command group (`hermes secretary`);
+- native tools (`secretary_onboarding`, `secretary_context`, `secretary_responsibility`, `secretary_propose_notice`);
 - a `pre_llm_call` hook;
 - an operational skill and ordinary native Desktop settings contributions.
 
 The plugin owns its configuration, policy copies, preferences, reminder registry, scheduler/runner ownership ledgers and preparation artifacts. It does **not** own Hermes's profile memory, permissions, connector credentials or approval system. There is no parallel memory or permission engine.
 
-Runtime state is owner-only under the active profile's `plugin-data/hermes-proactive-portal/`, unless an explicit operator override is used. Foreground and scheduled work resolve the same active profile. Missing profile context fails closed rather than borrowing the launch profile.
+Runtime state is owner-only under the active profile's `plugin-data/hermes-proactive-secretary/`, unless an explicit operator override is used. Foreground and scheduled work resolve the same active profile. Missing profile context fails closed rather than borrowing the launch profile.
 
 ## Native session versus collectors
 
@@ -36,7 +36,7 @@ Two lanes are distinct:
 1. **Collectors and deterministic runners.** The monitoring and reminder jobs are native `--no-agent` script jobs. The reminder runner is deterministic and makes no model call. Monitoring may invoke a host-owned model lane for discovery and judgment. Optional private preparation is a separate opt-in script job.
 2. **The native portal session.** One optional, plugin-owned Hermes cron job runs as a normal native agent. It inherits the owning profile's identity, tools, connectors, skills, memory and standing approval rules. It is a separate scheduled run, not a literal foreground session id.
 
-The portal's native final output stays local. When something warrants the user's attention, the session uses the guarded `portal_propose_notice` tool to queue a proposal for the existing monitoring lane. A proposal is not completion or delivery. Notice delivery remains subject to quiet hours, cooldowns and the optional daily cap. The portal must not send through two paths.
+The portal's native final output stays local. When something warrants the user's attention, the session uses the guarded `secretary_propose_notice` tool to queue a proposal for the existing monitoring lane. A proposal is not completion or delivery. Notice delivery remains subject to quiet hours, cooldowns and the optional daily cap. The portal must not send through two paths.
 
 Setup, settings saves and registration do not arm the portal. Preview and enable are explicit and require a schedule; there is no hidden default cadence. Pause stops later runs but is not a proven hard cancellation of a run already in progress in the native transport.
 
@@ -49,7 +49,7 @@ not a new contract or a promise of live behaviour.
 
 ```text
 foreground private chat
-  -> portal_followup (create/list/inspect/stop)
+  -> secretary_followup (create/list/inspect/stop)
   -> followups.json (owner-only, bounded, shared by the portal)
 
 native script jobs (--no-agent)
@@ -61,8 +61,8 @@ native normal-agent portal job
   (preview/enable require an explicit schedule)
   -> reads the owning profile's sources, responsibilities, memory and follow-ups
   -> prepares private local work
-  -> portal_followup (due/record_check)
-  -> notice request: portal_propose_notice or queue_notice
+  -> secretary_followup (due/record_check)
+  -> notice request: secretary_propose_notice or queue_notice
   -> portal_notices gates (quiet hours, cooldown, optional daily cap)
   -> local final output; any external send stays approval-required
 ```
@@ -76,7 +76,7 @@ skill, the conversation tools and the proposal tool, and registers the
 message, arm a job or change access. Optional surfaces fail without taking down
 the deterministic CLI.
 
-The native portal lifecycle lives in `portal/portal_job.py:410`. Its actions are
+The native portal lifecycle lives in `secretary/secretary_portal.py:410`. Its actions are
 `preview`, `enable`, `status`, `pause`, `resume` and `remove`. `preview` and
 `enable` require a schedule; there is no hidden default cadence. The job is a
 normal native agent job, not a `--no-agent` script job, and it pins
@@ -86,7 +86,7 @@ in progress in the native transport.
 
 ### Independent initiative
 
-The work contract in `portal/portal_job.py:29` tells the scheduled session to
+The work contract in `secretary/secretary_portal.py:29` tells the scheduled session to
 inspect accepted responsibilities, standing instructions, authorised sources,
 prior progress and existing artifacts, and to investigate and prepare private
 work proactively. It may consult active follow-ups through the typed tool; when
@@ -97,8 +97,8 @@ schedule or mutate the per-watch prompt.
 
 ### Shared follow-up tool and data
 
-There is one tool, `portal_followup`, defined in
-`portal/portal_followups.py:34`. Foreground actions (`create`, `list`, `inspect`,
+There is one tool, `secretary_followup`, defined in
+`secretary/secretary_followups.py:34`. Foreground actions (`create`, `list`, `inspect`,
 `stop`) still require a current private human turn and a matching evidence quote
 where one is claimed; background, shared or stale turns are refused. Desktop
 create and stop therefore require a captured private owner turn, or an explicit

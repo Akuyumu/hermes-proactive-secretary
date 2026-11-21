@@ -14,15 +14,15 @@ class ReminderBridgeParserContract(unittest.TestCase):
             import importlib
             from test_final_runtime_seams import _load_plugin_package
             _load_plugin_package('parent_parser_probe_plugin')
-            portal_cli = importlib.import_module('parent_parser_probe_plugin.portal.portal_cli')
-            runner = runpy.run_path(str(ROOT / 'runners/proactive_portal_reminder_runner.py'), run_name='bridge_test')
+            secretary_cli = importlib.import_module('parent_parser_probe_plugin.secretary.secretary_cli')
+            runner = runpy.run_path(str(ROOT / 'runners/proactive_secretary_reminder_runner.py'), run_name='bridge_test')
             captured = []
             def parse_actual_cli(argv, **kwargs):
                 parser = argparse.ArgumentParser()
-                portal_cli.register_cli(parser)
+                secretary_cli.register_cli(parser)
                 args = parser.parse_args(argv[2:])
                 self.assertEqual(args.reminder_args, ['dispatch'])
-                self.assertEqual(args.data_dir, str(portal_cli.paths.data_root()))
+                self.assertEqual(args.data_dir, str(secretary_cli.paths.data_root()))
                 captured.append(argv)
                 return type('Result', (), {'returncode': 0, 'stdout': '', 'stderr': ''})()
             with patch('subprocess.run', side_effect=parse_actual_cli):

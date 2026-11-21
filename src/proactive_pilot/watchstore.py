@@ -536,10 +536,10 @@ def watch_command(args: Any) -> int:
             "minutes": getattr(args, "minutes", None),
         }, now)
     except WatchError as exc:
-        print(f"proactive-portal watch rejected: {exc}", file=sys.stderr)
+        print(f"proactive-secretary watch rejected: {exc}", file=sys.stderr)
         return 2
     except CorruptStateError as exc:
-        print(f"proactive-portal watch state corrupt, failing closed: {exc}", file=sys.stderr)
+        print(f"proactive-secretary watch state corrupt, failing closed: {exc}", file=sys.stderr)
         return 1
     print(json.dumps({
         "watch": action,

@@ -1,7 +1,7 @@
 """Bounded private preparation chosen by the assistant inside user consent.
 
 Accepted responsibilities reuse the ordinary bounded preparation engine
-(:mod:`portal_preparation`): current claim/generation/source gates, the
+(:mod:`secretary_preparation`): current claim/generation/source gates, the
 assigned native model lane and the deterministic artifact writer. An inferred
 opportunity stays clearly tentative and never becomes due work; under standing
 conversation preparation consent it may still use the same bounded model lane to
@@ -52,8 +52,8 @@ def _clean(value: Any, limit: int) -> str:
 
 
 def _engine_module() -> Any:
-    from . import portal_preparation
-    return portal_preparation
+    from . import secretary_preparation
+    return secretary_preparation
 
 
 def _tentative_module() -> Any:
@@ -151,7 +151,7 @@ def _bind_current_turn(ctx: Any, *, session_id: Any, source_ref: Any,
     ref = _clean(source_ref, 240)
     if not sid and not ref:
         return None
-    from . import portal_responsibilities as conversation
+    from . import secretary_responsibilities as conversation
 
     turn = conversation.latest_turn(ctx, session_id=sid)
     if turn is None:

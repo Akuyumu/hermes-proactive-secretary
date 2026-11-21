@@ -45,10 +45,10 @@ def _load_plugin_package(name: str):
     return module
 
 
-_PKG = _load_plugin_package("hermes_proactive_portal_notices_qa")
+_PKG = _load_plugin_package("hermes_proactive_secretary_notices_qa")
 cron = importlib.import_module(f"{_PKG.__name__}.cron")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
-notices = importlib.import_module(f"{_PKG.__name__}.portal.portal_portal_notices")
+notices = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal_notices")
 
 from proactive_pilot import main as main_mod  # noqa: E402
 from proactive_pilot import ownerpaths  # noqa: E402
@@ -302,11 +302,11 @@ class RegistrationAndSchemaTests(_Base):
 
         self.assertTrue(result["portal_notice_tool"])
         self.assertEqual(len(ctx.registered), 1)
-        self.assertEqual(ctx.registered[0]["name"], "portal_propose_notice")
-        self.assertEqual(ctx.registered[0]["category"], "portal")
+        self.assertEqual(ctx.registered[0]["name"], "secretary_propose_notice")
+        self.assertEqual(ctx.registered[0]["category"], "secretary")
 
         # A second independent import in the same isolated profile is inert.
-        _load_plugin_package("hermes_proactive_portal_notices_import_qa")
+        _load_plugin_package("hermes_proactive_secretary_notices_import_qa")
 
         self.assertFalse(paths.job_ownership_path().exists())
         self.assertFalse(paths.state_dir().exists())

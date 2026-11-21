@@ -859,7 +859,7 @@ def replacement_command(args: Any) -> int:
             print(json.dumps({"feedback": action, "status": "restored", **result}, indent=2))
             return 0
     except ValueError as exc:
-        print(f"proactive-portal source rejection: {exc}", file=sys.stderr)
+        print(f"proactive-secretary source rejection: {exc}", file=sys.stderr)
         return 2
-    print("proactive-portal source rejection: unknown source action", file=sys.stderr)
+    print("proactive-secretary source rejection: unknown source action", file=sys.stderr)
     return 2

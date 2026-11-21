@@ -31,7 +31,7 @@ from proactive_pilot import userconfig as uc  # noqa: E402
 
 
 def _load_plugin_package():
-    name = "hermes_proactive_portal_settings_seam_test"
+    name = "hermes_proactive_secretary_settings_seam_test"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -42,7 +42,7 @@ def _load_plugin_package():
 
 
 _PKG = _load_plugin_package()
-sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
 
 
@@ -489,7 +489,7 @@ class RealHostFormTests(unittest.TestCase):
 import json, sys
 sys.path.insert(0, {host_root!r})
 from hermes_cli.plugins_settings import save_plugin_settings, plugin_settings_fields
-pid = "hermes-proactive-portal"
+pid = "hermes-proactive-secretary"
 plugin_dir = {str(ROOT)!r}
 before = {{f["key"]: f.get("value") for f in plugin_settings_fields(pid, plugin_dir)}}
 written = save_plugin_settings(pid, plugin_dir, {{"daily_normal_cap": "9", "mail_enabled": True}})

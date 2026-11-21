@@ -1,4 +1,4 @@
-"""Resumable, validated onboarding state for the proactive portal.
+"""Resumable, validated onboarding state for the proactive secretary.
 
 The foreground Hermes agent owns the conversation. This module only keeps typed,
 profile-scoped state, validates proposed values, and returns exact readback. It
@@ -16,9 +16,9 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .portal_models import (ROUTE_SETTING_KEYS, effective_route_status,
+from .secretary_models import (ROUTE_SETTING_KEYS, effective_route_status,
                                validate_route_settings)
-from . import portal_consent as consent
+from . import secretary_consent as consent
 
 STATE_KEY = "onboarding_state"
 SCHEMA = 1
@@ -339,14 +339,14 @@ def next_question(state: Mapping[str, Any]) -> str:
                     "jobs are not armed yet. If you explicitly confirm, I will run the "
                     "existing setup engine on your behalf to arm only the plugin-owned "
                     "no-agent jobs; no manual command is required. The foreground "
-                    "equivalent is `hermes portal setup --deliver " + target + "`. "
+                    "equivalent is `hermes secretary setup --deliver " + target + "`. "
                     "Delivery remains unverified until an explicitly authorised native "
                     "canary.")
         return ("Settings are saved, but no delivery destination is confirmed and jobs are "
                 "NOT armed. Choose one destination, then explicitly confirm and I will arm "
                 "the plugin-owned jobs; no manual command is required.")
     if step == "basics":
-        return ("Which timezone should the portal use for quiet hours and daily limits? "
+        return ("Which timezone should the secretary use for quiet hours and daily limits? "
                 "Give a standard IANA name such as UTC, Europe/London or America/New_York; "
                 "a city name alone is not guessed.")
     if step == "destination":
@@ -360,7 +360,7 @@ def next_question(state: Mapping[str, Any]) -> str:
         return ("Which local quiet hours should defer ordinary messages? Use 24-hour "
                 "start/end hours; this is not a pause.")
     if step == "autonomy":
-        return ("How much should the portal do on its own? Choose review_only "
+        return ("How much should the secretary do on its own? Choose review_only "
                 "(no autonomous preparation), prepare_private (private reversible "
                 "drafts inside scopes you allow), or prepare_and_approve (same, plus "
                 "one quick ask before any consequential effect). It can never infer "
@@ -604,7 +604,7 @@ class OnboardingService:
                             state["settings"][key] = value.strip()
                         decided.add(f"setting:{key}")
             else:
-                from .portal_models import read_route_settings
+                from .secretary_models import read_route_settings
                 for key, value in read_route_settings(self.ctx).items():
                     if value and not state["settings"].get(key):
                         state["settings"][key] = value
@@ -1204,7 +1204,7 @@ class OnboardingService:
                 route_written.append(key)
 
         after = {
-            "record": (f"plugins.entries.{getattr(self.ctx, 'plugin_id', 'hermes-proactive-portal')}"
+            "record": (f"plugins.entries.{getattr(self.ctx, 'plugin_id', 'hermes-proactive-secretary')}"
                        ".settings.user_config"),
             "timezone": persisted.get("timezone"),
             "notification.daily_normal_cap": persisted["notification"]["daily_normal_cap"],
@@ -1289,7 +1289,7 @@ class OnboardingService:
     def arm_confirmed(self, *, user_confirmed: bool = False) -> dict[str, Any]:
         """Perform confirmed foreground setup/arming through the existing engine.
 
-        The user asked the portal to do this on their behalf; no manual CLI
+        The user asked the secretary to do this on their behalf; no manual CLI
         step is required. This is only reachable after explicit confirmation and
         only arms the same plugin-owned, no-agent jobs the CLI setup uses.
         """
@@ -1329,11 +1329,11 @@ class OnboardingService:
                                   ("prepare_private", "prepare_and_approve")),
             json=True,
         )
-        from . import portal_cli
+        from . import secretary_cli
         buffer = io.StringIO()
         try:
             with contextlib.redirect_stdout(buffer):
-                rc = portal_cli.setup_command(args)
+                rc = secretary_cli.setup_command(args)
         except Exception as exc:  # noqa: BLE001 - keep pending, report honestly
             return {"ok": False, "status": state.get("status"),
                     "schedule_armed": False,
@@ -1374,7 +1374,7 @@ class OnboardingService:
         state["history"] = state["history"][-50:]
         self._write(state)
         return {"ok": True, "status": "cancelled",
-                "note": "Progress is retained and can be resumed with /portal setup.",
+                "note": "Progress is retained and can be resumed with /secretary setup.",
                 "readback": {"record": STATE_KEY, "status": state["status"],
                              "settings": copy.deepcopy(state["settings"])}}
 

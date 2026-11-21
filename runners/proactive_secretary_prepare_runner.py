@@ -4,7 +4,7 @@
 This is the *only* supported preparation schedule shape. It is installed as a
 native ``--no-agent`` script job: this process performs no agent run, no tool
 loop and no direct messaging. With no arguments (the scheduler case) it calls
-the registered ``hermes portal prepare`` handler with fixed argv so native
+the registered ``hermes secretary prepare`` handler with fixed argv so native
 plugin discovery builds the host context and the plugin can use the existing
 configured-only auxiliary lane.
 
@@ -62,7 +62,7 @@ def _bridge() -> int:
               f"({type(exc).__name__}); failing closed", file=sys.stderr)
         return 1
 
-    argv = [hermes, "portal", "prepare", "--data-dir", str(paths.data_root())]
+    argv = [hermes, "secretary", "prepare", "--data-dir", str(paths.data_root())]
     try:
         proc = subprocess.run(argv, shell=False, capture_output=True, text=True,
                               timeout=300, check=False)

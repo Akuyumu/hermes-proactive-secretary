@@ -31,7 +31,7 @@ Some Hermes versions need the included host compatibility update for the strict 
 ## Scope and responsible changes
 
 - Preserve existing approvals, private state, profile scope and owner-only paths. Do not add a parallel memory, permission, scheduling or credential store.
-- Keep the portal's native final local. User notices go through the existing monitoring gates and `portal_propose_notice`; do not send through two paths.
+- Keep the portal's native final local. User notices go through the existing monitoring gates and `secretary_propose_notice`; do not send through two paths.
 - Do not broaden account, connector, calendar, task or public-source access without an explicit user decision.
 - Do not add secrets, tokens, owner-specific identifiers, private filesystem roots or production summaries to code, tests, docs or examples.
 - Never weaken the sanitiser, export policy, scanner checks or privacy boundaries to make an artifact pass.

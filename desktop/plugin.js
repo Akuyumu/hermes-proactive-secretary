@@ -1,14 +1,14 @@
 /**
- * Proactive Portal — supported Settings ▸ Plugins page.
+ * Proactive Secretary — supported Settings ▸ Plugins page.
  *
  * The page lives inside the native Settings rail (`ctx.registerSettingsPage`).
  * Every value it shows comes from the plugin's own authenticated REST backend
- * (`dashboard/plugin_api.py`, mounted at /api/plugins/hermes-proactive-portal)
+ * (`dashboard/plugin_api.py`, mounted at /api/plugins/hermes-proactive-secretary)
  * and therefore from the same validated configuration owner as chat onboarding
  * and the native Agent settings form. There is no second store and no hidden
  * toggle that could label a source "connected" by itself.
  *
- * The onboarding button only seats `/portal setup` in the live composer (a
+ * The onboarding button only seats `/secretary setup` in the live composer (a
  * supported host door). If no composer answers, it says so and asks the user to
  * type the command — it never claims a conversation was launched.
  */
@@ -50,7 +50,7 @@ const ONBOARDING_TONE = {
   complete: 'good'
 }
 
-const SETUP_QUERY = ['proactive-portal', 'setup-status']
+const SETUP_QUERY = ['proactive-secretary', 'setup-status']
 
 function text(value, fallback = '') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback
@@ -150,7 +150,7 @@ function SetupSection({ ctx, statusQuery }) {
     setResetOpen(false)
     setResetPlan(null)
     setPhrase('')
-    host.notify({ kind: 'success', message: 'Reset complete. Reading permissions are off; send /portal setup to re-confirm them.' })
+    host.notify({ kind: 'success', message: 'Reset complete. Reading permissions are off; send /secretary setup to re-confirm them.' })
   }
 
   async function triggerOnboarding() {
@@ -158,7 +158,7 @@ function SetupSection({ ctx, statusQuery }) {
     setTriggerNotice('')
     try {
       const result = await ctx.rest('/setup/trigger', { method: 'POST', body: {} })
-      const command = text(result && result.command, '/portal setup')
+      const command = text(result && result.command, '/secretary setup')
       if (typeof host.composer?.insertText === 'function') {
         const placed = await host.composer.insertText(null, command, { mode: 'prefix' })
         if (placed) {
@@ -172,7 +172,7 @@ function SetupSection({ ctx, statusQuery }) {
         setTriggerNotice(`This Desktop build cannot place text in a composer. Type ${command} in a chat to continue. Nothing was changed.`)
       }
     } catch (error) {
-      setTriggerNotice(`Could not prepare the continuation. Type /portal setup in a chat. Nothing was changed.`)
+      setTriggerNotice(`Could not prepare the continuation. Type /secretary setup in a chat. Nothing was changed.`)
       host.notifyError(error, 'Could not prepare the onboarding continuation.')
     } finally {
       setTriggering(false)
@@ -256,7 +256,7 @@ function SetupSection({ ctx, statusQuery }) {
           jsx('p', { className: 'text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)', children: 'Values are shown as saved, not as manifest defaults. This editor reads and writes the same validated configuration as Agent settings and onboarding.' }),
           jsx(ListRow, { title: 'Timezone', description: text(status && status.config && status.config.timezone, 'Not available') }),
           jsx(ListRow, { title: 'Delivery', description: status && status.config && status.config.delivery_configured ? 'A delivery target is configured. Its saved value is shown below in Edit settings.' : 'No delivery target is configured yet.' }),
-          jsx(ListRow, { title: 'Reading permissions', description: permissions.needs_reconfirmation ? 'Off. Send /portal setup to re-confirm before any source is read.' : 'At least one source is enabled; see Sources for verification and freshness.' })
+          jsx(ListRow, { title: 'Reading permissions', description: permissions.needs_reconfirmation ? 'Off. Send /secretary setup to re-confirm before any source is read.' : 'At least one source is enabled; see Sources for verification and freshness.' })
         ]
       }),
       jsxs('section', {
@@ -381,7 +381,7 @@ function AdvancedPage({ ctx }) {
       }),
       jsx(ListRow, {
         title: 'Trigger onboarding',
-        description: 'Non-destructive. It places /portal setup in the composer for review; it does not clear preferences and does not start an interview by itself.'
+        description: 'Non-destructive. It places /secretary setup in the composer for review; it does not clear preferences and does not start an interview by itself.'
       })
     ]
   })
@@ -450,7 +450,7 @@ function SettingsEditor({ ctx, statusQuery }) {
   const [permissionOpen, setPermissionOpen] = useState(false)
   const [permissionPlan, setPermissionPlan] = useState(null)
   const settingsQuery = useQuery({
-    queryKey: ['proactive-portal', 'settings'],
+    queryKey: ['proactive-secretary', 'settings'],
     queryFn: () => ctx.rest('/settings'),
     refetchInterval: 30000
   })
@@ -535,7 +535,7 @@ function SettingsEditor({ ctx, statusQuery }) {
       setNotice(widened
         ? `${result.explanation} Saved ${result.changed_fields.length} field${result.changed_fields.length === 1 ? '' : 's'}.`
         : `Saved ${result.changed_fields.length} field${result.changed_fields.length === 1 ? '' : 's'}.`)
-      host.notify({ kind: 'success', message: 'Proactive Portal settings saved.' })
+      host.notify({ kind: 'success', message: 'Proactive Secretary settings saved.' })
     } else {
       setNotice('No values changed, so nothing was written.')
     }
@@ -568,7 +568,7 @@ function SettingsEditor({ ctx, statusQuery }) {
       await applySave([], active, patch)
     } catch (error) {
       setNotice(statusMessage(error) || 'Settings could not be saved. Nothing was changed.')
-      host.notifyError(error, 'Could not save Proactive Portal settings.')
+      host.notifyError(error, 'Could not save Proactive Secretary settings.')
     } finally {
       setSaving(false)
     }
@@ -742,12 +742,12 @@ function SetupPage({ ctx }) {
 }
 
 export default {
-  id: 'hermes-proactive-portal',
-  name: 'Proactive Portal',
+  id: 'hermes-proactive-secretary',
+  name: 'Proactive Secretary',
   register(ctx) {
     ctx.registerSettingsPage?.({
       id: 'settings',
-      title: 'Proactive Portal',
+      title: 'Proactive Secretary',
       icon: 'checklist',
       order: 20,
       render: () => jsx(SetupPage, { ctx }),

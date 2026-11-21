@@ -28,7 +28,7 @@ from proactive_pilot.state import CorruptStateError, StateStore  # noqa: E402
 
 
 def _load_package():
-    name = "hermes_proactive_portal_refresh"
+    name = "hermes_proactive_secretary_refresh"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -39,8 +39,8 @@ def _load_package():
 
 
 _PKG = _load_package()
-refresh = importlib.import_module(f"{_PKG.__name__}.portal.portal_context_refresh")
-conversation = importlib.import_module(f"{_PKG.__name__}.portal.portal_conversation")
+refresh = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_context_refresh")
+conversation = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_conversation")
 
 NOW = (SeededClock("2026-10-05T12:00:00+00:00")).now()
 
@@ -121,10 +121,10 @@ class RegistrationContractTests(unittest.TestCase):
         self.assertTrue(result["context_tool"], result)
         self.assertEqual(len(ctx.tool_calls), 1)
         call = ctx.tool_calls[0]
-        self.assertEqual(call["name"], "portal_context")
-        self.assertEqual(call["toolset"], "portal")
+        self.assertEqual(call["name"], "secretary_context")
+        self.assertEqual(call["toolset"], "secretary")
         schema = call["schema"]
-        self.assertEqual(schema["name"], "portal_context")
+        self.assertEqual(schema["name"], "secretary_context")
         self.assertTrue(schema["description"])
         self.assertEqual(schema["parameters"]["type"], "object")
         self.assertTrue(schema["parameters"]["properties"])
@@ -142,7 +142,7 @@ class RegistrationContractTests(unittest.TestCase):
 
     def test_manifest_declares_tool_and_default_off_setting(self):
         manifest = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
-        self.assertIn("  - portal_context", manifest)
+        self.assertIn("  - secretary_context", manifest)
         self.assertIn("  context_refresh:\n    type: bool", manifest)
         block = manifest.split("  context_refresh:", 1)[1].split("  collector_budget_seconds:", 1)[0]
         self.assertIn("    default: false", block)
@@ -498,7 +498,7 @@ class GuidanceTests(unittest.TestCase):
                            chat_type="dm")
         self.assertIsNotNone(result)
         self.assertEqual(set(result), {"context"})
-        self.assertIn("Proactive Portal context refresh", result["context"])
+        self.assertIn("Proactive Secretary context refresh", result["context"])
         self.assertNotIn("ZZUSERMARKER", result["context"])
         self.assertLessEqual(len(result["context"].split()), 80)
         self.assertEqual(self.ctx.history, ["system prompt bytes"])
@@ -510,10 +510,10 @@ class GuidanceTests(unittest.TestCase):
                            chat_type="dm")
         self.assertIsNotNone(result)
         context = result["context"]
-        self.assertIn("[Proactive Portal context]", context)
-        self.assertIn("[Proactive Portal context refresh]", context)
-        self.assertLess(context.index("[Proactive Portal context]"),
-                        context.index("[Proactive Portal context refresh]"))
+        self.assertIn("[Proactive Secretary context]", context)
+        self.assertIn("[Proactive Secretary context refresh]", context)
+        self.assertLess(context.index("[Proactive Secretary context]"),
+                        context.index("[Proactive Secretary context refresh]"))
         self.assertIn("Preserve your ordinary assistant identity", context)
         self.assertIn("specific approval", context)
         self.assertNotIn("secretary status", context)
@@ -555,7 +555,7 @@ class GuidanceTests(unittest.TestCase):
             result = self.hook(platform=platform, user_message="hello",
                                chat_type="dm")
             self.assertIsNotNone(result, platform)
-            self.assertIn("[Proactive Portal context refresh]",
+            self.assertIn("[Proactive Secretary context refresh]",
                           result["context"])
 
     def test_disabled_paused_and_corrupt_preferences_get_no_guidance(self):
@@ -577,8 +577,8 @@ class GuidanceTests(unittest.TestCase):
         result = self.hook(platform="telegram", user_message="secretary status",
                            chat_type="dm")
         self.assertIsNotNone(result)
-        self.assertIn("[Proactive Portal context]", result["context"])
-        self.assertNotIn("[Proactive Portal context refresh]",
+        self.assertIn("[Proactive Secretary context]", result["context"])
+        self.assertNotIn("[Proactive Secretary context refresh]",
                          result["context"])
         self.assertIn("Preserve your ordinary assistant identity", result["context"])
         self.assertIn("specific approval", result["context"])

@@ -1,4 +1,4 @@
-"""Versioned, validated per-user configuration for the proactive portal.
+"""Versioned, validated per-user configuration for the proactive secretary.
 
 This module is the generic base configuration layer. It is deliberately
 separate from:
@@ -42,7 +42,7 @@ DEFAULT_TIMEZONE = "UTC"
 # no deterministic daily-count ceiling is applied. It is never a hidden target
 # or a silent five-message quota.
 DEFAULT_DAILY_NORMAL_CAP: int | None = None
-NATIVE_PLUGIN_ID = "hermes-proactive-portal"
+NATIVE_PLUGIN_ID = "hermes-proactive-secretary"
 NATIVE_SETTINGS_KEY = "user_config"
 
 
@@ -308,13 +308,13 @@ def validate_config(raw: Any) -> dict[str, Any]:
     if not _is_int(schema) or schema != CONFIG_SCHEMA:
         raise ConfigError(
             f"unsupported config schema {schema!r} (expected {CONFIG_SCHEMA})",
-            remedy="run `hermes portal configure migrate` or fix the schema field",
+            remedy="run `hermes secretary configure migrate` or fix the schema field",
         )
     version = raw.get("version", CONFIG_VERSION)
     if not _is_int(version) or version < 0:
         raise ConfigError(
             f"corrupt config version {version!r}",
-            remedy="run `hermes portal configure migrate --from-policy <policy.json>`",
+            remedy="run `hermes secretary configure migrate --from-policy <policy.json>`",
         )
     if version > CONFIG_VERSION:
         raise ConfigError(
@@ -1175,7 +1175,7 @@ def load_user_config(
         except (OSError, ValueError) as exc:
             raise ConfigError(
                 f"cannot read user configuration {path}: {exc}",
-                remedy="fix or remove the file, or re-run `hermes portal configure init`",
+                remedy="fix or remove the file, or re-run `hermes secretary configure init`",
             ) from exc
         source = "file"
 
@@ -1202,7 +1202,7 @@ def load_user_config(
         if not migrate:
             raise ConfigError(
                 f"config version {explicit_version} requires migration to {CONFIG_VERSION}",
-                remedy="run `hermes portal configure migrate` to migrate the "
+                remedy="run `hermes secretary configure migrate` to migrate the "
                        "existing config file in place, or add `--from-policy "
                        "<policy.json>` for a legacy policy",
             )

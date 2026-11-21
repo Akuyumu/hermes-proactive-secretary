@@ -1,4 +1,4 @@
-"""Profile-safe path resolution for the hermes-proactive-portal plugin.
+"""Profile-safe path resolution for the hermes-proactive-secretary plugin.
 
 Nothing here hardcodes a personal absolute path. Every location is derived from
 the active profile resolved by :mod:`proactive_pilot.ownerpaths`:
@@ -7,7 +7,7 @@ the active profile resolved by :mod:`proactive_pilot.ownerpaths`:
   uses its own profile.
 - ``HERMES_HOME`` is the standalone fallback only when the host profile module
   is genuinely not installed (then falling back to ``~/.hermes``).
-- ``HERMES_PROACTIVE_PORTAL_DATA`` overrides the owner-only runtime data
+- ``HERMES_PROACTIVE_SECRETARY_DATA`` overrides the owner-only runtime data
   root (state, policy copy, preferences) for the process's own launch profile
   and standalone use. A routed foreign profile never inherits the launch
   profile's data override.

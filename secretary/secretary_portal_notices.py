@@ -79,7 +79,7 @@ TOOL_SCHEMA: dict[str, Any] = {
 # ``function.parameters``.  Keep ``TOOL_SCHEMA`` as the public parameter constant
 # for compatibility and wrap it here for registration.
 TOOL_FUNCTION_SCHEMA: dict[str, Any] = {
-    "name": "portal_propose_notice",
+    "name": "secretary_propose_notice",
     "description": TOOL_DESCRIPTION,
     "parameters": TOOL_SCHEMA,
 }
@@ -265,8 +265,8 @@ def register_tool(ctx: Any, *, register_tool: Any = None) -> dict[str, Any]:
         }
     try:
         register(
-            "portal_propose_notice",
-            "portal",
+            "secretary_propose_notice",
+            "secretary",
             TOOL_FUNCTION_SCHEMA,
             tool_handler(ctx),
             description=TOOL_DESCRIPTION,

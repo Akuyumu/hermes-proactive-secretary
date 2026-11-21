@@ -477,7 +477,7 @@ def intake_command(args: Any) -> int:
         try:
             text = Path(path).read_text(encoding="utf-8")
         except OSError as exc:
-            print(f"proactive-portal intake rejected: cannot read intake file: {exc}", file=sys.stderr)
+            print(f"proactive-secretary intake rejected: cannot read intake file: {exc}", file=sys.stderr)
             return 2
     clock = SeededClock(args.seeded_clock) if getattr(args, "seeded_clock", None) else Clock()
     now = clock.now()
@@ -499,12 +499,12 @@ def intake_command(args: Any) -> int:
         action = intake_to_action(text, policy=policy, model=model,
                                   provenance=provenance, now=now, watches=watches)
     except IntakeError as exc:
-        print(f"proactive-portal intake rejected: {exc}", file=sys.stderr)
+        print(f"proactive-secretary intake rejected: {exc}", file=sys.stderr)
         return 2
     try:
         result = apply_action(store, action, now)
     except WatchError as exc:
-        print(f"proactive-portal intake rejected: {exc}", file=sys.stderr)
+        print(f"proactive-secretary intake rejected: {exc}", file=sys.stderr)
         return 2
     print(json.dumps({
         "intake": "saved",

@@ -331,7 +331,7 @@ def parent_evidence_plan(*, reminder_time: str = "21:00", tz: str = "Asia/Singap
         "route_b_durable_dispatcher": {
             "what_it_is": "A reminders.json entry consumed by the plugin reminder runner on the 1-min cadence.",
             "where_to_look": [
-                f"read-only registry summary: python3 runners/proactive_portal_reminder_runner.py "
+                f"read-only registry summary: python3 runners/proactive_secretary_reminder_runner.py "
                 f"--state-dir {state_dir} --list   (redacted: ids/status/trigger only)",
                 "expect kind=time, status=pending, due=" + reminder_time + " " + tz,
                 "trigger shows for kind=time as the exact due time (no lead)",

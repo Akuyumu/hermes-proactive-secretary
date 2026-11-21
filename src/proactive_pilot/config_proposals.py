@@ -585,7 +585,7 @@ def command(args: Any) -> int:
         target = str(getattr(args, "id", "") or "")
         if target:
             return target
-        print("proactive-portal config proposal rejected: --id is required",
+        print("proactive-secretary config proposal rejected: --id is required",
               file=sys.stderr)
         return None
 
@@ -601,7 +601,7 @@ def command(args: Any) -> int:
                 return 2
             proposal = show(store, target, clock.now())
             if proposal is None:
-                print(f"proactive-portal config proposal rejected: no proposal {target!r}",
+                print(f"proactive-secretary config proposal rejected: no proposal {target!r}",
                       file=sys.stderr)
                 return 2
             emit(proposal)
@@ -631,7 +631,7 @@ def command(args: Any) -> int:
             emit(result)
             return 0
     except ValueError as exc:
-        print(f"proactive-portal config proposal rejected: {exc}", file=sys.stderr)
+        print(f"proactive-secretary config proposal rejected: {exc}", file=sys.stderr)
         return 2
-    print("proactive-portal config proposal rejected: unknown action", file=sys.stderr)
+    print("proactive-secretary config proposal rejected: unknown action", file=sys.stderr)
     return 2

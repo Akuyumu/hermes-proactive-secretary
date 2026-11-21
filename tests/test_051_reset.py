@@ -23,7 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from proactive_pilot import userconfig  # noqa: E402
-from portal.portal_setup_actions import (  # noqa: E402
+from secretary.secretary_setup_actions import (  # noqa: E402
     CLEARED_FIELDS,
     PRESERVED_FIELDS,
     SetupActionError,
@@ -45,7 +45,7 @@ class FakeCtx:
     def __init__(self, settings=None):
         self.settings = copy.deepcopy(settings or {})
         self.state = MemoryState()
-        self.plugin_id = "hermes-proactive-portal"
+        self.plugin_id = "hermes-proactive-secretary"
         self.writes = []
         self.fail_keys = set()
 
@@ -193,7 +193,7 @@ class TriggerTests(unittest.TestCase):
         result = h.actions.trigger()
         self.assertTrue(result["ok"])
         self.assertFalse(result["changed"])
-        self.assertEqual(result["command"], "/portal setup")
+        self.assertEqual(result["command"], "/secretary setup")
         self.assertEqual(h.snapshot(), before)
 
 

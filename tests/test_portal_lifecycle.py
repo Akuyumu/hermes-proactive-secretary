@@ -1,6 +1,6 @@
 """Independent actual-CLI lifecycle tests for the portal cron job.
 
-These tests exercise the registered ``hermes portal job`` parser and the
+These tests exercise the registered ``hermes secretary job`` parser and the
 real CLI wrapper. They never invoke the native scheduler, the network, or any
 other production mutator: the injected backend is the module's in-memory
 backend (or a thin recording/failure subclass of it), and every data/home root
@@ -36,7 +36,7 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _load_plugin_package(name: str = "hermes_proactive_portal_portal_qa"):
+def _load_plugin_package(name: str = "hermes_proactive_secretary_portal_qa"):
     """Load the plugin exactly like the sibling tests, registering first."""
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)]
@@ -51,9 +51,9 @@ def _load_plugin_package(name: str = "hermes_proactive_portal_portal_qa"):
 
 _PKG = _load_plugin_package()
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
-sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
-portal = importlib.import_module(f"{_PKG.__name__}.portal.portal_job")
+portal = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal")
 
 PORTAL = cron_mod.PORTAL_JOB_NAME
 MONITORING = cron_mod.MONITORING_JOB_NAME
@@ -63,7 +63,7 @@ REMINDER = cron_mod.REMINDER_JOB_NAME
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="hermes")
     top = parser.add_subparsers(dest="command")
-    secretary = top.add_parser("portal")
+    secretary = top.add_parser("secretary")
     sc.register_cli(secretary)
     return parser
 
@@ -72,7 +72,7 @@ _PARSER = _build_parser()
 
 
 def _parse(*argv: str) -> argparse.Namespace:
-    return _PARSER.parse_args(["portal", *argv])
+    return _PARSER.parse_args(["secretary", *argv])
 
 
 def _capture_stdout(fn, *args, **kwargs):
@@ -273,7 +273,7 @@ class ParserAndPreviewTests(_Isolated):
 
     def test_module_import_creates_no_jobs_ledger_state_or_runners(self):
         self.profile("import")
-        _load_plugin_package("hermes_proactive_portal_portal_import_qa")
+        _load_plugin_package("hermes_proactive_secretary_portal_import_qa")
         self.assertFalse(paths.job_ownership_path().exists())
         self.assertFalse(paths.state_dir().exists())
         self.assertFalse(paths.scripts_dir().exists())
@@ -519,7 +519,7 @@ class LifecycleIdempotencyTests(_Isolated):
                          ["foreign-twin"])
         self.assertNotIn(PORTAL, self.ledger()["jobs"])
 
-    def test_setup_does_not_default_create_portal_job(self):
+    def test_setup_does_not_default_create_secretary_portal(self):
         backend = _TouchBackend()
         rc, result = self._setup(backend, no_cron=False)
         self.assertEqual(rc, 0, result)

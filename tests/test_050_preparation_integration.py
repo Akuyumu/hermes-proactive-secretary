@@ -25,14 +25,14 @@ sys.path.insert(0, str(ROOT / "src"))
 import importlib  # noqa: E402
 import importlib.util  # noqa: E402
 
-_PKG_NAME = "hermes_proactive_portal_050_prep_integration"
+_PKG_NAME = "hermes_proactive_secretary_050_prep_integration"
 _spec = importlib.util.spec_from_file_location(
     _PKG_NAME, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
 _pkg = importlib.util.module_from_spec(_spec)
 sys.modules[_PKG_NAME] = _pkg
 _spec.loader.exec_module(_pkg)
 
-cli = importlib.import_module(f"{_PKG_NAME}.portal.portal_cli")
+cli = importlib.import_module(f"{_PKG_NAME}.secretary.secretary_cli")
 from proactive_pilot import responsibilities as R  # noqa: E402
 from proactive_pilot import evidence_cache  # noqa: E402
 from proactive_pilot import userconfig as uc  # noqa: E402
@@ -95,7 +95,7 @@ class PrepareCommandTests(unittest.TestCase):
         self.env = mock.patch.dict(os.environ, {
             "HOME": str(self.home),
             "HERMES_HOME": str(self.home),
-            "HERMES_PROACTIVE_PORTAL_DATA": str(self.data),
+            "HERMES_PROACTIVE_SECRETARY_DATA": str(self.data),
         })
         self.env.start()
         self.addCleanup(self.env.stop)

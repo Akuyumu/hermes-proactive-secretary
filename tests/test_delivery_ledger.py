@@ -41,7 +41,7 @@ class DeliveryLedgerTests(unittest.TestCase):
             "notice_id": "notice-1",
             "evidence_refs": ("evidence-1",),
             "job_id": "job-1",
-            "job_name": "hermes-proactive-portal-portal",
+            "job_name": "hermes-proactive-secretary-portal",
             "destination": "telegram:owner",
             "now": T0,
             "status": "emitted-unconfirmed",
@@ -57,7 +57,7 @@ class DeliveryLedgerTests(unittest.TestCase):
         self.assertEqual(row["message"], "A bounded notice")
         self.assertEqual(row["kind"], "portal-notice")
         self.assertEqual(row["job_id"], "job-1")
-        self.assertEqual(row["job_name"], "hermes-proactive-portal-portal")
+        self.assertEqual(row["job_name"], "hermes-proactive-secretary-portal")
         self.assertEqual(row["destination"], "telegram:owner")
         self.assertEqual(row["event_key"], "evt-1")
         self.assertEqual(row["notice_id"], "notice-1")

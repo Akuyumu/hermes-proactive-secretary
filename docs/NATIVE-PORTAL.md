@@ -12,12 +12,12 @@ Preview first. A schedule is required for preview and enable; the plugin adds no
 hidden cadence of its own.
 
 ```bash
-hermes portal job preview --schedule "<schedule>"
-hermes portal job enable --schedule "<schedule>"
-hermes portal job status
-hermes portal job pause
-hermes portal job resume
-hermes portal job remove
+hermes secretary job preview --schedule "<schedule>"
+hermes secretary job enable --schedule "<schedule>"
+hermes secretary job status
+hermes secretary job pause
+hermes secretary job resume
+hermes secretary job remove
 ```
 
 `preview` reports both `requested_pins` (the values this operation plans to use)
@@ -78,7 +78,7 @@ fallback, that native pin wins and the plugin does not change it.
 ## Delivery and the monitoring lane
 
 The portal job manages local native final output. It may use the guarded
-`portal_propose_notice` tool to queue a proposal for the existing monitoring
+`secretary_propose_notice` tool to queue a proposal for the existing monitoring
 lane. The monitoring lane must already be enabled before notices can be
 delivered; a proposal is not completion, delivery or a guarantee that a message
 was sent.
@@ -141,7 +141,7 @@ than a notification generator. On each native run it should:
   an obligation or as learned dislike;
 - leave approval-required actions unexecuted and surface a concrete pending
   blocker with the exact approval needed;
-- use `portal_propose_notice` for user notices, keep the native final local,
+- use `secretary_propose_notice` for user notices, keep the native final local,
   and stay meaningfully silent when nothing useful or changed warrants action.
 
 This contract does not create authority, sources or spending, and it is not
@@ -163,9 +163,9 @@ exceptions, so this is not a cap on every message.
 
 ## Reversible removal and archive boundary
 
-To stop and remove the portal explicitly, run `hermes portal job pause`
-and then `hermes portal job remove`. The plugin's broader
-`/portal disable` path also pauses and removes only its own owned jobs and
+To stop and remove the portal explicitly, run `hermes secretary job pause`
+and then `hermes secretary job remove`. The plugin's broader
+`/secretary disable` path also pauses and removes only its own owned jobs and
 runners. Neither path deletes durable profile memory.
 
 A built archive may be staged for review and rollback. Staging is not

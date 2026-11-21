@@ -62,7 +62,7 @@ class FollowupContinuityTests(unittest.TestCase):
 
         (self.data / "cron_job_ownership.json").write_text(json.dumps({
             "schema": 1,
-            "plugin": "hermes-proactive-portal",
+            "plugin": "hermes-proactive-secretary",
             "jobs": {core.PORTAL_JOB_NAME: {"id": LEDGER_ID,
                                             "name": core.PORTAL_JOB_NAME}},
         }), encoding="utf-8")

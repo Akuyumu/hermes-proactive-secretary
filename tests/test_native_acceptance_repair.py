@@ -28,7 +28,7 @@ from proactive_pilot.policy import DEFAULT_POLICY  # noqa: E402
 
 
 def _load_plugin_package():
-    name = "hermes_proactive_portal_repair_test"
+    name = "hermes_proactive_secretary_repair_test"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -39,7 +39,7 @@ def _load_plugin_package():
 
 
 _PKG = _load_plugin_package()
-sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
 
 
 class _Structured:
@@ -304,7 +304,7 @@ class ReminderConfigParity(unittest.TestCase):
             self.assertIsNone(aliases)
 
     def test_gws_event_verification_is_explicitly_unsupported(self):
-        getter = R.PortalEventGetter(
+        getter = R.SecretaryEventGetter(
             aliases=["work"],
             policy={"gws_calendar_enabled": True, "productivity_secretary_enabled": False})
         obs = getter.get("work", "primary", "e1")
@@ -336,17 +336,17 @@ class ReminderConfigParity(unittest.TestCase):
 
 class ScheduledBridgeSurface(unittest.TestCase):
     def test_pipeline_command_is_registered_and_parses(self):
-        parser = argparse.ArgumentParser(prog="hermes portal")
+        parser = argparse.ArgumentParser(prog="hermes secretary")
         sc.register_cli(parser)
         ns = parser.parse_args(["pipeline", "--check"])
-        self.assertEqual(ns.portal_cli_command, "pipeline")
+        self.assertEqual(ns.secretary_command, "pipeline")
         self.assertTrue(ns.check)
 
     def test_pipeline_in_dispatch(self):
         self.assertIn("pipeline", sc._DISPATCH)
 
     def test_configure_migrate_accepts_explicit_scope_flags(self):
-        parser = argparse.ArgumentParser(prog="hermes portal")
+        parser = argparse.ArgumentParser(prog="hermes secretary")
         sc.register_cli(parser)
         ns = parser.parse_args(["configure", "migrate", "--mail-account", "work",
                                 "--calendar-id", "team@group.calendar.google.com"])

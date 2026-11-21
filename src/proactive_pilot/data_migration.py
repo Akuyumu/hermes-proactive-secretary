@@ -1,7 +1,7 @@
 """One-time copy of the retired plugin id's owner-only data root.
 
-The plugin id changed from ``hermes-proactive-secretary`` to
-``hermes-proactive-portal``. This module copies an existing legacy tree into the
+The plugin id changed from ``hermes-proactive-portal`` to
+``hermes-proactive-secretary``. This module copies an existing legacy tree into the
 new root the first time the new root is absent or empty. It is deliberately
 small, stdlib-only and fail-closed:
 
@@ -29,7 +29,7 @@ from typing import Any, Callable
 from . import ownerpaths
 
 # Historical identity only: this is the source root of the one-time migration.
-LEGACY_PLUGIN_NAME = "hermes-proactive-secretary"
+LEGACY_PLUGIN_NAME = "hermes-proactive-portal"
 
 
 class MigrationError(RuntimeError):
@@ -131,7 +131,7 @@ def migrate_legacy_data_root(
 
         target.parent.mkdir(parents=True, exist_ok=True)
         os.chmod(target.parent, 0o700)
-        temp = Path(tempfile.mkdtemp(prefix=".portal-migration-", dir=target.parent))
+        temp = Path(tempfile.mkdtemp(prefix=".secretary-migration-", dir=target.parent))
         try:
             os.chmod(temp, 0o700)
             files = _copy_tree(source, temp)
@@ -143,14 +143,14 @@ def migrate_legacy_data_root(
         result["ok"] = False
         result["error"] = f"{type(exc).__name__}: {exc}"
         if log is not None:
-            log("proactive-portal: legacy data migration failed; starting with "
+            log("proactive-secretary: legacy data migration failed; starting with "
                 "an empty new root")
         return result
 
     result["migrated"] = True
     result["files"] = files
     if log is not None:
-        log(f"proactive-portal: migrated {files} file(s) from the legacy data root")
+        log(f"proactive-secretary: migrated {files} file(s) from the legacy data root")
     return result
 
 

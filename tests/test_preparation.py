@@ -20,7 +20,7 @@ from proactive_pilot.state import StateStore  # noqa: E402
 from proactive_pilot.userconfig import default_config  # noqa: E402
 
 T0 = datetime.fromisoformat("2026-10-20T10:00:00+08:00")
-RUNNER = ROOT / "runners" / "proactive_portal_preparation.py"
+RUNNER = ROOT / "runners" / "proactive_secretary_preparation.py"
 
 
 def prov():
@@ -531,14 +531,14 @@ class RunnerTests(unittest.TestCase):
         self.home.mkdir(parents=True)
         self.data.mkdir(parents=True)
         (self.home / "config.json").write_text(json.dumps({
-            "plugins": {"enabled": ["hermes-proactive-portal"]}
+            "plugins": {"enabled": ["hermes-proactive-secretary"]}
         }), encoding="utf-8")
         self.write_configs()
         self.env = dict(os.environ)
         self.env.update({
             "HOME": str(self.home),
             "HERMES_HOME": str(self.home),
-            "HERMES_PROACTIVE_PORTAL_DATA": str(self.data),
+            "HERMES_PROACTIVE_SECRETARY_DATA": str(self.data),
         })
         self.addCleanup(self._tmp.cleanup)
 

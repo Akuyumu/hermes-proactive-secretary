@@ -2,10 +2,11 @@
 
 Two distinct hazards are reported here, never repaired:
 
-* root-level ``portal_*.py`` modules that shadow the same module in the real
-  ``portal/`` subpackage, so an upgrade can silently run stale flat code;
-* legacy ``secretary/`` trees or root-level ``secretary_*.py`` modules left
-  behind by a copy-over upgrade from 1.0.4 or earlier.
+* root-level ``secretary_*.py`` modules that shadow the same module in the
+  real ``secretary/`` subpackage, so an upgrade can silently run stale flat
+  code;
+* legacy ``portal/`` trees or root-level ``portal_*.py`` modules left behind by
+  a copy-over upgrade from the previous portal identity.
 
 The caller must remove the stale artifacts and reinstall rather than copying
 over an old tree.
@@ -15,22 +16,22 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-SHADOW_PREFIX = "portal_"
-LEGACY_PREFIX = "secretary_"
-LEGACY_DIRNAME = "secretary"
+SHADOW_PREFIX = "secretary_"
+LEGACY_PREFIX = "portal_"
+LEGACY_DIRNAME = "portal"
 
 
 def legacy_shadows(root: Any = None) -> list[str]:
-    """Return sorted root-level ``portal_*.py`` names shadowing ``portal/``.
+    """Return sorted root-level ``secretary_*.py`` names shadowing ``secretary/``.
 
     A file is reported only when it sits at the package root, is a regular file,
-    and the same basename also exists inside ``portal/``.  A tree without a
-    ``portal/`` directory has no shadow problem.  Any ``OSError`` yields an
+    and the same basename also exists inside ``secretary/``.  A tree without a
+    ``secretary/`` directory has no shadow problem.  Any ``OSError`` yields an
     empty list so diagnostics never crash.
     """
     try:
         base = Path(root)
-        subpackage = base / "portal"
+        subpackage = base / "secretary"
         if not subpackage.is_dir():
             return []
         shadows: list[str] = []
@@ -48,10 +49,10 @@ def legacy_shadows(root: Any = None) -> list[str]:
 
 
 def legacy_artifacts(root: Any = None) -> list[str]:
-    """Return sorted stale legacy ``secretary`` artifacts at the package root.
+    """Return sorted stale legacy ``portal`` artifacts at the package root.
 
-    Reports a leftover ``secretary/`` directory and any root-level
-    ``secretary_*.py`` module.  These are never valid after the rename; they are
+    Reports a leftover ``portal/`` directory and any root-level
+    ``portal_*.py`` module.  These are never valid after the rename; they are
     what a copy-over upgrade from the old layout leaves behind.  Any ``OSError``
     yields an empty list so diagnostics never crash.
     """

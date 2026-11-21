@@ -31,7 +31,7 @@ _ACTIVE = {"active", "enabled", "running", "scheduled"}
 
 
 class PortalControlError(RuntimeError):
-    """A global-pause/portal operation could not be proven safe."""
+    """A global-pause/secretary operation could not be proven safe."""
 
 
 def _now_iso() -> str:

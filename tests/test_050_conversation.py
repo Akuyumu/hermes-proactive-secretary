@@ -15,13 +15,13 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[1]
 _SCRATCH = tempfile.mkdtemp(prefix="secretary-050-")
 os.environ["HERMES_HOME"] = os.path.join(_SCRATCH, "home")
-os.environ["HERMES_PROACTIVE_PORTAL_DATA"] = os.path.join(_SCRATCH, "data")
+os.environ["HERMES_PROACTIVE_SECRETARY_DATA"] = os.path.join(_SCRATCH, "data")
 atexit.register(shutil.rmtree, _SCRATCH, True)
 sys.path.insert(0, str(_ROOT / "src"))
 
 
 def _load_package():
-    name = "hermes_proactive_portal_050"
+    name = "hermes_proactive_secretary_050"
     spec = importlib.util.spec_from_file_location(
         name, _ROOT / "__init__.py", submodule_search_locations=[str(_ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -32,9 +32,9 @@ def _load_package():
 
 
 _PKG = _load_package()
-onboarding = importlib.import_module(f"{_PKG.__name__}.portal.portal_onboarding")
-models = importlib.import_module(f"{_PKG.__name__}.portal.portal_models")
-conversation = importlib.import_module(f"{_PKG.__name__}.portal.portal_conversation")
+onboarding = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_onboarding")
+models = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_models")
+conversation = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_conversation")
 
 
 class MemoryState:
@@ -61,7 +61,7 @@ class StrictCtx:
         self.hooks = {}
         self.saved_config = []
         self.injected = []
-        self.plugin_id = "hermes-proactive-portal"
+        self.plugin_id = "hermes-proactive-secretary"
 
     def get_config(self, key, default=None):
         return self.settings.get(key, default)
@@ -189,15 +189,15 @@ class OnboardingProgressTests(unittest.TestCase):
         self.assertEqual(result["status"], "pending_verification")
         info = svc.inspect()
         self.assertEqual(info["next_step"], "delivery_verification")
-        self.assertIn("hermes portal setup --deliver telegram",
+        self.assertIn("hermes secretary setup --deliver telegram",
                       info["next_question"])
         self.assertIn("NOT confirmed", info["next_question"])
         status = conversation.command_text(ctx, svc, "status")
         self.assertIn("delivery_verification", status)
-        self.assertIn("hermes portal setup --deliver telegram", status)
+        self.assertIn("hermes secretary setup --deliver telegram", status)
         setup = conversation.command_text(ctx, svc, "setup")
         self.assertIn("delivery verification is still pending", setup)
-        self.assertIn("hermes portal setup --deliver telegram", setup)
+        self.assertIn("hermes secretary setup --deliver telegram", setup)
 
     def test_model_cannot_mark_destination_live_verified(self):
         ctx = StrictCtx()
@@ -257,7 +257,7 @@ class ConversationSurfaceTests(unittest.TestCase):
                           {"version": 1, "invited_at": 1})
         hook = conversation.make_pre_llm_hook(ctx, _service(ctx))
         self.assertIsNone(hook(platform="telegram", user_message="what is the weather?"))
-        self.assertIsNone(hook(platform="telegram", user_message="/portal setup"))
+        self.assertIsNone(hook(platform="telegram", user_message="/secretary setup"))
 
     def test_missing_injection_grant_uses_pending_next_reply(self):
         ctx = StrictCtx(injection_grant=False)
@@ -266,7 +266,7 @@ class ConversationSurfaceTests(unittest.TestCase):
         self.assertTrue(surfaces["command"])
         self.assertTrue(surfaces["hook"])
         self.assertFalse(surfaces["injection_used"])
-        text = ctx.commands["portal"][0]("setup")
+        text = ctx.commands["secretary"][0]("setup")
         self.assertIn("Start or resume", text)
         self.assertIn("timezone", text)
         self.assertEqual(ctx.injected, [])
@@ -377,9 +377,9 @@ class RegistrationTests(unittest.TestCase):
     def test_register_wires_surfaces_without_effects(self):
         ctx = StrictCtx()
         _PKG.register(ctx)
-        self.assertIn("portal", ctx.commands)
+        self.assertIn("secretary", ctx.commands)
         self.assertIn("pre_llm_call", ctx.hooks)
-        self.assertEqual(ctx.tool_calls[0]["name"], "portal_onboarding")
+        self.assertEqual(ctx.tool_calls[0]["name"], "secretary_onboarding")
         self.assertEqual(ctx.aux_calls[0]["key"], "proactive_secretary")
         self.assertEqual(ctx.injected, [])
         self.assertEqual(ctx.state.data, {})

@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from proactive_pilot import collectors as C, userconfig as U
 from proactive_pilot.clock import SeededClock
-from proactive_pilot.reminders import PortalEventGetter
+from proactive_pilot.reminders import SecretaryEventGetter
 
 ROOT = Path(__file__).resolve().parents[1]
 CLOCK = SeededClock("2026-10-05T12:00:00+00:00")
@@ -220,12 +220,12 @@ class RequestScopeTests(unittest.TestCase):
 
     def test_reminder_empty_ids_and_subset_match_monitoring_boundary(self):
         client = CalendarClient({"team"})
-        getter = PortalEventGetter(aliases=["cal"], client_factory=lambda alias: client,
+        getter = SecretaryEventGetter(aliases=["cal"], client_factory=lambda alias: client,
                                       policy={"calendar_ids": [], "calendar_accounts": ["cal"]})
         # Exact GET uses the same selected-calendar check; fake response remains synthetic.
         getter.get("cal", "team", "event")
         self.assertEqual(len(client.requests), 1)
-        getter = PortalEventGetter(aliases=["cal"], client_factory=lambda alias: client,
+        getter = SecretaryEventGetter(aliases=["cal"], client_factory=lambda alias: client,
                                       policy={"calendar_ids": ["team"]})
         result = getter.get("cal", "primary", "event")
         self.assertFalse(result["ok"])
@@ -304,7 +304,7 @@ class MigrationAndParserTests(unittest.TestCase):
         package = importlib.util.module_from_spec(spec)
         sys.modules[name] = package
         spec.loader.exec_module(package)
-        sc = importlib.import_module(name + ".portal.portal_cli")
+        sc = importlib.import_module(name + ".secretary.secretary_cli")
         parser = argparse.ArgumentParser()
         sc.register_cli(parser)
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:

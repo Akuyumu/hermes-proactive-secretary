@@ -1352,14 +1352,14 @@ def inferred_command(args: Any) -> int:
         try:
             payload = load_inferred_registry(store, strict=True)
         except CorruptStateError as exc:
-            print(f"proactive-portal inferred state corrupt, failing closed: {exc}", file=sys.stderr)
+            print(f"proactive-secretary inferred state corrupt, failing closed: {exc}", file=sys.stderr)
             return 1
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     if action == "inferred-revoke":
         goal_id = str(getattr(args, "id", "") or "")
         if not goal_id:
-            print("proactive-portal inferred revoke rejected: --id is required", file=sys.stderr)
+            print("proactive-secretary inferred revoke rejected: --id is required", file=sys.stderr)
             return 2
         try:
             with watch_lock(store) as acquired:
@@ -1369,7 +1369,7 @@ def inferred_command(args: Any) -> int:
                 goal = revoke_inferred_goal(data, goal_id, now)
                 save_inferred_registry(store, data)
         except (InferredGoalError, CorruptStateError) as exc:
-            print(f"proactive-portal inferred revoke rejected: {exc}", file=sys.stderr)
+            print(f"proactive-secretary inferred revoke rejected: {exc}", file=sys.stderr)
             return 2
         try:
             from .adaptive import purge_watch_evidence
@@ -1384,5 +1384,5 @@ def inferred_command(args: Any) -> int:
             "updated_at": goal.get("updated_at"),
         }, indent=2))
         return 0
-    print(f"proactive-portal inferred rejected: unknown action {action!r}", file=sys.stderr)
+    print(f"proactive-secretary inferred rejected: unknown action {action!r}", file=sys.stderr)
     return 2

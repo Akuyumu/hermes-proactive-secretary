@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_plugin_package():
-    name = "hermes_proactive_portal_pause_profile_qa"
+    name = "hermes_proactive_secretary_pause_profile_qa"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -41,10 +41,10 @@ def _load_plugin_package():
 
 _PKG = _load_plugin_package()
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
-sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
-portal = importlib.import_module(f"{_PKG.__name__}.portal.portal_job")
-controls = importlib.import_module(f"{_PKG.__name__}.portal.portal_portal_controls")
+portal = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal")
+controls = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal_controls")
 ownerpaths = paths._owner
 
 PORTAL = cron_mod.PORTAL_JOB_NAME
@@ -54,7 +54,7 @@ MARKER = controls.GLOBAL_PAUSE_KEY
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="hermes")
     top = parser.add_subparsers(dest="command")
-    secretary = top.add_parser("portal")
+    secretary = top.add_parser("secretary")
     sc.register_cli(secretary)
     return parser
 
@@ -63,7 +63,7 @@ _PARSER = _build_parser()
 
 
 def _parse(*argv: str) -> argparse.Namespace:
-    return _PARSER.parse_args(["portal", *argv])
+    return _PARSER.parse_args(["secretary", *argv])
 
 
 def _capture_stdout(fn, *args, **kwargs):

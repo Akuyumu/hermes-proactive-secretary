@@ -3,7 +3,7 @@
 Proves the four seams through the ACTUAL production surfaces rather than detached
 helpers:
 
-1. deterministic registered ``hermes portal reminders`` handler, native ctx
+1. deterministic registered ``hermes secretary reminders`` handler, native ctx
    threading and exact calendar-only event scope;
 2. neutral no-config production entry (no implicit legacy private sources) and
    invalid-config fail-closed before any collector/model/state;
@@ -53,8 +53,8 @@ def _load_plugin_package(name: str):
     return module
 
 
-_PKG = _load_plugin_package("hermes_proactive_portal_seams_test")
-sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
+_PKG = _load_plugin_package("hermes_proactive_secretary_seams_test")
+sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
 runner_install = importlib.import_module(f"{_PKG.__name__}.runner_install")
@@ -79,8 +79,8 @@ def _load_runner(filename: str):
     return module
 
 
-PILOT_RUNNER = _load_runner("proactive_portal_runner.py")
-REMINDER_RUNNER = _load_runner("proactive_portal_reminder_runner.py")
+PILOT_RUNNER = _load_runner("proactive_secretary_runner.py")
+REMINDER_RUNNER = _load_runner("proactive_secretary_reminder_runner.py")
 
 
 def _ok_checks(_fixture):
@@ -155,12 +155,12 @@ class ReminderHandlerSeam(unittest.TestCase):
         return policy_path
 
     def test_registered_reminders_handler_exists_and_parses(self):
-        parser = argparse.ArgumentParser(prog="hermes portal")
+        parser = argparse.ArgumentParser(prog="hermes secretary")
         sc.register_cli(parser)
         ns = parser.parse_args(["reminders", "dispatch"])
-        self.assertEqual(ns.portal_cli_command, "reminders")
+        self.assertEqual(ns.secretary_command, "reminders")
         self.assertIn("reminders", sc._DISPATCH)
-        parser2 = argparse.ArgumentParser(prog="hermes portal")
+        parser2 = argparse.ArgumentParser(prog="hermes secretary")
         sc.register_cli(parser2)
         ns = parser2.parse_args(["reminders", "list"])
         self.assertEqual(ns.reminder_args, ["list"])
@@ -187,7 +187,7 @@ class ReminderHandlerSeam(unittest.TestCase):
             self.assertEqual(error, "")
             self.assertEqual(aliases, ["cal-work"])
             self.assertNotIn("mail-only", aliases)
-            getter = R.PortalEventGetter(aliases=aliases, policy=policy)
+            getter = R.SecretaryEventGetter(aliases=aliases, policy=policy)
             self.assertTrue(getter.event_reads_allowed)
 
     def test_disabled_calendar_makes_no_event_get_call(self):
@@ -197,7 +197,7 @@ class ReminderHandlerSeam(unittest.TestCase):
                       "calendar": {"accounts": ["work"], "calendars": ["primary"]}}
             policy_path = self._policy_file(tmp, config)
             policy, aliases, _ = R.load_effective_policy(policy_path)
-            getter = R.PortalEventGetter(aliases=aliases, policy=policy)
+            getter = R.SecretaryEventGetter(aliases=aliases, policy=policy)
             self.assertFalse(getter.event_reads_allowed)
             now = R.parse_aware("2026-10-05T09:00:00+00:00")
             reg = R.empty_registry()
@@ -223,7 +223,7 @@ class ReminderHandlerSeam(unittest.TestCase):
             policy_path = self._policy_file(tmp, config)
             policy, aliases, _ = R.load_effective_policy(policy_path)
             self.assertEqual(aliases, [])
-            getter = R.PortalEventGetter(aliases=aliases, policy=policy)
+            getter = R.SecretaryEventGetter(aliases=aliases, policy=policy)
             self.assertFalse(getter.event_reads_allowed)
             self.assertFalse(getter.get("any", "any", "any")["ok"])
 
@@ -248,7 +248,7 @@ class ReminderHandlerSeam(unittest.TestCase):
             self.assertEqual(error, "")
             self.assertEqual(aliases, [])
             self.assertFalse(policy["calendar_enabled"])
-            self.assertFalse(R.PortalEventGetter(
+            self.assertFalse(R.SecretaryEventGetter(
                 aliases=aliases, policy=policy).event_reads_allowed)
             now = R.parse_aware("2026-10-05T09:00:00+00:00")
             reg = R.empty_registry()
@@ -256,7 +256,7 @@ class ReminderHandlerSeam(unittest.TestCase):
                        provenance="explicit user request", now=now)
             plan = R.plan_dispatch(reg, now=R.parse_aware("2026-10-05T09:30:00+00:00"),
                                    prefs={"paused": {"active": False}},
-                                   getter=R.PortalEventGetter(aliases=[], policy=policy))
+                                   getter=R.SecretaryEventGetter(aliases=[], policy=policy))
             self.assertEqual(plan.messages, ["Take meds"])
 
 
@@ -490,11 +490,11 @@ class BridgeSeam(unittest.TestCase):
         self.assertIn("diagnostic", err, "stderr is forwarded separately")
 
     def test_pilot_bridge_single_invocation_and_alert_only(self):
-        self._assert_single_success(PILOT_RUNNER, ["portal", "pipeline", "--data-dir"])
+        self._assert_single_success(PILOT_RUNNER, ["secretary", "pipeline", "--data-dir"])
 
     def test_reminder_bridge_single_invocation_and_alert_only(self):
         self._assert_single_success(
-            REMINDER_RUNNER, ["portal", "reminders", "dispatch", "--data-dir"])
+            REMINDER_RUNNER, ["secretary", "reminders", "dispatch", "--data-dir"])
 
     def test_timeout_after_start_fails_closed_without_fallback(self):
         for module in (PILOT_RUNNER, REMINDER_RUNNER):

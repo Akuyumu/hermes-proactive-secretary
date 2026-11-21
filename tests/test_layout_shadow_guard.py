@@ -17,7 +17,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRATCH = tempfile.mkdtemp(prefix="portal-layout-shadow-")
-_ENV_KEYS = ("HOME", "HERMES_HOME", "HERMES_PROACTIVE_PORTAL_DATA", "TMPDIR")
+_ENV_KEYS = ("HOME", "HERMES_HOME", "HERMES_PROACTIVE_SECRETARY_DATA", "TMPDIR")
 _OLD_ENV: dict[str, str | None] = {}
 
 
@@ -26,7 +26,7 @@ def setUpModule():
         _OLD_ENV[key] = os.environ.get(key)
     os.environ["HOME"] = os.path.join(SCRATCH, "home")
     os.environ["HERMES_HOME"] = os.path.join(SCRATCH, "profile")
-    os.environ["HERMES_PROACTIVE_PORTAL_DATA"] = os.path.join(SCRATCH, "data")
+    os.environ["HERMES_PROACTIVE_SECRETARY_DATA"] = os.path.join(SCRATCH, "data")
     os.environ["TMPDIR"] = SCRATCH
     Path(os.environ["HOME"]).mkdir(parents=True, exist_ok=True)
     Path(os.environ["HERMES_HOME"]).mkdir(parents=True, exist_ok=True)
@@ -49,7 +49,7 @@ from proactive_pilot import layout  # noqa: E402
 
 
 def _load_package():
-    name = "hermes_proactive_portal_layout_shadow"
+    name = "hermes_proactive_secretary_layout_shadow"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -60,26 +60,25 @@ def _load_package():
 
 
 PKG = _load_package()
-sc = importlib.import_module(f"{PKG.__name__}.portal.portal_cli")
+sc = importlib.import_module(f"{PKG.__name__}.secretary.secretary_cli")
 
 
 def _tree(*, subpackage: bool = True, shadow: bool = False, orphan: bool = False,
           legacy_dir: bool = False, legacy_file: bool = False) -> Path:
     root = Path(tempfile.mkdtemp(prefix="tree-", dir=SCRATCH))
     if subpackage:
-        (root / "portal").mkdir()
-        (root / "portal" / "portal_cli.py").write_text("# real\n", encoding="utf-8")
-    if shadow:
-        (root / "portal_cli.py").write_text("# stale root module\n", encoding="utf-8")
-    if orphan:
-        (root / "portal_orphan.py").write_text("# no subpackage counterpart\n",
-                                               encoding="utf-8")
-    if legacy_dir:
         (root / "secretary").mkdir()
-        (root / "secretary" / "secretary_cli.py").write_text("# old tree\n",
-                                                             encoding="utf-8")
+        (root / "secretary" / "secretary_cli.py").write_text("# real\n", encoding="utf-8")
+    if shadow:
+        (root / "secretary_cli.py").write_text("# stale root module\n", encoding="utf-8")
+    if orphan:
+        (root / "secretary_orphan.py").write_text("# no subpackage counterpart\n",
+                                                  encoding="utf-8")
+    if legacy_dir:
+        (root / "portal").mkdir()
+        (root / "portal" / "portal_cli.py").write_text("# old tree\n", encoding="utf-8")
     if legacy_file:
-        (root / "secretary_cli.py").write_text("# old flat module\n", encoding="utf-8")
+        (root / "portal_cli.py").write_text("# old flat module\n", encoding="utf-8")
     return root
 
 
@@ -105,7 +104,7 @@ class LayoutDetectionTests(unittest.TestCase):
 
     def test_root_module_shadowing_subpackage_is_reported_once(self):
         root = _tree(shadow=True)
-        self.assertEqual(layout.legacy_shadows(root), ["portal_cli.py"])
+        self.assertEqual(layout.legacy_shadows(root), ["secretary_cli.py"])
         self.assertTrue(layout.is_shadowed(root))
         self.assertEqual(layout.legacy_artifacts(root), [])
 
@@ -125,15 +124,15 @@ class LayoutDetectionTests(unittest.TestCase):
             self.assertEqual(layout.legacy_shadows(root), [])
             self.assertEqual(layout.legacy_artifacts(root), [])
 
-    def test_legacy_secretary_directory_is_reported(self):
+    def test_legacy_portal_directory_is_reported(self):
         root = _tree(legacy_dir=True)
-        self.assertEqual(layout.legacy_artifacts(root), ["secretary/"])
+        self.assertEqual(layout.legacy_artifacts(root), ["portal/"])
         self.assertTrue(layout.has_legacy_artifacts(root))
         self.assertEqual(layout.legacy_shadows(root), [])
 
-    def test_legacy_root_secretary_module_is_reported(self):
+    def test_legacy_root_portal_module_is_reported(self):
         root = _tree(legacy_file=True)
-        self.assertEqual(layout.legacy_artifacts(root), ["secretary_cli.py"])
+        self.assertEqual(layout.legacy_artifacts(root), ["portal_cli.py"])
         self.assertTrue(layout.has_legacy_artifacts(root))
         self.assertEqual(layout.legacy_shadows(root), [])
 
@@ -158,31 +157,31 @@ class DoctorShadowTests(unittest.TestCase):
         installed = _extract_package()
         shadowed = installed.parent / "shadowed"
         shutil.copytree(installed, shadowed)
-        (shadowed / "portal_cli.py").write_text("# stale root module\n", encoding="utf-8")
+        (shadowed / "secretary_cli.py").write_text("# stale root module\n", encoding="utf-8")
         report = self._doctor(shadowed)
         self.assertFalse(report["ok"])
-        self.assertEqual(report["layout_shadows"], ["portal_cli.py"])
+        self.assertEqual(report["layout_shadows"], ["secretary_cli.py"])
         self.assertEqual(report["layout_artifacts"], [])
         self.assertEqual(len(report["layout_problems"]), 1)
-        self.assertIn("portal_cli.py", report["layout_problems"][0])
+        self.assertIn("secretary_cli.py", report["layout_problems"][0])
         self.assertIn("reinstall", report["layout_problems"][0])
 
     def test_legacy_extracted_package_fails_doctor(self):
         installed = _extract_package()
         legacy = installed.parent / "legacy"
         shutil.copytree(installed, legacy)
-        (legacy / "secretary").mkdir()
-        (legacy / "secretary" / "secretary_cli.py").write_text(
+        (legacy / "portal").mkdir()
+        (legacy / "portal" / "portal_cli.py").write_text(
             "# old tree\n", encoding="utf-8")
-        (legacy / "secretary_cli.py").write_text("# old flat module\n", encoding="utf-8")
+        (legacy / "portal_cli.py").write_text("# old flat module\n", encoding="utf-8")
         report = self._doctor(legacy)
         self.assertFalse(report["ok"])
         self.assertEqual(report["layout_shadows"], [])
-        self.assertEqual(report["layout_artifacts"], ["secretary/", "secretary_cli.py"])
+        self.assertEqual(report["layout_artifacts"], ["portal/", "portal_cli.py"])
         self.assertEqual(len(report["layout_problems"]), 1)
-        self.assertIn("2 stale legacy secretary artifact(s)", report["layout_problems"][0])
-        self.assertIn("secretary/", report["layout_problems"][0])
-        self.assertIn("secretary_cli.py", report["layout_problems"][0])
+        self.assertIn("2 stale legacy portal artifact(s)", report["layout_problems"][0])
+        self.assertIn("portal/", report["layout_problems"][0])
+        self.assertIn("portal_cli.py", report["layout_problems"][0])
         self.assertIn("reinstall", report["layout_problems"][0])
 
 

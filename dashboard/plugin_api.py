@@ -1,6 +1,6 @@
-"""Supported Dashboard/Desktop backend for the proactive portal settings page.
+"""Supported Dashboard/Desktop backend for the proactive secretary settings page.
 
-Mounted by Hermes at ``/api/plugins/hermes-proactive-portal/``. The desktop
+Mounted by Hermes at ``/api/plugins/hermes-proactive-secretary/``. The desktop
 half reaches these routes only through ``ctx.rest('/setup/...')`` — the
 namespace-scoped, host-authenticated plugin REST door. No shell, arbitrary file
 or remote fetch route exists here.
@@ -35,12 +35,12 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from portal.portal_setup_actions import (  # noqa: E402
+from secretary.secretary_setup_actions import (  # noqa: E402
     SetupActionError, SetupActions, owner_data_root, owner_profile_home,
 )
 
 router = APIRouter()
-PLUGIN_ID = "hermes-proactive-portal"
+PLUGIN_ID = "hermes-proactive-secretary"
 
 
 def _same_path(left: Any, right: Any) -> bool:

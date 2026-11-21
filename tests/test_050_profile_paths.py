@@ -33,7 +33,7 @@ except ModuleNotFoundError as exc:
 
 
 def _load_package():
-    name = "hermes_proactive_portal_profile_paths"
+    name = "hermes_proactive_secretary_profile_paths"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -45,7 +45,7 @@ def _load_package():
 
 PKG = _load_package()
 paths = importlib.import_module(f"{PKG.__name__}.paths")
-onboarding = importlib.import_module(f"{PKG.__name__}.portal.portal_onboarding")
+onboarding = importlib.import_module(f"{PKG.__name__}.secretary.secretary_onboarding")
 
 _NATIVE_REQUIRED = unittest.skipUnless(
     NATIVE is not None, "actual hermes_constants is not installed")

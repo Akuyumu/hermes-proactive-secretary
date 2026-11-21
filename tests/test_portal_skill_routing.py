@@ -1,7 +1,7 @@
-"""Routing contract for the bundled proactive-portal skill.
+"""Routing contract for the bundled proactive-secretary skill.
 
-Asserts from the real shipped ``skills/proactive-portal/SKILL.md`` and from the
-plugin registration that a follow-up/watch request surfaces the portal rather
+Asserts from the real shipped ``skills/proactive-secretary/SKILL.md`` and from the
+plugin registration that a follow-up/watch request surfaces the secretary rather
 than a cron job, and that the consent-gate handling is taught without bypassing
 it.
 """
@@ -16,12 +16,12 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILL = ROOT / "skills" / "proactive-portal" / "SKILL.md"
+SKILL = ROOT / "skills" / "proactive-secretary" / "SKILL.md"
 sys.path.insert(0, str(ROOT / "src"))
 
 
 def _load_package():
-    name = "hermes_proactive_portal_skill_routing"
+    name = "hermes_proactive_secretary_skill_routing"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -64,7 +64,7 @@ class _RegistrationCtx:
     def __init__(self):
         self.settings = {}
         self.state = _MemoryState()
-        self.plugin_id = "hermes-proactive-portal"
+        self.plugin_id = "hermes-proactive-secretary"
         self.skills = {}
         self.tool_calls = []
         self.commands = {}
@@ -114,20 +114,20 @@ class SkillRoutingTests(unittest.TestCase):
     def test_skill_file_is_shipped_in_the_expected_path(self):
         self.assertTrue(SKILL.is_file())
         self.assertEqual(SKILL.relative_to(ROOT).as_posix(),
-                         "skills/proactive-portal/SKILL.md")
-        self.assertEqual(self.frontmatter.get("name"), "proactive-portal")
-        self.assertEqual(self.frontmatter.get("version"), "1.0.5")
+                         "skills/proactive-secretary/SKILL.md")
+        self.assertEqual(self.frontmatter.get("name"), "proactive-secretary")
+        self.assertEqual(self.frontmatter.get("version"), "1.0.6")
 
     def test_description_carries_the_routing_triggers(self):
         lowered = self.description.lower()
         for trigger in ("follow up", "watch", "track", "notify", "keep an eye"):
             self.assertIn(trigger, lowered)
 
-    def test_body_routes_followups_to_portal_and_never_cron(self):
-        self.assertIn("portal_followup", self.body)
+    def test_body_routes_followups_to_secretary_and_never_cron(self):
+        self.assertIn("secretary_followup", self.body)
         self.assertIn('action="create"', self.body)
         self.assertIn("do not create a cron job for a follow-up", self.body)
-        self.assertIn("cron is not the portal's api", self.body)
+        self.assertIn("cron is not the secretary's api", self.body)
 
     def test_body_teaches_one_confirming_question_without_bypasses(self):
         self.assertIn("one plain confirming question", self.body)
@@ -142,7 +142,7 @@ class SkillRoutingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="portal-skill-routing-") as scratch:
             env = {
                 "HERMES_HOME": os.path.join(scratch, "home"),
-                "HERMES_PROACTIVE_PORTAL_DATA": os.path.join(scratch, "data"),
+                "HERMES_PROACTIVE_SECRETARY_DATA": os.path.join(scratch, "data"),
             }
             try:
                 with mock.patch.dict(os.environ, env):
@@ -150,12 +150,12 @@ class SkillRoutingTests(unittest.TestCase):
                     package.register(ctx)
             finally:
                 try:
-                    from hermes_proactive_portal_skill_routing.portal import portal_cli
-                    portal_cli.set_native_context(None)
+                    from hermes_proactive_secretary_skill_routing.secretary import secretary_cli
+                    secretary_cli.set_native_context(None)
                 except Exception:  # noqa: BLE001 - cleanup only
                     pass
-        self.assertIn("proactive-portal", ctx.skills)
-        path, registered = ctx.skills["proactive-portal"]
+        self.assertIn("proactive-secretary", ctx.skills)
+        path, registered = ctx.skills["proactive-secretary"]
         self.assertEqual(Path(path).resolve(), SKILL.resolve())
         self.assertEqual(registered, self.description)
         self.assertTrue(registered)

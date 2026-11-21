@@ -21,7 +21,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRATCH = tempfile.mkdtemp(prefix="secretary-closeout-")
-_ENV_KEYS = ("HOME", "HERMES_HOME", "HERMES_PROACTIVE_PORTAL_DATA", "TMPDIR")
+_ENV_KEYS = ("HOME", "HERMES_HOME", "HERMES_PROACTIVE_SECRETARY_DATA", "TMPDIR")
 _OLD_ENV: dict[str, str | None] = {}
 
 
@@ -31,7 +31,7 @@ def setUpModule():
         _OLD_ENV[key] = os.environ.get(key)
     os.environ["HOME"] = os.path.join(SCRATCH, "home")
     os.environ["HERMES_HOME"] = os.path.join(SCRATCH, "profile")
-    os.environ["HERMES_PROACTIVE_PORTAL_DATA"] = os.path.join(SCRATCH, "data")
+    os.environ["HERMES_PROACTIVE_SECRETARY_DATA"] = os.path.join(SCRATCH, "data")
     os.environ["TMPDIR"] = SCRATCH
     Path(os.environ["HOME"]).mkdir(parents=True, exist_ok=True)
     Path(os.environ["HERMES_HOME"]).mkdir(parents=True, exist_ok=True)
@@ -61,7 +61,7 @@ T0 = datetime.fromisoformat("2026-10-20T12:00:00+00:00")
 
 
 def _load_package():
-    name = "hermes_proactive_portal_closeout"
+    name = "hermes_proactive_secretary_closeout"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -72,12 +72,12 @@ def _load_package():
 
 
 PKG = _load_package()
-conversation = importlib.import_module(f"{PKG.__name__}.portal.portal_conversation")
-onboarding = importlib.import_module(f"{PKG.__name__}.portal.portal_onboarding")
-models = importlib.import_module(f"{PKG.__name__}.portal.portal_models")
-sc = importlib.import_module(f"{PKG.__name__}.portal.portal_cli")
+conversation = importlib.import_module(f"{PKG.__name__}.secretary.secretary_conversation")
+onboarding = importlib.import_module(f"{PKG.__name__}.secretary.secretary_onboarding")
+models = importlib.import_module(f"{PKG.__name__}.secretary.secretary_models")
+sc = importlib.import_module(f"{PKG.__name__}.secretary.secretary_cli")
 cron_mod = importlib.import_module(f"{PKG.__name__}.cron")
-status_mod = importlib.import_module(f"{PKG.__name__}.portal.portal_status")
+status_mod = importlib.import_module(f"{PKG.__name__}.secretary.secretary_status")
 
 ROUTES = {"primary_provider": "provider-a", "primary_model": "model-a",
           "fallback_provider": "provider-b", "fallback_model": "model-b"}
@@ -101,7 +101,7 @@ class Ctx:
         self.commands = {}
         self.hooks = {}
         self.strict_aux = strict_aux
-        self.plugin_id = "hermes-proactive-portal"
+        self.plugin_id = "hermes-proactive-secretary"
 
     def get_config(self, key, default=None):
         return self.settings.get(key, default)
@@ -186,21 +186,21 @@ class ChatStatusProjectionTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.data = self.root / "data"
         self.data.mkdir()
-        self._old_data = os.environ["HERMES_PROACTIVE_PORTAL_DATA"]
-        os.environ["HERMES_PROACTIVE_PORTAL_DATA"] = str(self.data)
+        self._old_data = os.environ["HERMES_PROACTIVE_SECRETARY_DATA"]
+        os.environ["HERMES_PROACTIVE_SECRETARY_DATA"] = str(self.data)
         self.addCleanup(self._restore)
         self.addCleanup(self.tmp.cleanup)
 
     def _restore(self):
-        os.environ["HERMES_PROACTIVE_PORTAL_DATA"] = self._old_data
+        os.environ["HERMES_PROACTIVE_SECRETARY_DATA"] = self._old_data
 
     def _handler(self, ctx, strict=True):
         if strict:
             models.register_configured_models(ctx)
         services = _service(ctx)
         conversation.register_conversation_surfaces(ctx, service=services)
-        self.assertIn("portal", ctx.commands)
-        return ctx.commands["portal"][0]
+        self.assertIn("secretary", ctx.commands)
+        return ctx.commands["secretary"][0]
 
     def test_registered_handler_renders_real_profile_route_and_strict_state(self):
         ctx = Ctx({**ROUTES, "user_config": uc.validate_config(uc.default_config())},
@@ -238,7 +238,7 @@ class ChatStatusProjectionTests(unittest.TestCase):
             cron_mod.PILOT_JOB_NAME: {
                 "id": "job-42", "name": cron_mod.PILOT_JOB_NAME,
                 "created_at": T0.isoformat(), "schedule": "*/5 * * * *",
-                "script": "proactive_portal_runner.py", "deliver": "local",
+                "script": "proactive_secretary_runner.py", "deliver": "local",
                 "workdir": ""}}}
         cron_mod.save_job_ownership(self.data / "cron_job_ownership.json", ownership)
         store = StateStore(self.data / "var", SeededClock(T0.isoformat()))
@@ -274,7 +274,7 @@ class ChatStatusProjectionTests(unittest.TestCase):
         self.assertIn("1 owned", text)
         self.assertIn("job-42", text)
         self.assertIn("next=2026-10-20T12:15:00+00:00", text)
-        self.assertNotIn("proactive-portal-pilot", text)
+        self.assertNotIn("proactive-secretary-pilot", text)
         self.assertIn("Health: open", text)
         self.assertIn("prepare queue=1 ready", text)
         self.assertIn(rec["id"], text)

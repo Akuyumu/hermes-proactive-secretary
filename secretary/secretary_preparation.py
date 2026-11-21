@@ -1,6 +1,6 @@
 """One bounded private-preparation unit shared by every production entry point.
 
-Both the opt-in scheduled runner (``hermes portal prepare``) and the
+Both the opt-in scheduled runner (``hermes secretary prepare``) and the
 foreground autonomy seam call :func:`run_unit`. That keeps a single claim ->
 native model -> deterministic writer pipeline: no second agent loop, no
 hardcoded draft template and no parallel approval/permission model.

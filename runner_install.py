@@ -24,15 +24,15 @@ from pathlib import Path
 from typing import Any
 
 RUNNER_FILENAMES = (
-    "proactive_portal_runner.py",
-    "proactive_portal_reminder_runner.py",
+    "proactive_secretary_runner.py",
+    "proactive_secretary_reminder_runner.py",
 )
 PREPARATION_RUNNER_FILENAMES = (
-    "proactive_portal_prepare_runner.py",
+    "proactive_secretary_prepare_runner.py",
 )
 PLACEHOLDER = "{{PLUGIN_ROOT}}"
-BACKUP_SUFFIX = ".pre-hermes-proactive-portal.bak"
-PLUGIN_NAME = "hermes-proactive-portal"
+BACKUP_SUFFIX = ".pre-hermes-proactive-secretary.bak"
+PLUGIN_NAME = "hermes-proactive-secretary"
 SCHEMA = 1
 
 
@@ -106,7 +106,7 @@ def install_runners(*, plugin_root: Path, template_root: Path, scripts_dir: Path
     """Install owned runner templates into ``scripts_dir`` and record ownership.
 
     The preparation runner is installed only when the caller explicitly opts in
-    (``hermes portal setup --with-preparation``); merely setting
+    (``hermes secretary setup --with-preparation``); merely setting
     ``preparation_enabled`` in configuration never installs or arms it.
     """
     installed_at = now or _now()

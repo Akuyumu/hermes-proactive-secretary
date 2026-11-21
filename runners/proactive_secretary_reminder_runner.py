@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""Native-cron runner: the proactive-portal monitoring pipeline.
+"""Native-cron runner: the requested-reminder dispatcher.
 
-Installed by ``hermes portal setup`` into the profile's scripts directory and
-run by the native scheduler with ``--no-agent``: its stdout is the single
-permitted alert line, or empty for silence.
+Installed by ``hermes secretary setup`` into the profile's scripts directory and
+run by the native scheduler with ``--no-agent`` on the one-minute cadence: its
+stdout is the single permitted reminder line, or empty.
 
 Before doing ANY work the runner checks the shared native enable/disable gate
 (``runtime_gate``): a plugin disabled in ``plugins.enabled``/``plugins.disabled``
 — or a removed plugin root or unreadable config — exits silently with empty
-stdout and never imports the pipeline, reads runtime state, collects, evaluates,
+stdout and never imports the pipeline, reads the reminder registry, dispatches,
 or produces a delivery payload. With no arguments (the scheduler case) it uses
 the plugin's profile-safe state/policy/preferences paths. Explicit arguments are
 forwarded unchanged so the same file can be exercised offline by tests.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -38,11 +39,11 @@ def _native_gate() -> bool:
         from runtime_gate import plugin_enabled
         allowed = plugin_enabled(PLUGIN_ROOT)
     except Exception as exc:  # noqa: BLE001 - a broken gate must fail closed
-        print(f"proactive-portal: skipping run (gate unavailable: {exc})",
+        print(f"proactive-secretary: skipping run (gate unavailable: {exc})",
               file=sys.stderr)
         return False
     if not allowed:
-        print("proactive-portal: plugin is not enabled "
+        print("proactive-secretary: plugin is not enabled "
               "(plugins.enabled); skipping run", file=sys.stderr)
         return False
     return True
@@ -54,48 +55,47 @@ def _default_argv() -> list[str]:
         "--state-dir", str(paths.state_dir()),
         "--policy", str(paths.policy_path()),
         "--preferences", str(paths.preferences_path()),
+        "dispatch",
     ]
 
 
 def _native_cli_bridge() -> int | None:
-    """Scheduled route: run the ordinary pipeline through the registered native CLI.
+    """Scheduled route: dispatch reminders through the registered native CLI.
 
-    The scheduler invokes this script with NO arguments. Rather than importing the
-    pipeline directly (which would leave ``ctx.llm``/native settings unavailable),
-    we invoke the registered ``hermes portal pipeline`` handler with fixed argv
-    so native plugin discovery builds and passes the host context.
+    The scheduler invokes this script with NO arguments. We call the registered
+    ``hermes secretary reminders dispatch`` handler with a fixed argv so native
+    plugin discovery builds/passes the host context (deterministic: no model, no
+    ``ctx.llm`` access) and the SAME active profile/data paths are used.
 
-    Fail-closed contract:
-    * the direct-import compatibility fallback is used ONLY when the native CLI
-      is verifiably unavailable BEFORE any work starts (returning ``None``), and
-      that is reported on stderr;
-    * any failure or timeout AFTER the native pipeline was spawned (OSError,
-      SubprocessError/TimeoutExpired) returns a non-zero code so the caller NEVER
-      retries a second collector/model run and never bypasses a failed native
-      context. Stderr is forwarded separately; only the alert line ever reaches
-      stdout.
+    Fail-closed contract: the direct-import compatibility fallback is used ONLY
+    when the native CLI is verifiably unavailable BEFORE any work (returns
+    ``None``, reported on stderr). Any failure/timeout AFTER starting the native
+    dispatcher returns a non-zero code -- never a second dispatch and never a
+    bypass of a failed native context.
     """
-    import os
     import shutil
     import subprocess
 
     hermes = os.environ.get("HERMES_BIN") or shutil.which("hermes")
     if not hermes:
-        print("proactive-portal: native hermes CLI unavailable; using the "
+        print("proactive-secretary: native hermes CLI unavailable; using the "
               "direct-import compatibility fallback", file=sys.stderr)
         return None
     import paths  # noqa: E402 - resolved from the installed plugin root
 
-    argv = [hermes, "portal", "pipeline", "--data-dir", str(paths.data_root())]
+    # Parent CLI options must precede the REMAINDER positional: after
+    # 'dispatch', argparse forwards every token to the reminder-only parser.
+    argv = [hermes, "secretary", "reminders",
+            "--data-dir", str(paths.data_root()), "dispatch"]
     try:
         proc = subprocess.run(argv, shell=False, capture_output=True, text=True,
                               timeout=300, check=False)
     except subprocess.TimeoutExpired:
-        print("proactive-portal: native pipeline timed out AFTER start; "
-              "failing closed (no retry/fallback)", file=sys.stderr)
+        print("proactive-secretary: native reminder dispatch timed out AFTER "
+              "start; failing closed (no retry/fallback)", file=sys.stderr)
         return 1
     except (OSError, subprocess.SubprocessError) as exc:
-        print(f"proactive-portal: native pipeline failed AFTER start "
+        print(f"proactive-secretary: native reminder dispatch failed AFTER start "
               f"({type(exc).__name__}); failing closed (no retry/fallback)",
               file=sys.stderr)
         return 1
@@ -112,10 +112,11 @@ def _native_cli_bridge() -> int | None:
 if __name__ == "__main__":
     if not _native_gate():
         raise SystemExit(0)
+    os.environ.setdefault("PROACTIVE_FOLLOWTHROUGH_ROOT", str(PLUGIN_ROOT))
     if not sys.argv[1:]:
         _bridge_rc = _native_cli_bridge()
         if _bridge_rc is not None:
             raise SystemExit(_bridge_rc)
-    from proactive_pilot.main import main as _pilot_main  # noqa: E402
+    from proactive_pilot.reminders import main as _reminders_main  # noqa: E402
     _argv = sys.argv[1:] or _default_argv()
-    raise SystemExit(_pilot_main(_argv))
+    raise SystemExit(_reminders_main(_argv))

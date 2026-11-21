@@ -44,29 +44,29 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
-PILOT_SCRIPT = "proactive_portal_runner.py"
+PILOT_SCRIPT = "proactive_secretary_runner.py"
 MONITORING_SCRIPT = PILOT_SCRIPT
-REMINDER_SCRIPT = "proactive_portal_reminder_runner.py"
-PREPARATION_SCRIPT = "proactive_portal_prepare_runner.py"
+REMINDER_SCRIPT = "proactive_secretary_reminder_runner.py"
+PREPARATION_SCRIPT = "proactive_secretary_prepare_runner.py"
 
 # Namespaced to this plugin so a pre-existing unrelated job of a generic name can
 # never be matched (and therefore never removed) by accident.
-MONITORING_JOB_NAME = "hermes-proactive-portal-monitoring"
+MONITORING_JOB_NAME = "hermes-proactive-secretary-monitoring"
 LEGACY_PILOT_JOB_NAME = "hermes-proactive-secretary-pilot"
 # Backwards-compatible source symbol only: no new owner-facing job uses it.
 PILOT_JOB_NAME = MONITORING_JOB_NAME
-REMINDER_JOB_NAME = "hermes-proactive-portal-reminders"
-PREPARATION_JOB_NAME = "hermes-proactive-portal-preparation"
-PORTAL_JOB_NAME = "hermes-proactive-portal-portal"
-# Retired owner-facing names from before the portal identity. Only an exact
+REMINDER_JOB_NAME = "hermes-proactive-secretary-reminders"
+PREPARATION_JOB_NAME = "hermes-proactive-secretary-preparation"
+PORTAL_JOB_NAME = "hermes-proactive-secretary-portal"
+# Retired owner-facing names from before the secretary identity. Only an exact
 # ownership-ledger id/name match can be removed; a foreign same-named row is
 # always left untouched. The legacy ``-pilot`` name keeps its dedicated
 # in-place rename path above.
-RETIRED_PORTAL_JOB_NAME = "hermes-proactive-secretary-portal"
+RETIRED_PORTAL_JOB_NAME = "hermes-proactive-portal-portal"
 RETIRED_JOB_NAMES: tuple[str, ...] = (
-    "hermes-proactive-secretary-monitoring",
-    "hermes-proactive-secretary-reminders",
-    "hermes-proactive-secretary-preparation",
+    "hermes-proactive-portal-monitoring",
+    "hermes-proactive-portal-reminders",
+    "hermes-proactive-portal-preparation",
     RETIRED_PORTAL_JOB_NAME,
 )
 OWNED_JOB_NAMES: tuple[str, ...] = (MONITORING_JOB_NAME, REMINDER_JOB_NAME)
@@ -76,7 +76,7 @@ KNOWN_JOB_NAMES: tuple[str, ...] = (
     MONITORING_JOB_NAME, REMINDER_JOB_NAME, PREPARATION_JOB_NAME,
     PORTAL_JOB_NAME, LEGACY_PILOT_JOB_NAME,
 )
-OWNED_PLUGIN = "hermes-proactive-portal"
+OWNED_PLUGIN = "hermes-proactive-secretary"
 JOB_OWNERSHIP_SCHEMA = 1
 
 
@@ -1407,7 +1407,7 @@ def build_job_specs(*, deliver: str = "local", workdir: str = "",
 
     Preparation is a separate explicit opt-in: ``preparation_enabled`` in the
     user configuration never arms anything by itself. Only
-    ``hermes portal setup --with-preparation`` passes ``True`` here.
+    ``hermes secretary setup --with-preparation`` passes ``True`` here.
     """
     specs = [
         CronJobSpec(

@@ -8,7 +8,7 @@ connectors, model calls, metered requests or delivery target.
 
 1. Load the plugin through the actual Hermes plugin manager in the intended
    profile. Verify its native CLI, chat command, tools and settings form.
-2. Run `hermes portal doctor` and `hermes portal status --json`. Separate
+2. Run `hermes secretary doctor` and `hermes secretary status --json`. Separate
    installed, configured, scheduled and delivery-verified states. An offline
    check or empty output is not proof of source health or successful delivery.
 3. Before any model-dependent work, require the named

@@ -1,17 +1,17 @@
 ---
-name: proactive-portal
+name: proactive-secretary
 description: "Use when the user asks to follow up on, watch, track, be notified about, notify me about or keep an eye on something, or to set up, tune, pause or troubleshoot proactive alerts and reminders."
-version: 1.0.5
+version: 1.0.6
 author: Hermes Plugin Community
 license: MIT
 platforms: [linux, macos]
 metadata:
   hermes:
-    tags: [portal, proactive, notifications, reminders, followup, watch, cron]
+    tags: [secretary, proactive, notifications, reminders, followup, watch, cron]
     related_skills: []
 ---
 
-# Proactive Portal
+# Proactive Secretary
 
 ## Route the request first
 
@@ -19,12 +19,12 @@ Decide the surface from the user's words before reaching for any tool:
 
 | User says | Do |
 |---|---|
-| follow up on / watch / track / notify me / let me know when / keep an eye on | `portal_followup` with `action="create"` — this is the portal's own store |
-| remind me at/on <time or event> | the requested-reminders surface (`hermes portal reminders`) |
-| set up / tune / pause / troubleshoot proactive alerts | the onboarding and status commands (`/portal setup`, `/portal status`, `portal_onboarding`) |
-| anything else that sounds like a recurring check | **never a cron job** — cron is not the portal's API |
+| follow up on / watch / track / notify me / let me know when / keep an eye on | `secretary_followup` with `action="create"` — this is the secretary's own store |
+| remind me at/on <time or event> | the requested-reminders surface (`hermes secretary reminders`) |
+| set up / tune / pause / troubleshoot proactive alerts | the onboarding and status commands (`/secretary setup`, `/secretary status`, `secretary_onboarding`) |
+| anything else that sounds like a recurring check | **never a cron job** — cron is not the secretary's API |
 
-**Do not create a cron job for a follow-up request.** The portal's existing wake
+**Do not create a cron job for a follow-up request.** The secretary's existing wake
 already carries due follow-ups, so adding a watch must not touch schedules. Cron
 is only the plugin's own installed monitoring/reminder machinery; it is never
 the way to record a user's watch.
@@ -37,7 +37,7 @@ infer the intent and file it rather than asking for a magic phrase.
 Create from the current private human turn, passing the user's own criteria:
 
 ```text
-portal_followup(action="create", text="<short title>", kind="ongoing",
+secretary_followup(action="create", text="<short title>", kind="ongoing",
                 check_hint="<what to check, what counts as a match, where to look>")
 ```
 
@@ -64,20 +64,20 @@ phrase-list gate. The only veto is an explicit retraction such as "don't watch",
 
 If the intent is genuinely unclear, the correct move is **one plain confirming question** — "Want me to file that as a follow-up?" — then create it on the user's yes. It is never acceptable to:
 
-- demand a magic phrase ("say: watch it in the portal");
+- demand a magic phrase ("say: watch it in the secretary");
 - hand-edit the store or state files;
 - substitute a cron job for the follow-up.
 
 ## After filing
 
-Read the store back with `portal_followup(action="list")` (or `action="inspect"`
+Read the store back with `secretary_followup(action="list")` (or `action="inspect"`
 with the returned id) and report the id plus the recorded criteria. State that
 the existing wake will carry it. State honestly that a queued notice is not
 delivery proof — actual delivery belongs to the native scheduler.
 
 ## What this is
 
-`hermes-proactive-portal` watches the user's **own authorised** mail, calendar
+`hermes-proactive-secretary` watches the user's **own authorised** mail, calendar
 and tasks plus optional public sources, decides conservatively whether anything
 merits interrupting them, and delivers at most a short message through the
 native Hermes scheduler. It also holds explicit, user-requested reminders
@@ -90,18 +90,18 @@ always acceptable.
 
 ## Setup and onboarding
 
-- `/portal setup` starts or resumes setup, `/portal status` inspects and
-  `/portal cancel` cancels while retaining progress. One-command install:
-  `hermes plugins enable hermes-proactive-portal` once, then `hermes portal setup`
+- `/secretary setup` starts or resumes setup, `/secretary status` inspects and
+  `/secretary cancel` cancels while retaining progress. One-command install:
+  `hermes plugins enable hermes-proactive-secretary` once, then `hermes secretary setup`
   (idempotent; safe to re-run).
-- Use the `portal_onboarding` tool for every state change and exact readback.
+- Use the `secretary_onboarding` tool for every state change and exact readback.
   Foreground memory may be *proposed*; it is never source consent. Ask only
   missing/conflicting/stale facts and genuine permissions. Never ask for
   credentials in chat.
 - Primary/fallback provider+model pairs are both-or-none: assigned primary ->
   assigned fallback -> stop. A native `auxiliary.proactive_secretary` pin is
   owner configuration and always wins; the plugin never rewrites it. If
-  `portal_onboarding inspect` reports `configured_model_calls_allowed: false`,
+  `secretary_onboarding inspect` reports `configured_model_calls_allowed: false`,
   model-dependent work is unsupported; say so. Deterministic controls and
   requested reminders still work.
 - A destination is recorded as `user_confirmed` at most, never live-verified.
@@ -111,7 +111,7 @@ always acceptable.
 - Private preparation is opt-in and off by default. `preparation_scopes` uses
   exactly conversation/public/mail/calendar/tasks/documents/memory; public
   consent never grants a private scope. Enabling it arms no job. On a host
-  without the configured-only contract, `hermes portal prepare` fails closed
+  without the configured-only contract, `hermes secretary prepare` fails closed
   before any model call; report that limit and do not claim an artifact was
   prepared.
 - Never describe the model-outage notice as verified on this host: no truthful
@@ -122,7 +122,7 @@ always acceptable.
   check creates **zero** cron jobs. Only then does it install launchers and the
   two native jobs (monitoring every 15 minutes, reminders every 1 minute) and
   verify them. Use `--no-cron` for offline checks only.
-- Import legacy state with `hermes portal setup --import-from <tree>
+- Import legacy state with `hermes secretary setup --import-from <tree>
   [--import-dry-run]`: byte-for-byte, private, never overwrites, refuses
   conflicts/symlinks/traversal, and leaves the legacy tree and its jobs alone.
 - Configuration is versioned, rejects credential values and never silently
@@ -131,36 +131,36 @@ always acceptable.
   never permission. Empty account arrays read no connector; nonempty calendar
   IDs/lists narrow actual requests. Supported task adapters: empty, `tasks`,
   `productivity_secretary`; anything else fails closed. Configure with
-  `hermes portal configure init|validate|preview|migrate`, not by hand-editing.
+  `hermes secretary configure init|validate|preview|migrate`, not by hand-editing.
 
 ## Day-to-day commands
 
 | Command | What it does |
 |---|---|
-| `hermes portal setup` | Idempotent setup + verification (`--force`, `--no-cron`) |
-| `hermes portal status` | Enabled/disabled, job state, last run, coverage, counts |
-| `hermes portal pause` / `resume` | Global pause: stops collection **and** delivery / clears it |
-| `hermes portal disable` / `uninstall` | Pause and remove **only this plugin's** jobs (`--purge` deletes data) |
-| `hermes portal self-test` | Offline deterministic self-test |
-| `hermes portal run-once` | Dry, no-model run; never sends (`--fixture <name>` offline) |
-| `hermes portal watch add\|list\|remove` | Save, list or remove a public watch |
-| `hermes portal feedback <action>` | Record/inspect notification preferences |
-| `hermes portal configure <show\|validate\|preview\|init\|migrate>` | Validated per-user configuration |
-| `hermes portal reminders list\|status\|dispatch` | Inspect and dispatch the requested-reminders registry |
-| `hermes portal doctor` | Environment and wiring diagnostics |
+| `hermes secretary setup` | Idempotent setup + verification (`--force`, `--no-cron`) |
+| `hermes secretary status` | Enabled/disabled, job state, last run, coverage, counts |
+| `hermes secretary pause` / `resume` | Global pause: stops collection **and** delivery / clears it |
+| `hermes secretary disable` / `uninstall` | Pause and remove **only this plugin's** jobs (`--purge` deletes data) |
+| `hermes secretary self-test` | Offline deterministic self-test |
+| `hermes secretary run-once` | Dry, no-model run; never sends (`--fixture <name>` offline) |
+| `hermes secretary watch add\|list\|remove` | Save, list or remove a public watch |
+| `hermes secretary feedback <action>` | Record/inspect notification preferences |
+| `hermes secretary configure <show\|validate\|preview\|init\|migrate>` | Validated per-user configuration |
+| `hermes secretary reminders list\|status\|dispatch` | Inspect and dispatch the requested-reminders registry |
+| `hermes secretary doctor` | Environment and wiring diagnostics |
 
 Every command accepts `--json` and exits non-zero on failure.
 
 The two runners check native `plugins.enabled`/`plugins.disabled` before doing
-any work, so `hermes plugins disable hermes-proactive-portal` stops collection
+any work, so `hermes plugins disable hermes-proactive-secretary` stops collection
 and delivery on the next invocation but does **not** remove cron schedules. Use
-`hermes portal disable` for an explicit pause **plus** cleanup of this plugin's
+`hermes secretary disable` for an explicit pause **plus** cleanup of this plugin's
 own jobs and launchers. Delivered messages are not revoked; only future runs
 stop. A missing/malformed/empty enabled list fails closed, so the runners stay
 quiet rather than run unmanaged.
 
 After setup, confirm `status` lists
-`hermes-proactive-portal-monitoring` and `hermes-proactive-portal-reminders`
+`hermes-proactive-secretary-monitoring` and `hermes-proactive-secretary-reminders`
 (plus the optional preparation job), `doctor` exits 0 and `self-test` passes.
 
 ## Feedback
@@ -178,22 +178,22 @@ no capture hook and no monitoring of unrelated conversations.
    was a no-op/needs clarification.
 
 ```bash
-hermes portal feedback add-explicit --kind mail --match newsletter \
+hermes secretary feedback add-explicit --kind mail --match newsletter \
   --scope newsletters --provenance "user asked to stop newsletters"
-hermes portal feedback add-explicit --kind mail --match career \
+hermes secretary feedback add-explicit --kind mail --match career \
   --scope "generic career broadcasts" --provenance "user correction" \
   --conditional --exception "unusually fitting"
-hermes portal feedback add-explicit --kind feed --match "formula one" \
+hermes secretary feedback add-explicit --kind feed --match "formula one" \
   --scope "F1 only" --provenance "user correction" --expires-at <ISO>
-hermes portal feedback add-inferred --kind mail --match career \
+hermes secretary feedback add-inferred --kind mail --match career \
   --note "tentative pattern" --confidence low --provenance "observed replies"
-hermes portal feedback snooze --kind mail --match career --scope "today only" \
+hermes secretary feedback snooze --kind mail --match career --scope "today only" \
   --provenance "user said not today" --minutes 240
-hermes portal feedback pause|resume --provenance "user asked"
-hermes portal feedback list
-hermes portal feedback show --id <id>
-hermes portal feedback forget --id <id>
-hermes portal feedback noop
+hermes secretary feedback pause|resume --provenance "user asked"
+hermes secretary feedback list
+hermes secretary feedback show --id <id>
+hermes secretary feedback forget --id <id>
+hermes secretary feedback noop
 ```
 
 Rules:
@@ -221,11 +221,11 @@ delivery cache, *not* a second memory backend: the pipeline never scrapes
 USER/MEMORY/Hindsight/Library, credentials, connectors or new allowlists.
 
 ```bash
-hermes portal feedback context-list                     # metadata only
-hermes portal feedback context-show --id <entry id>
-hermes portal feedback context-update --note "planning a Japan trip in spring" \
+hermes secretary feedback context-list                     # metadata only
+hermes secretary feedback context-show --id <entry id>
+hermes secretary feedback context-update --note "planning a Japan trip in spring" \
   --provenance "assistant:memory" --kind interest --expires-at <ISO>
-hermes portal feedback context-revoke --id <entry id>   # durable revoke
+hermes secretary feedback context-revoke --id <entry id>   # durable revoke
 ```
 
 - Refresh only when the user's relevant knowledge changes; send a few bounded
@@ -246,12 +246,12 @@ hermes portal feedback context-revoke --id <entry id>   # durable revoke
 ## Requested reminders
 
 Use the durable registry, never an untracked time-only cron job. The
-`hermes portal reminders` handler is deterministic (zero model calls):
+`hermes secretary reminders` handler is deterministic (zero model calls):
 
 ```bash
-hermes portal reminders list          # inspect the registry
-hermes portal reminders status
-hermes portal reminders dispatch      # scheduled path (one bounded stdout line)
+hermes secretary reminders list          # inspect the registry
+hermes secretary reminders status
+hermes secretary reminders dispatch      # scheduled path (one bounded stdout line)
 ```
 
 Create event-bound and time-only reminders with `--add-time`/`--add-event`
@@ -307,13 +307,13 @@ requirement. Delivery is best-effort; do not promise hard punctuality.
 ## Troubleshooting
 
 - **`setup` fails with "cron surface unavailable"** — confirm `hermes cron`
-  works, then re-run `hermes portal setup`. `--no-cron` is for an offline check
+  works, then re-run `hermes secretary setup`. `--no-cron` is for an offline check
   and does not create jobs.
 - **`doctor` fails a critical check** — read the printed check name. Missing
   launchers/policy mean an incomplete plugin tree; a missing cron backend means
   the scheduler is unavailable.
-- **No alerts** — check `hermes portal status` (paused? jobs present?), then
-  `hermes portal run-once --check` for a coverage diagnostic. An empty result is
+- **No alerts** — check `hermes secretary status` (paused? jobs present?), then
+  `hermes secretary run-once --check` for a coverage diagnostic. An empty result is
   not proof of healthy collection.
 - **Nothing is urgent** — silence is expected; the evaluator only notifies for
   genuine, evidence-backed, time-bound items.
@@ -322,16 +322,16 @@ requirement. Delivery is best-effort; do not promise hard punctuality.
 - **State or preferences look corrupt** — the runtime fails closed rather than
   re-sending. Restore from a known-good file; do not delete the lock or reset
   dedupe state to "fix" a symptom.
-- **Pause did not take** — `hermes portal pause` is global and stops collection
+- **Pause did not take** — `hermes secretary pause` is global and stops collection
   and delivery including urgency. `resume` is the only clear.
 
 ## Verification (for the agent)
 
 Before claiming success, do all of:
 
-1. `hermes portal setup` exits 0 and lists both jobs.
-2. `hermes portal status` shows enabled + both jobs + a monitoring summary.
-3. `hermes portal self-test` reports all checks passed.
-4. `hermes portal doctor` exits 0.
+1. `hermes secretary setup` exits 0 and lists both jobs.
+2. `hermes secretary status` shows enabled + both jobs + a monitoring summary.
+3. `hermes secretary self-test` reports all checks passed.
+4. `hermes secretary doctor` exits 0.
 5. State the coverage limits above rather than equating passing synthetic tests
-   with portal-quality judgment.
+   with secretary-quality judgment.

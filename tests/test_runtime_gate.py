@@ -22,7 +22,7 @@ if str(ROOT) not in sys.path:
 
 from runtime_gate import plugin_enabled  # noqa: E402
 
-PLUGIN = "hermes-proactive-portal"
+PLUGIN = "hermes-proactive-secretary"
 RUNNERS = ROOT / "runners"
 _MISSING = object()
 
@@ -51,11 +51,11 @@ class GateUnitTests(unittest.TestCase):
         self.assertFalse(plugin_enabled(ROOT, config=_config(enabled=[])))
 
     def test_malformed_enabled_list_fails_closed(self):
-        for bad in ("hermes-proactive-portal", 3, {"a": 1}, [1, 2], [None]):
+        for bad in ("hermes-proactive-secretary", 3, {"a": 1}, [1, 2], [None]):
             self.assertFalse(plugin_enabled(ROOT, config={"plugins": {"enabled": bad}}), bad)
 
     def test_malformed_disabled_list_fails_closed(self):
-        cfg = {"plugins": {"enabled": [PLUGIN], "disabled": "hermes-proactive-portal"}}
+        cfg = {"plugins": {"enabled": [PLUGIN], "disabled": "hermes-proactive-secretary"}}
         self.assertFalse(plugin_enabled(ROOT, config=cfg))
 
     def test_missing_plugins_section_fails_closed(self):
@@ -191,22 +191,22 @@ class RenderedRunnerGateTests(unittest.TestCase):
 
     def test_disabled_blocks_both_runners(self):
         self._write_config(_config(enabled=["something-else"]))
-        self._assert_blocked("proactive_portal_runner.py")
-        self._assert_blocked("proactive_portal_reminder_runner.py")
+        self._assert_blocked("proactive_secretary_runner.py")
+        self._assert_blocked("proactive_secretary_reminder_runner.py")
 
     def test_deny_list_blocks_both_runners(self):
         self._write_config(_config(enabled=[PLUGIN], disabled=[PLUGIN]))
-        self._assert_blocked("proactive_portal_runner.py")
-        self._assert_blocked("proactive_portal_reminder_runner.py")
+        self._assert_blocked("proactive_secretary_runner.py")
+        self._assert_blocked("proactive_secretary_reminder_runner.py")
 
     def test_malformed_config_blocks_both_runners(self):
         (self.home / "config.json").write_text("{ broken", encoding="utf-8")
-        self._assert_blocked("proactive_portal_runner.py")
-        self._assert_blocked("proactive_portal_reminder_runner.py")
+        self._assert_blocked("proactive_secretary_runner.py")
+        self._assert_blocked("proactive_secretary_reminder_runner.py")
 
     def test_removed_plugin_root_blocks(self):
         gone = self.root / "removed"
-        script = self._render("proactive_portal_runner.py", plugin_root=gone)
+        script = self._render("proactive_secretary_runner.py", plugin_root=gone)
         self._write_config(_config(enabled=[PLUGIN]))
         code, out, _err, spy = self._run(script)
         self.assertEqual(code, 0)
@@ -215,8 +215,8 @@ class RenderedRunnerGateTests(unittest.TestCase):
 
     def test_enabled_allows_both_runners(self):
         self._write_config(_config(enabled=[PLUGIN]))
-        for name, kind in (("proactive_portal_runner.py", "pilot"),
-                           ("proactive_portal_reminder_runner.py", "reminder")):
+        for name, kind in (("proactive_secretary_runner.py", "pilot"),
+                           ("proactive_secretary_reminder_runner.py", "reminder")):
             script = self._render(name)
             code, out, _err, spy = self._run(script)
             self.assertEqual(code, 0, (name, code))

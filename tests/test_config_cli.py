@@ -1,6 +1,6 @@
 """CLI surface for validated configuration (show/validate/preview/init/migrate).
 
-Uses the real registered ``hermes portal configure`` handler in an isolated
+Uses the real registered ``hermes secretary configure`` handler in an isolated
 data directory; no network, no live profile.
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 
 def _load_plugin_package():
-    name = "hermes_proactive_portal_cfg_test"
+    name = "hermes_proactive_secretary_cfg_test"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -33,7 +33,7 @@ def _load_plugin_package():
 
 
 _PKG = _load_plugin_package()
-sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
 
 
@@ -72,11 +72,11 @@ def _ns(action, **kw):
 
 class CliSurfaceTests(unittest.TestCase):
     def test_configure_subcommands_parse(self):
-        parser = argparse.ArgumentParser(prog="hermes portal")
+        parser = argparse.ArgumentParser(prog="hermes secretary")
         sc.register_cli(parser)
         for action in ("show", "validate", "preview", "init", "migrate"):
             ns = parser.parse_args(["configure", action])
-            self.assertEqual(ns.portal_cli_command, "configure")
+            self.assertEqual(ns.secretary_command, "configure")
             self.assertEqual(ns.action, action)
 
     def test_dispatch_has_configure(self):
