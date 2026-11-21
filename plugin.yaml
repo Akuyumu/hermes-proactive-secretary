@@ -29,6 +29,7 @@ provides_tools:
   - secretary_responsibility
   - secretary_propose_notice
   - secretary_followup
+  - secretary_draft
 provides_hooks:
   - pre_llm_call
 
