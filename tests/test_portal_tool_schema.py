@@ -99,14 +99,15 @@ class PortalToolSchemaTests(unittest.TestCase):
         self.assertNotIn("type", schema)
         self.assertNotIn("properties", schema)
 
-    def test_registered_parameters_are_exactly_the_five_allowed_fields(self):
+    def test_registered_parameters_are_exactly_the_allowed_fields(self):
         schema = self._captured()["schema"]
         parameters = schema["parameters"]
         properties = parameters["properties"]
 
         self.assertEqual(parameters["type"], "object")
-        self.assertEqual(set(properties), ALLOWED)
-        self.assertEqual(set(parameters["required"]), ALLOWED)
+        self.assertEqual(set(properties), ALLOWED | {"action"})
+        self.assertEqual(parameters["required"], [])
+        self.assertEqual(properties["action"]["enum"], ["submit", "budget"])
         self.assertIs(parameters["additionalProperties"], False)
 
         self.assertEqual(properties["event_key"]["type"], "string")
@@ -156,11 +157,12 @@ class PortalToolSchemaTests(unittest.TestCase):
         schema = notices.TOOL_SCHEMA
 
         self.assertEqual(
-            set(schema), {"type", "properties", "required", "additionalProperties"}
+            set(schema),
+            {"type", "properties", "required", "anyOf", "additionalProperties"},
         )
         self.assertEqual(schema["type"], "object")
-        self.assertEqual(set(schema["properties"]), ALLOWED)
-        self.assertEqual(set(schema["required"]), ALLOWED)
+        self.assertEqual(set(schema["properties"]), ALLOWED | {"action"})
+        self.assertEqual(schema["required"], [])
         self.assertIs(schema["additionalProperties"], False)
         self.assertEqual(set(notices.PROPOSAL_KEYS), ALLOWED)
 

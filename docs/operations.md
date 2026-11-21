@@ -161,7 +161,7 @@ Event reminders use typed IDs and only the explicit `calendar.accounts`/`calenda
 
 A **watch** is a bounded, reversible entry describing what to follow up on. Foreground turns can file one; a scheduled portal run may also create its own, at most three per execution, always with `filed_by="agent"`, a required reason and an expiry (default 14 days, at most 60). An expired watch is closed with `status="closed"` and `close_reason="expired"` when due work is selected; it is never silently deleted, and `list`/`inspect` show its expiry, provenance and close reason. Legacy records without an expiry keep working and never expire.
 
-A **draft** is an action staged for owner approval rather than performed. The tree under the active profile's `plugin-data/hermes-proactive-secretary/drafts/` is the entire state: `pending/<dr_id>/manifest.json` plus a Markdown/text body, and the terminal `approved/`, `discarded/` and `expired/` siblings. Only a portal run may stage (at most three per execution, at most ten pending, no duplicate intent/title/body within 24 hours, no HTML, no body over 128 KiB); only a foreground session may list, show, approve or discard. `approve` moves the directory and returns `approval="owner_confirmed_foreground"`, `executed=false` and a receipt; it never sends, schedules, purchases or otherwise performs the action. A portal run sweeps expired pending drafts into `expired/` first and reports the count. Approval and discard are idempotent, and no separate index, database or lock file is used.
+A **draft** is an action staged for owner approval rather than performed. The tree under the active profile's `plugin-data/hermes-proactive-secretary/drafts/` is the entire state: `pending/<dr_id>/manifest.json` plus a Markdown/text body, and the terminal `approved/`, `discarded/` and `expired/` siblings. Only a portal run may stage (at most three per execution, at most ten pending, no duplicate intent/title/body within 24 hours, no HTML, no body over 128 KiB); only a foreground session may list, show, approve or discard. `approve` moves the directory and returns `approval="owner_confirmed_foreground"`, `executed=false` and a receipt; it never sends, schedules, purchases or otherwise performs the action. A portal run sweeps expired pending drafts into `expired/` first and reports the count. Approval and discard are idempotent, and no separate index, database or lock file is used. A staged draft sends the owner one short notice naming it (disable with `draft_notice`).
 
 ## Private preparation (opt-in, off by default)
 
@@ -275,7 +275,7 @@ Maintainer commands from the source tree, using a Python environment with the He
 PYTHONPATH=src python3 -m unittest discover -s tests
 PYTHONPATH=src python3 -m proactive_pilot.selftest
 python3 scripts/release_export.py scan
-python3 scripts/release_export.py build --output ./dist/hermes-proactive-secretary-1.1.0.tar.gz
+python3 scripts/release_export.py build --output ./dist/hermes-proactive-secretary-1.1.1.tar.gz
 python3 scripts/release_export.py doctor --installed /path/to/extracted-package
 ```
 

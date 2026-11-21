@@ -117,7 +117,7 @@ class SkillRoutingTests(unittest.TestCase):
         self.assertEqual(SKILL.relative_to(ROOT).as_posix(),
                          "skills/proactive-secretary/SKILL.md")
         self.assertEqual(self.frontmatter.get("name"), "proactive-secretary")
-        self.assertEqual(self.frontmatter.get("version"), "1.1.0")
+        self.assertEqual(self.frontmatter.get("version"), "1.1.1")
 
     def test_description_carries_the_routing_triggers(self):
         lowered = self.description.lower()
@@ -150,6 +150,15 @@ class SkillRoutingTests(unittest.TestCase):
             "as a draft with `secretary_draft` `stage`",
             "drafts sit in the pending directory until the owner approves them",
             "staging never executes anything",
+            "Draft only when a message genuinely needs the owner's own words",
+            "never for acknowledgements, receipts, newsletters, automated notices",
+            "a staged draft announces itself to the owner",
+            "a worthless draft costs attention",
+            ("Check your budget with `secretary_propose_notice` `budget` "
+             "before you choose."),
+            ("It ranks what you send; it never lowers the bar — if nothing "
+             "clears it, stay silent however much budget is left, and never "
+             "send filler to use it up."),
             "Propose everything else and leave it unexecuted",
             "never copy credentials, account numbers or full brokerage positions",
         ):

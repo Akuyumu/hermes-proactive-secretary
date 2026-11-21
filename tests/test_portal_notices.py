@@ -245,6 +245,31 @@ class _Base(unittest.TestCase):
     def _new_store(self, clock=None):
         return StateStore(self.state, clock or self.clock)
 
+    def _write_policy(self, **overrides):
+        policy = self._policy(**overrides)
+        (self.data / "policy.json").write_text(
+            json.dumps(policy), encoding="utf-8")
+        return policy
+
+    def _seed_delivered(self, *stamps):
+        store = self._new_store()
+        state = store.load_notify_state()
+        delivered = state.setdefault("delivered", [])
+        for index, stamp in enumerate(stamps):
+            delivered.append({
+                "at": stamp,
+                "signature": f"seeded-{index}",
+                "urgent": False,
+                "status": "emitted",
+            })
+        store.save(core.NOTIFY_STATE_ARTIFACT, state)
+        return store
+
+    def _budget(self, ctx=None):
+        ctx = ctx or _Ctx(
+            profile_name="A", execution=self._execution())
+        return self._invoke(ctx, {"action": "budget"})[1]
+
     def _enqueue(self, store, clock=None, *, execution_id="exec-1",
                  job_id=None, job_name=None, profile="A", **proposal_kwargs):
         when = clock or self.clock
@@ -326,9 +351,11 @@ class RegistrationAndSchemaTests(_Base):
         schema = notices.TOOL_SCHEMA
         self.assertFalse(schema["additionalProperties"])
         self.assertEqual(set(schema["properties"]),
-                         {"event_key", "topic", "message", "evidence_refs", "expiry"})
-        self.assertEqual(set(schema["required"]),
-                         {"event_key", "topic", "message", "evidence_refs", "expiry"})
+                         {"action", "event_key", "topic", "message",
+                          "evidence_refs", "expiry"})
+        self.assertEqual(schema["required"], [])
+        self.assertEqual(schema["properties"]["action"]["enum"],
+                         ["submit", "budget"])
         for authority in ("job", "job_id", "profile", "target", "urgency"):
             self.assertNotIn(authority, schema["properties"])
 
@@ -424,6 +451,110 @@ class HandlerIdentityTests(_Base):
                 _Ctx(execution=self._execution()), self._proposal())
         self.assertEqual(payload["status"], "unowned_job")
         self.assertFalse(self.state.exists())
+
+
+class BudgetReadoutTests(_Base):
+    def test_budget_counts_only_local_today_and_reports_pending(self):
+        self._seed_ledger()
+        self._write_policy(daily_normal_cap=6)
+        store = self._seed_delivered(
+            "2026-10-20T09:00:00+00:00",
+            "2026-10-20T10:00:00+00:00",
+            "2026-10-19T22:00:00+00:00",
+            "2026-10-19T23:00:00+00:00",
+            "2026-10-18T12:00:00+00:00",
+        )
+        self._enqueue(store, event_key="evt-budget")
+
+        payload = self._budget()
+
+        self.assertTrue(payload["ok"], payload)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["day"], "2026-10-20")
+        self.assertEqual(payload["cap"], 6)
+        self.assertEqual(payload["delivered_today"], 2)
+        self.assertEqual(payload["remaining"], 4)
+        self.assertEqual(payload["queue_pending"], 1)
+        self.assertFalse(payload["quiet_hours"])
+        self.assertFalse(payload["cooldown_active"])
+
+    def test_budget_remaining_never_goes_negative(self):
+        self._seed_ledger()
+        self._write_policy(daily_normal_cap=2)
+        self._seed_delivered(
+            "2026-10-20T08:00:00+00:00",
+            "2026-10-20T09:00:00+00:00",
+            "2026-10-20T10:00:00+00:00",
+        )
+
+        payload = self._budget()
+
+        self.assertEqual(payload["cap"], 2)
+        self.assertEqual(payload["delivered_today"], 3)
+        self.assertEqual(payload["remaining"], 0)
+
+    def test_budget_unset_cap_is_null(self):
+        self._seed_ledger()
+        self._write_policy(daily_normal_cap=None)
+        self._seed_delivered("2026-10-20T09:00:00+00:00")
+
+        payload = self._budget()
+
+        self.assertIsNone(payload["cap"])
+        self.assertIsNone(payload["remaining"])
+        self.assertEqual(payload["delivered_today"], 1)
+
+    def test_budget_reflects_quiet_hours_and_cooldown(self):
+        self._seed_ledger()
+        self._write_policy(
+            daily_normal_cap=6,
+            quiet_start_hour=12,
+            quiet_end_hour=13,
+            cooldown_minutes=60,
+        )
+        store = self._seed_delivered("2026-10-20T09:00:00+00:00")
+        state = store.load_notify_state()
+        state["last_delivery_at"] = "2026-10-20T11:50:00+00:00"
+        store.save(core.NOTIFY_STATE_ARTIFACT, state)
+
+        payload = self._budget()
+
+        self.assertTrue(payload["quiet_hours"])
+        self.assertTrue(payload["cooldown_active"])
+
+    def test_budget_refused_foreground_and_foreign_job(self):
+        self._seed_ledger()
+        self._write_policy(daily_normal_cap=6)
+
+        foreground = self._budget(_Ctx(profile_name="A", execution=None))
+        self.assertFalse(foreground["ok"])
+        self.assertEqual(foreground["status"], "not_cron_execution")
+
+        foreign = self._budget(_Ctx(
+            profile_name="A",
+            execution=self._execution(job_name="other-job"),
+        ))
+        self.assertFalse(foreign["ok"])
+        self.assertEqual(foreign["status"], "foreign_job")
+
+    def test_budget_is_read_only(self):
+        self._seed_ledger()
+        self._write_policy(daily_normal_cap=6)
+        store = self._new_store()
+        self._enqueue(store, event_key="evt-readonly")
+        state = store.load_notify_state()
+        state["last_delivery_at"] = "2026-10-20T11:55:00+00:00"
+        store.save(core.NOTIFY_STATE_ARTIFACT, state)
+
+        before_state = _snapshot(self.state)
+        before_ledger = (self.data / "cron_job_ownership.json").read_bytes()
+
+        payload = self._budget()
+        self.assertTrue(payload["ok"], payload)
+
+        self.assertEqual(_snapshot(self.state), before_state)
+        self.assertEqual(
+            (self.data / "cron_job_ownership.json").read_bytes(), before_ledger)
 
 
 class QueueValidationTests(_Base):

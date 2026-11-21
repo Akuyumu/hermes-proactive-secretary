@@ -12,7 +12,7 @@ The durable state is the draft directory tree in
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Mapping
 
 try:  # package import or direct/top-level test import
@@ -24,10 +24,83 @@ TOOL_NAME = "secretary_draft"
 PORTAL_ACTIONS = frozenset({"stage", "list_pending"})
 FOREGROUND_ACTIONS = frozenset({"list", "show", "approve", "discard"})
 MAX_ID = 24
+NOTICE_TOPIC = "Draft ready"
+NOTICE_MAX_MESSAGE = 350
+NOTICE_EXPIRY_HOURS = 6
+NOTICE_SUFFIX = '. Say "show drafts" to review.'
 
 
 def _refusal(status: str, reason: str) -> dict[str, Any]:
     return {"ok": False, "status": status, "reason": str(reason)[:300]}
+
+
+def _notice_enabled(ctx: Any) -> bool:
+    try:
+        from proactive_pilot.native_runtime import read_native_settings
+    except ImportError:  # pragma: no cover - package layout is always present
+        return True
+    value = read_native_settings(ctx, "draft_notice", True)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "0", "false", "no", "off"}
+    return bool(value)
+
+
+def _notice_message(manifest: Mapping[str, Any]) -> str:
+    intent = str(manifest.get("intent") or "other")
+    title = str(manifest.get("title") or "")
+    to = str(manifest.get("to") or "")
+    prefix = f"Drafted a {intent} — "
+    to_text = f" for {to}" if to else ""
+    room = NOTICE_MAX_MESSAGE - len(prefix) - len(NOTICE_SUFFIX)
+    middle = (title + to_text)[:max(0, room)]
+    return f"{prefix}{middle}{NOTICE_SUFFIX}"
+
+
+def _notice_result(receipt: Any) -> dict[str, str]:
+    if not isinstance(receipt, dict):
+        return {"accepted": False, "status": "error",
+                "reason": "notice returned an unexpected result", "notice_id": ""}
+    accepted = bool(receipt.get("accepted"))
+    notice_id = receipt.get("id") or receipt.get("notice_id") or ""
+    return {
+        "accepted": accepted,
+        "status": str(receipt.get("status")
+                      or ("accepted" if accepted else "refused"))[:80],
+        "reason": str(receipt.get("reason") or "")[:300],
+        "notice_id": str(notice_id or "")[:64],
+    }
+
+
+def _submit_draft_notice(ctx: Any, identity: Mapping[str, str],
+                         manifest: Mapping[str, Any],
+                         now: datetime) -> dict[str, str]:
+    if not _notice_enabled(ctx):
+        return {"accepted": False, "status": "disabled",
+                "reason": "", "notice_id": ""}
+    draft_id = str(manifest.get("id") or "")
+    try:
+        from proactive_pilot.clock import Clock
+        from proactive_pilot import portal_notices
+        from proactive_pilot.state import StateStore
+
+        clock = Clock()
+        store = StateStore(paths.state_dir(), clock)
+        proposal = {
+            "event_key": f"draft:{draft_id}",
+            "topic": NOTICE_TOPIC,
+            "message": _notice_message(manifest),
+            "evidence_refs": [f"draft:{draft_id}"],
+            "expiry": (now + timedelta(hours=NOTICE_EXPIRY_HOURS)).isoformat(),
+        }
+        receipt = portal_notices.submit_notice(
+            store, clock, identity=dict(identity), proposal=proposal)
+    except Exception as exc:  # noqa: BLE001 - the heads-up is best effort
+        return {"accepted": False, "status": "error",
+                "reason": f"{type(exc).__name__}: {str(exc)[:200]}",
+                "notice_id": ""}
+    return _notice_result(receipt)
 
 
 def _cron_execution(ctx: Any) -> Any:
@@ -135,6 +208,7 @@ def _portal_dispatch(action: str, args: Mapping[str, Any], ctx: Any,
         "draft": manifest,
         "executed": False,
         "expired_count": len(swept),
+        "notice": _submit_draft_notice(ctx, identity, manifest, now),
         "note": ("The draft is pending owner approval. Staging never sends, "
                  "books, buys or otherwise performs the action."),
     }

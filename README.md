@@ -21,7 +21,7 @@ For example, it can prepare a short checklist before a recurring meeting, flag a
 
 ## Current state
 
-- Version: **1.1.0**
+- Version: **1.1.1**
 - Plugin id: `hermes-proactive-secretary`
 - Command: `hermes secretary`
 - `main` carries stable releases; `dev` is the active development branch.
@@ -30,7 +30,7 @@ For example, it can prepare a short checklist before a recurring meeting, flag a
 
 A **watch** is a small, reversible text entry that tells the portal what to keep an eye on. Foreground watches come from your own turns; a scheduled run may also file its own watches, with agent provenance, a required reason and an expiry. Watches expire and are closed (not silently deleted), so `list`/`inspect` still show why one ended.
 
-A **draft** is a staged action the portal would otherwise have to send, book, buy or change. It lives under the owner-only `drafts/pending/` tree with its body and manifest. Approving in a foreground session moves it to `drafts/approved/` and returns a local receipt with `executed: false`; the plugin itself never performs the action. Discarded drafts move to `drafts/discarded/`, and expired ones to `drafts/expired/`.
+A **draft** is a staged action the portal would otherwise have to send, book, buy or change. It lives under the owner-only `drafts/pending/` tree with its body and manifest. Approving in a foreground session moves it to `drafts/approved/` and returns a local receipt with `executed: false`; the plugin itself never performs the action. Discarded drafts move to `drafts/discarded/`, and expired ones to `drafts/expired/`. A staged draft sends the owner one short notice naming it (disable with `draft_notice`).
 
 ## Install
 

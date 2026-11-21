@@ -24,6 +24,7 @@ except ImportError:  # direct/standalone import
     from cron import PORTAL_JOB_NAME, load_job_ownership  # type: ignore
 
 PROPOSAL_KEYS = ("event_key", "topic", "message", "evidence_refs", "expiry")
+ACTIONS = ("submit", "budget")
 MAX_MESSAGE = 350
 MAX_EVENT_KEY = 160
 MAX_TOPIC = 80
@@ -41,6 +42,14 @@ TOOL_DESCRIPTION = (
 TOOL_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
+        "action": {
+            "type": "string",
+            "enum": list(ACTIONS),
+            "description": (
+                "submit queues one bounded proposal; budget returns the "
+                "current read-only delivery budget."
+            ),
+        },
         "event_key": {
             "type": "string",
             "maxLength": MAX_EVENT_KEY,
@@ -70,7 +79,14 @@ TOOL_SCHEMA: dict[str, Any] = {
             "description": "Timezone-aware ISO 8601 expiry within 24 hours.",
         },
     },
-    "required": list(PROPOSAL_KEYS),
+    "required": [],
+    "anyOf": [
+        {
+            "required": ["action"],
+            "properties": {"action": {"const": "budget"}},
+        },
+        {"required": list(PROPOSAL_KEYS)},
+    ],
     "additionalProperties": False,
 }
 
@@ -191,10 +207,80 @@ def _proposal_from_args(args: Mapping[str, Any]) -> dict[str, Any]:
     return {key: args.get(key) for key in PROPOSAL_KEYS}
 
 
+def _budget_policy(ctx: Any) -> dict[str, Any]:
+    """Load the effective policy without creating or mutating any state."""
+    from proactive_pilot.policy import load_policy
+    from proactive_pilot.userconfig import apply_user_config, load_user_config
+
+    base = load_policy(paths.policy_path())
+    loaded = load_user_config(paths.user_config_path(), native=ctx)
+    if loaded.present:
+        return apply_user_config(base, loaded.config)
+    return base
+
+
+def _budget_receipt(ctx: Any) -> dict[str, Any]:
+    """Derive the current delivery budget from existing state; never writes."""
+    from proactive_pilot import gates
+    from proactive_pilot.clock import Clock
+    from proactive_pilot.portal_notices import _load_queue
+    from proactive_pilot.state import CorruptStateError, StateStore
+
+    clock = Clock()
+    now = clock.now()
+    try:
+        policy = _budget_policy(ctx)
+        cap = gates.daily_normal_cap(policy)
+    except Exception as exc:  # noqa: BLE001 - invalid policy/config fails closed
+        return _refusal(
+            "invalid_config", f"cannot read delivery policy: {type(exc).__name__}"
+        )
+
+    try:
+        store = StateStore(paths.state_dir(), clock)
+        state = store.load_notify_state(strict=True)
+        queue = _load_queue(store)
+    except CorruptStateError as exc:
+        return _refusal("corrupt_state", str(exc))
+    except Exception as exc:  # noqa: BLE001 - read failure, never a mutation
+        return _refusal(
+            "store_unavailable", f"cannot read state store: {type(exc).__name__}"
+        )
+
+    delivered = gates.delivered_today(state, policy, now)
+    remaining = max(0, cap - delivered) if cap is not None else None
+    return {
+        "ok": True,
+        "status": "ok",
+        "day": gates.local_day(now, policy),
+        "cap": cap,
+        "delivered_today": delivered,
+        "remaining": remaining,
+        "queue_pending": len(queue["pending"]),
+        "quiet_hours": gates.in_quiet_hours(policy, now),
+        "cooldown_active": gates.cooldown_active(
+            state, now, int(policy.get("cooldown_minutes", 30))
+        ),
+    }
+
+
 def _dispatch(args: Mapping[str, Any], ctx: Any) -> dict[str, Any]:
     if not isinstance(args, Mapping):
         return _refusal("invalid_args", "tool arguments must be an object")
-    extra = set(args.keys()) - set(PROPOSAL_KEYS)
+    action = str(args.get("action") or "submit").strip().lower()
+    if action not in ACTIONS:
+        return _refusal("invalid_args", f"unknown proposal action {action!r}")
+
+    if action == "budget":
+        extra = set(args.keys()) - {"action"}
+        if extra:
+            return _refusal("invalid_args", "budget takes no proposal fields")
+        _identity, refusal = _host_identity(ctx)
+        if refusal is not None:
+            return refusal
+        return _budget_receipt(ctx)
+
+    extra = set(args.keys()) - set(PROPOSAL_KEYS) - {"action"}
     if extra:
         return _refusal("invalid_args", "unexpected proposal fields")
 

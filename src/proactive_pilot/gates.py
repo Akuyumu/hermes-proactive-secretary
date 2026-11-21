@@ -411,6 +411,15 @@ def _expired(prior: dict[str, Any], now: Any) -> bool:
         return False
 
 
+def delivered_today(state: dict[str, Any], policy: dict[str, Any], now: Any) -> int:
+    """Count ordinary delivery rows whose stored timestamp is today locally."""
+    today = local_day(now, policy)
+    return sum(
+        1 for row in state.get("delivered", [])
+        if stored_local_day(row.get("at"), policy, now) == today
+    )
+
+
 def _over_cap(state: dict[str, Any], policy: dict[str, Any], now: Any, urgency: str) -> bool:
     if urgency == "urgent":
         return False  # urgency bypasses the ordinary cap
@@ -419,12 +428,7 @@ def _over_cap(state: dict[str, Any], policy: dict[str, Any], now: Any, urgency: 
         # Unset means no deterministic daily-count ceiling. Quiet hours,
         # cooldown, dedupe, approvals and urgent/reminder exceptions still apply.
         return False
-    today = local_day(now, policy)
-    count_today = sum(
-        1 for row in state.get("delivered", [])
-        if stored_local_day(row.get("at"), policy, now) == today
-    )
-    return count_today >= cap
+    return delivered_today(state, policy, now) >= cap
 
 
 def record_delivery(state: dict[str, Any], decision: dict[str, Any], packet: dict[str, Any], clock: Any, policy: dict[str, Any]) -> dict[str, Any]:

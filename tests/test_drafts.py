@@ -56,11 +56,15 @@ class Ctx:
         self.profile_name = profile_name
         self.execution = execution
         self.state = MemoryState()
+        self.settings = {}
         self.tools = {}
         self.hooks = {}
 
     def current_cron_execution(self):
         return self.execution
+
+    def get_config(self, key, default=None):
+        return self.settings.get(key, default)
 
     def register_tool(self, name, toolset, schema, handler, **kwargs):
         self.tools[name] = {"toolset": toolset, "schema": schema,
@@ -293,6 +297,110 @@ class DraftTests(unittest.TestCase):
                 refused = self._stage(refusals, **payload)
                 self.assertFalse(refused["ok"], refused)
                 self.assertEqual(refused["status"], "invalid_args")
+
+    def test_stage_queues_one_short_notice_without_body_text(self):
+        ctx, portal = self._portal("exec-notice-ok")
+        seen = {}
+
+        def sink(store, clock, *, identity, proposal):
+            seen["identity"] = identity
+            seen["proposal"] = proposal
+            return {"accepted": True, "status": "queued", "id": "nt_test",
+                    "reason": ""}
+
+        with mock.patch("proactive_pilot.portal_notices.submit_notice",
+                        side_effect=sink):
+            staged = self._stage(portal, title="Reply to the harbour office",
+                                 body="BODY-TEXT-MUST-NOT-LEAK")
+        self.assertTrue(staged["ok"], staged)
+        fid = staged["draft"]["id"]
+        notice = staged["notice"]
+        self.assertTrue(notice["accepted"], notice)
+        self.assertEqual(notice["status"], "queued")
+        self.assertEqual(notice["notice_id"], "nt_test")
+        self.assertEqual(seen["identity"]["execution_id"], "exec-notice-ok")
+        self.assertEqual(seen["proposal"]["event_key"], f"draft:{fid}")
+        self.assertEqual(seen["proposal"]["topic"], "Draft ready")
+        self.assertEqual(seen["proposal"]["evidence_refs"], [f"draft:{fid}"])
+        message = seen["proposal"]["message"]
+        self.assertIn("Reply to the harbour office", message)
+        self.assertIn("harbour@example.test", message)
+        self.assertLessEqual(len(message), 350)
+        self.assertNotIn("BODY-TEXT-MUST-NOT-LEAK", message)
+        self.assertNotIn("short plain-text reply", message)
+
+    def test_notice_refusal_does_not_fail_the_stage(self):
+        _, portal = self._portal("exec-notice-refused")
+
+        def sink(store, clock, *, identity, proposal):
+            return {"accepted": False, "status": "queue_full",
+                    "reason": "pending portal queue is full"}
+
+        with mock.patch("proactive_pilot.portal_notices.submit_notice",
+                        side_effect=sink):
+            staged = self._stage(portal, title="Refused notice draft",
+                                 body="A body")
+        self.assertTrue(staged["ok"], staged)
+        self.assertEqual(staged["status"], "staged")
+        notice = staged["notice"]
+        self.assertFalse(notice["accepted"])
+        self.assertEqual(notice["status"], "queue_full")
+        self.assertIn("queue is full", notice["reason"])
+        self.assertIn("pending", staged["draft"]["status"])
+
+    def test_draft_notice_setting_can_disable_the_heads_up(self):
+        ctx, portal = self._portal("exec-notice-disabled")
+        ctx.settings["draft_notice"] = False
+        with mock.patch("proactive_pilot.portal_notices.submit_notice") as sink:
+            staged = self._stage(portal, title="Quiet staged draft",
+                                 body="A quiet body")
+        self.assertTrue(staged["ok"], staged)
+        self.assertEqual(staged["notice"],
+                         {"accepted": False, "status": "disabled",
+                          "reason": "", "notice_id": ""})
+        sink.assert_not_called()
+
+    def test_list_approve_and_discard_never_submit_a_notice(self):
+        _, portal = self._portal("exec-notice-actions")
+        with mock.patch("proactive_pilot.portal_notices.submit_notice",
+                        return_value={"accepted": True, "status": "queued",
+                                      "id": "nt_stage"}) as sink:
+            first = self._stage(portal, title="Approve me", body="First body")
+            second = self._stage(portal, title="Discard me", body="Second body")
+        self.assertTrue(first["ok"], first)
+        self.assertTrue(second["ok"], second)
+        sink.reset_mock()
+
+        _, owner = self._foreground()
+        listed = self._call(portal, {"action": "list_pending"})
+        self.assertTrue(listed["ok"], listed)
+        self._call(owner, {"action": "list"})
+        self._call(owner, {"action": "show",
+                           "draft_id": first["draft"]["id"]})
+        approved = self._call(owner, {"action": "approve",
+                                      "draft_id": first["draft"]["id"]})
+        self.assertTrue(approved["ok"], approved)
+        discarded = self._call(owner, {"action": "discard",
+                                       "draft_id": second["draft"]["id"]})
+        self.assertTrue(discarded["ok"], discarded)
+        sink.assert_not_called()
+
+    def test_long_title_and_to_still_fit_the_notice_limit(self):
+        _, portal = self._portal("exec-notice-long")
+        seen = {}
+
+        def sink(store, clock, *, identity, proposal):
+            seen["proposal"] = proposal
+            return {"accepted": True, "status": "queued", "id": "nt_long"}
+
+        with mock.patch("proactive_pilot.portal_notices.submit_notice",
+                        side_effect=sink):
+            staged = self._stage(portal, title="T" * 120, to="x" * 200,
+                                 body="Long fields body")
+        self.assertTrue(staged["ok"], staged)
+        message = seen["proposal"]["message"]
+        self.assertLessEqual(len(message), 350)
+        self.assertTrue(message.endswith('. Say "show drafts" to review.'))
 
     def test_path_escape_and_symlink_refusal(self):
         _, owner = self._foreground()
