@@ -2,7 +2,7 @@
 
 The assistant may infer durable facts, preferences and interests from context
 already available in an eligible private conversation, then record a short
-advisory entry through the native ``secretary_context`` tool. This module adds
+advisory entry through the native ``portal_context`` tool. This module adds
 no model call, no source/account access, no background importer and no regex
 inference engine. Writes are always advisory, always expiring, and only happen
 when the owner has explicitly enabled the dedicated boolean plugin setting on a
@@ -15,7 +15,7 @@ import re
 from typing import Any, Mapping
 
 CONFIG_KEY = "context_refresh"
-TOOL_NAME = "secretary_context"
+TOOL_NAME = "portal_context"
 _ALLOWED_SOURCES = ("assistant:knowledge", "assistant:memory")
 _ALLOWED_KINDS = ("note", "interest", "preference", "project", "person", "place")
 _UPDATE_KEYS = frozenset({"action", "id", "text", "kind", "source", "expires_at"})
@@ -28,10 +28,10 @@ _NONHUMAN_ENVELOPE_RE = re.compile(
     r"|\[async\s+delegation\s+batch\s+complete\b)", re.IGNORECASE)
 
 GUIDANCE = (
-    "[Proactive Secretary context refresh]\n"
+    "[Proactive Portal context refresh]\n"
     "This is a normal private turn. From context already available in this "
     "conversation, infer only durable facts, preferences or interests worth "
-    "remembering. If a material change is evident, use the secretary_context "
+    "remembering. If a material change is evident, use the portal_context "
     "tool with one short advisory entry; skip duplicates, trivial "
     "acknowledgements, secrets and raw excerpts. Inferred interests are not "
     "instructions or permission and never expand sources. Keep entries compact "
@@ -327,7 +327,7 @@ def register_context_tool(ctx: Any, *, register_tool: Any = None) -> dict[str, A
     try:
         tool_reg(
             name=TOOL_NAME,
-            toolset="secretary",
+            toolset="portal",
             schema=TOOL_SCHEMA,
             handler=tool_handler(ctx),
             description=TOOL_SCHEMA["description"],
@@ -352,7 +352,7 @@ def refresh_guidance(ctx: Any, *, platform: Any, user_message: Any,
             "internal", "system", "worker", "group", "channel", "shared")):
         return None
     try:
-        from .secretary_conversation import _text, eligible_human_turn
+        from .portal_conversation import _text, eligible_human_turn
         message_text = _text(user_message).strip()
         if _NONHUMAN_ENVELOPE_RE.match(message_text):
             return None

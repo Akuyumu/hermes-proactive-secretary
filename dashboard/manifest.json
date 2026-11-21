@@ -1,8 +1,8 @@
 {
-  "name": "hermes-proactive-secretary",
-  "label": "Proactive Secretary",
-  "description": "Setup status, non-destructive onboarding continuation and an owner-confirmed reset for the proactive secretary.",
+  "name": "hermes-proactive-portal",
+  "label": "Proactive Portal",
+  "description": "Setup status, non-destructive onboarding continuation and an owner-confirmed reset for the proactive portal.",
   "icon": "Checklist",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "api": "plugin_api.py"
 }

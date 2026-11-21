@@ -1,4 +1,4 @@
-"""Configured-only secretary model routing through the native auxiliary slot.
+"""Configured-only portal model routing through the native auxiliary slot.
 
 The plugin never stores credentials or calls a raw SDK. It registers the existing
 ``proactive_secretary`` auxiliary key, derives defaults from its own native
@@ -216,7 +216,7 @@ def _route_blockers(block: Mapping[str, Any]) -> list[str]:
     entries = list(chain) if isinstance(chain, list) else []
     if len(entries) > 1:
         blockers.append(
-            "operator auxiliary fallback_chain has extra lanes; the secretary allows "
+            "operator auxiliary fallback_chain has extra lanes; the portal allows "
             "exactly one assigned fallback. Correct the native auxiliary pin explicitly.")
     for index, entry in enumerate(entries):
         if not isinstance(entry, Mapping):
@@ -258,7 +258,7 @@ def effective_route_status(ctx: Any = None, *, settings: Mapping[str, Any] | Non
             "additional_entries": max(0, len(chain) - 1),
         }
     if primary["source"] == "chat_model_inheritance" and not primary_provider and not primary_model:
-        primary["note"] = ("No secretary primary is configured; initial chat-model inheritance is "
+        primary["note"] = ("No portal primary is configured; initial chat-model inheritance is "
                            "the documented fallback, not an unrestricted recovery ladder.")
     warnings: list[str] = []
     if not strict_active:
@@ -268,7 +268,7 @@ def effective_route_status(ctx: Any = None, *, settings: Mapping[str, Any] | Non
         warnings.append("explicit native auxiliary pin wins over plugin settings; "
                         "the plugin never mutates it")
     if route_blockers:
-        warnings.append("effective secretary route is blocked: " + "; ".join(route_blockers))
+        warnings.append("effective portal route is blocked: " + "; ".join(route_blockers))
     return {
         "auxiliary_key": AUX_KEY,
         "primary": primary,
@@ -278,7 +278,7 @@ def effective_route_status(ctx: Any = None, *, settings: Mapping[str, Any] | Non
         "strict_policy": STRICT_POLICY if strict_active else "unsupported",
         "strict_active": bool(strict_active),
         "configured_model_calls_allowed": bool(strict_active and not route_blockers),
-        "freshness": "next secretary process or native plugin reload",
+        "freshness": "next portal process or native plugin reload",
         "reload_required": True,
         "warnings": warnings,
     }
@@ -315,8 +315,8 @@ def register_configured_models(ctx: Any, *, auxiliary_reader: Any = None) -> dic
             "error": "register_auxiliary_task unavailable",
         }
     kwargs: dict[str, Any] = {
-        "display_name": "Proactive secretary",
-        "description": "Secretary evaluator/planner/intake structured calls.",
+        "display_name": "Proactive portal",
+        "description": "Portal evaluator/planner/intake structured calls.",
     }
     if defaults:
         kwargs["defaults"] = defaults
@@ -361,6 +361,6 @@ def require_configured_model_lane(status: Mapping[str, Any]) -> None:
     if not status.get("strict_active") or status.get("blockers"):
         remedy = "; ".join(str(item) for item in status.get("blockers") or [])
         raise ModelRouteUnsupported(
-            "Configured-only secretary model routing is unavailable on this host or route"
+            "Configured-only portal model routing is unavailable on this host or route"
             + (f": {remedy}" if remedy else "")
             + "; no model call was made.")

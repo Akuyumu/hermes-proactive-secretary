@@ -30,7 +30,7 @@ if _SRC_DIR.is_dir() and str(_SRC_DIR) not in sys.path:
 
 from proactive_pilot import ownerpaths as _ownerpaths  # noqa: E402
 
-PLUGIN_ID = "hermes-proactive-secretary"
+PLUGIN_ID = "hermes-proactive-portal"
 
 
 def _hermes_home() -> Path:

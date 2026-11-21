@@ -1,6 +1,6 @@
 """Independent actual-CLI lifecycle tests for the portal cron job.
 
-These tests exercise the registered ``hermes secretary portal`` parser and the
+These tests exercise the registered ``hermes portal job`` parser and the
 real CLI wrapper. They never invoke the native scheduler, the network, or any
 other production mutator: the injected backend is the module's in-memory
 backend (or a thin recording/failure subclass of it), and every data/home root
@@ -36,7 +36,7 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _load_plugin_package(name: str = "hermes_proactive_secretary_portal_qa"):
+def _load_plugin_package(name: str = "hermes_proactive_portal_portal_qa"):
     """Load the plugin exactly like the sibling tests, registering first."""
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)]
@@ -51,9 +51,9 @@ def _load_plugin_package(name: str = "hermes_proactive_secretary_portal_qa"):
 
 _PKG = _load_plugin_package()
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
-sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
-portal = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal")
+portal = importlib.import_module(f"{_PKG.__name__}.portal.portal_job")
 
 PORTAL = cron_mod.PORTAL_JOB_NAME
 MONITORING = cron_mod.MONITORING_JOB_NAME
@@ -63,7 +63,7 @@ REMINDER = cron_mod.REMINDER_JOB_NAME
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="hermes")
     top = parser.add_subparsers(dest="command")
-    secretary = top.add_parser("secretary")
+    secretary = top.add_parser("portal")
     sc.register_cli(secretary)
     return parser
 
@@ -72,7 +72,7 @@ _PARSER = _build_parser()
 
 
 def _parse(*argv: str) -> argparse.Namespace:
-    return _PARSER.parse_args(["secretary", *argv])
+    return _PARSER.parse_args(["portal", *argv])
 
 
 def _capture_stdout(fn, *args, **kwargs):
@@ -209,23 +209,23 @@ class _Isolated(unittest.TestCase):
 
     def enable(self, backend, schedule: str = "*/5 * * * *", *extra: str):
         return self.run_portal(
-            backend, "portal", "enable", "--json", "--schedule", schedule, *extra)
+            backend, "job", "enable", "--json", "--schedule", schedule, *extra)
 
     def preview(self, backend, schedule: str = "*/5 * * * *", *extra: str):
         return self.run_portal(
-            backend, "portal", "preview", "--json", "--schedule", schedule, *extra)
+            backend, "job", "preview", "--json", "--schedule", schedule, *extra)
 
     def status(self, backend):
-        return self.run_portal(backend, "portal", "status", "--json")
+        return self.run_portal(backend, "job", "status", "--json")
 
     def pause(self, backend):
-        return self.run_portal(backend, "portal", "pause", "--json")
+        return self.run_portal(backend, "job", "pause", "--json")
 
     def resume(self, backend):
-        return self.run_portal(backend, "portal", "resume", "--json")
+        return self.run_portal(backend, "job", "resume", "--json")
 
     def remove(self, backend):
-        return self.run_portal(backend, "portal", "remove", "--json")
+        return self.run_portal(backend, "job", "remove", "--json")
 
     def ledger(self) -> dict:
         return cron_mod.load_job_ownership(paths.job_ownership_path())
@@ -241,7 +241,7 @@ class _Isolated(unittest.TestCase):
 
 class ParserAndPreviewTests(_Isolated):
     def test_repeated_skill_parser_preserves_exact_case_list(self):
-        ns = _parse("portal", "enable", "--schedule", "*/5 * * * *",
+        ns = _parse("job", "enable", "--schedule", "*/5 * * * *",
                     "--skill", "alpha", "--skill", "Beta")
         self.assertEqual(ns.skill, ["alpha", "Beta"])
 
@@ -273,7 +273,7 @@ class ParserAndPreviewTests(_Isolated):
 
     def test_module_import_creates_no_jobs_ledger_state_or_runners(self):
         self.profile("import")
-        _load_plugin_package("hermes_proactive_secretary_portal_import_qa")
+        _load_plugin_package("hermes_proactive_portal_portal_import_qa")
         self.assertFalse(paths.job_ownership_path().exists())
         self.assertFalse(paths.state_dir().exists())
         self.assertFalse(paths.scripts_dir().exists())
@@ -352,7 +352,7 @@ class ParserAndPreviewTests(_Isolated):
 class EnableValidationTests(_Isolated):
     def test_enable_requires_explicit_schedule_before_mutation(self):
         backend = _TouchBackend()
-        rc, payload, _ = self.run_portal(backend, "portal", "enable", "--json")
+        rc, payload, _ = self.run_portal(backend, "job", "enable", "--json")
         self.assertEqual(rc, 1)
         self.assertEqual(payload["status"], "error")
         self.assertIn("schedule", payload["detail"].lower())
@@ -381,7 +381,7 @@ class EnableValidationTests(_Isolated):
             with self.subTest(extra=extra):
                 with contextlib.redirect_stderr(io.StringIO()):
                     with self.assertRaises(SystemExit):
-                        _parse("portal", "enable", "--schedule", "*/5 * * * *", *extra)
+                        _parse("job", "enable", "--schedule", "*/5 * * * *", *extra)
 
     def test_malformed_control_and_flag_like_pins_refused_before_mutation(self):
         cases = (
@@ -397,10 +397,10 @@ class EnableValidationTests(_Isolated):
                 with self.subTest(action=action, flag=flag, value=value):
                     backend = _TouchBackend()
                     if flag == "--schedule":
-                        argv = ["portal", action, "--json",
+                        argv = ["job", action, "--json",
                                 f"--schedule={value}"]
                     else:
-                        argv = ["portal", action, "--json",
+                        argv = ["job", action, "--json",
                                 "--schedule", "*/5 * * * *",
                                 f"{flag}={value}"]
                     rc, payload, _ = self.run_portal(backend, *argv)

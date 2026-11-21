@@ -1,4 +1,4 @@
-"""Safe mobile/CLI conversation surfaces for the proactive secretary.
+"""Safe mobile/CLI conversation surfaces for the proactive portal.
 
 Everything here is bounded and additive: a slash command that starts or resumes
 the foreground onboarding conversation, a one-per-profile first-use invitation,
@@ -15,9 +15,9 @@ import secrets
 from types import SimpleNamespace
 from typing import Any, Mapping
 
-from .secretary_onboarding import (OnboardingError, OnboardingService, next_question,
+from .portal_onboarding import (OnboardingError, OnboardingService, next_question,
                                    next_step)
-from . import secretary_status
+from . import portal_status
 
 INVITATION_KEY = "onboarding_invitation"
 INTERVIEW_KEY = "onboarding_interview"
@@ -29,7 +29,7 @@ _NON_HUMAN = frozenset({
 })
 _REF = re.compile(r"\bsec-[a-z0-9]{6,}\b", re.IGNORECASE)
 _RELEVANT = re.compile(
-    r"\b(secretary|proactive|reminder|remind|alert|why this|not today|snooze|"
+    r"\b(portal|secretary|proactive|reminder|remind|alert|why this|not today|snooze|"
     r"stop these|standing scope|onboarding|setup)\b", re.IGNORECASE)
 _DEICTIC = re.compile(
     r"\b(?:that|those|these|it|the one|the thing|you sent|you prepped|"
@@ -164,12 +164,12 @@ def _invitation_context(service: OnboardingService, *, resuming: bool = False) -
     status = state.get("status", "not_started")
     step = next_step(state)
     if resuming:
-        lead = "The user asked to continue secretary setup."
+        lead = "The user asked to continue portal setup."
     else:
-        lead = ("This is the first eligible conversation on this profile and secretary setup "
+        lead = ("This is the first eligible conversation on this profile and portal setup "
                 "is incomplete.")
     return (
-        "[Proactive Secretary onboarding]\n"
+        "[Proactive Portal onboarding]\n"
         f"{lead} Current status: {status}; next step: {step}.\n"
         "Start the interview in this conversation now, conversationally. Ask exactly the next "
         "genuine question below, one question at a time. Handle setup through conversation "
@@ -177,8 +177,8 @@ def _invitation_context(service: OnboardingService, *, resuming: bool = False) -
         "Ask only for missing or "
         "conflicting facts and genuine permissions; existing memory may be proposed as "
         "tentative facts but is never consent to expand access. Do not ask for credentials, "
-        "do not claim the secretary is installed/active beyond what the tool reports, and do "
-        "not create sources, grants or schedules. Use the secretary_onboarding tool for every "
+        "do not claim the portal is installed/active beyond what the tool reports, and do "
+        "not create sources, grants or schedules. Use the portal_onboarding tool for every "
         "answer. Never invent a grant from silence, thanks or an unrelated message. If the "
         "user's first message is an unrelated request, answer it first; do not hijack or "
         "replace it with onboarding.\n"
@@ -210,12 +210,12 @@ def _interview_context(ctx: Any, service: OnboardingService, *,
         return None
     step = next_step(state)
     return (
-        "[Proactive Secretary onboarding continuation]\n"
+        "[Proactive Portal onboarding continuation]\n"
         f"An onboarding interview is active for this conversation (status "
         f"{state.get('status', 'not_started')}; next step: {step}). Continue it naturally and "
         "ask exactly the next missing question. If the user asks something unrelated, answer "
         "it briefly first, then continue the interview without dropping it. Record the "
-        "user's answer with the secretary_onboarding tool, preserving known fields. Never "
+        "user's answer with the portal_onboarding tool, preserving known fields. Never "
         "turn thanks, silence, an "
         "unrelated request or an assistant suggestion into a permission, commitment or "
         "destination confirmation. No external action, source read or schedule is allowed "
@@ -263,10 +263,10 @@ def pending_context(ctx: Any, service: OnboardingService, *, platform: Any,
     state = service._read()
     scope = f" session {str(session_id)[:48]}" if session_id else " this conversation"
     return (
-        "[Proactive Secretary onboarding continuation]\n"
-        f"The user's previous /secretary request is awaiting this ordinary reply in{scope}. "
+        "[Proactive Portal onboarding continuation]\n"
+        f"The user's previous /portal request is awaiting this ordinary reply in{scope}. "
         f"Status: {state.get('status', 'not_started')}; next step: {next_step(state)}. "
-        "Continue the foreground onboarding workflow using the secretary_onboarding tool. "
+        "Continue the foreground onboarding workflow using the portal_onboarding tool. "
         "Ask only missing or conflicting facts and genuine permissions. Do not ask for "
         "credentials, do not arm jobs, and do not treat this reply as a standing grant. "
         "If a later turn belongs to a different session, do not continue this interview there."
@@ -296,7 +296,7 @@ def relevance_context(ctx: Any, *, user_message: Any, platform: Any,
     if ref is None and not _RELEVANT.search(text):
         return None
     lines = [
-        "[Proactive Secretary context]",
+        "[Proactive Portal context]",
         "Preserve your ordinary assistant identity and answer the user's message directly.",
         "Do not infer quoted-alert metadata that the host did not provide; use an explicit "
         "opaque reference and ask one short clarification when a responsibility or alert is "
@@ -381,7 +381,7 @@ def delivery_continuity_context(
         return (
             f"Recent proactive notices in this profile: {count} delivered in the "
             f"last 24h (newest {newest}). If the user refers to something you do "
-            "not remember saying, run: hermes secretary deliveries "
+            "not remember saying, run: hermes portal deliveries "
             f"--since {since} --limit 5"
         )
     except Exception:  # noqa: BLE001 - continuity is optional and content-free
@@ -402,7 +402,7 @@ def make_pre_llm_hook(ctx: Any, service: OnboardingService | None = None):
         # onboarding context has higher display priority. Consent checks read
         # this trusted turn; they never rely on model reply metadata.
         try:
-            from .secretary_responsibilities import responsibility_context
+            from .portal_responsibilities import responsibility_context
             responsibility = responsibility_context(
                 ctx, platform=platform, user_message=user_message,
                 session_id=session_id, chat_type=chat_type, is_shared=is_shared)
@@ -416,7 +416,7 @@ def make_pre_llm_hook(ctx: Any, service: OnboardingService | None = None):
             # and may defer the optional hint; its safety lines are unchanged.
             return {"context": pending}
         try:
-            from .secretary_context_refresh import refresh_guidance
+            from .portal_context_refresh import refresh_guidance
             guidance = refresh_guidance(
                 ctx, platform=platform, user_message=user_message,
                 task_id=str(kwargs.get("task_id") or ""),
@@ -477,7 +477,7 @@ def _apply_control(action: str) -> dict[str, Any]:
     path = paths.preferences_path()
     prefs = load_preferences_file(path, strict=True)
     updated = apply_action(prefs, {"action": action,
-                                   "provenance": f"secretary chat /secretary {action}"}, now)
+                                   "provenance": f"portal chat /portal {action}"}, now)
     save_preferences_file(path, updated, now)
     return {"paused": bool((updated.get("paused") or {}).get("active"))}
 
@@ -510,7 +510,7 @@ def _readiness_summary() -> str:
     return ("No schedule is claimed active here. "
             f"Owned jobs recorded: {', '.join(owned) if owned else 'none'}. "
             "Delivery remains unconfirmed until an explicit native canary; run "
-            "`hermes secretary status --json` for the current profile.")
+            "`hermes portal status --json` for the current profile.")
 
 
 def _disable_control() -> str:
@@ -521,23 +521,23 @@ def _disable_control() -> str:
     try:
         paused = _apply_control("pause").get("paused", False)
     except Exception as exc:  # noqa: BLE001 - report honestly, never claim success
-        return f"Secretary disable failed safely ({type(exc).__name__}); nothing was claimed."
+        return f"Portal disable failed safely ({type(exc).__name__}); nothing was claimed."
     try:
-        from . import secretary_cli as cli
+        from . import portal_cli as cli
         backend = cli._backend()
         if not backend.is_available():
-            return ("Proactive Secretary paused (collection/delivery stopped). The native "
+            return ("Proactive Portal paused (collection/delivery stopped). The native "
                     "cron backend is unavailable from chat, so owned jobs were NOT removed; "
-                    "run `hermes secretary disable` in the foreground to remove them. "
+                    "run `hermes portal disable` in the foreground to remove them. "
                     + _readiness_summary())
         with contextlib.redirect_stdout(io.StringIO()):
             cli._remove_own_jobs()
             cli._remove_own_runners()
     except Exception as exc:  # noqa: BLE001 - paused but removal unconfirmed
-        return ("Proactive Secretary paused, but owned job/runner removal could not be "
-                f"confirmed ({type(exc).__name__}). Run `hermes secretary disable` in the "
+        return ("Proactive Portal paused, but owned job/runner removal could not be "
+                f"confirmed ({type(exc).__name__}). Run `hermes portal disable` in the "
                 "foreground. " + _readiness_summary())
-    return ("Secretary disabled for this profile: collection/delivery paused and only "
+    return ("Portal disabled for this profile: collection/delivery paused and only "
             "plugin-owned jobs/runners were removed. Data was preserved. "
             + _readiness_summary())
 
@@ -548,58 +548,58 @@ def command_text(ctx: Any, service: OnboardingService, raw_args: str) -> str:
         try:
             result = service.cancel()
         except OnboardingError as exc:
-            return f"Secretary setup could not be cancelled: {exc}"
+            return f"Portal setup could not be cancelled: {exc}"
         clear_pending(ctx)
-        return ("Secretary setup cancelled. Saved progress is retained; run /secretary setup "
-                "to resume. No jobs or grants were changed. Use /secretary pause to stop alerts.")
+        return ("Portal setup cancelled. Saved progress is retained; run /portal setup "
+                "to resume. No jobs or grants were changed. Use /portal pause to stop alerts.")
     if args in ("pause", "mute"):
         try:
             state = _apply_control("pause")
         except Exception as exc:  # noqa: BLE001
-            return f"Secretary pause failed safely ({type(exc).__name__}); nothing was claimed."
-        return ("Proactive Secretary paused for this profile: collection and delivery are "
-                "stopped. Use /secretary resume when you want it to run again. "
+            return f"Portal pause failed safely ({type(exc).__name__}); nothing was claimed."
+        return ("Proactive Portal paused for this profile: collection and delivery are "
+                "stopped. Use /portal resume when you want it to run again. "
                 "Requested reminders stay registered but are also paused until you resume.")
     if args == "resume":
         try:
             state = _apply_control("resume")
         except Exception as exc:  # noqa: BLE001
-            return f"Secretary resume failed safely ({type(exc).__name__}); nothing was claimed."
-        return ("Proactive Secretary is no longer paused. " + _readiness_summary())
+            return f"Portal resume failed safely ({type(exc).__name__}); nothing was claimed."
+        return ("Proactive Portal is no longer paused. " + _readiness_summary())
     if args == "disable":
         return _disable_control()
     if args in ("cancel", "stop", "quit"):
         try:
             result = service.cancel()
         except OnboardingError as exc:
-            return f"Secretary setup could not be cancelled: {exc}"
+            return f"Portal setup could not be cancelled: {exc}"
         clear_pending(ctx)
-        return ("Secretary setup cancelled. Saved progress is retained; run /secretary setup "
+        return ("Portal setup cancelled. Saved progress is retained; run /portal setup "
                 "to resume. No jobs or grants were changed.")
     if args in ("status", "show"):
         try:
-            projection = secretary_status.collect(ctx, service)
+            projection = portal_status.collect(ctx, service)
         except Exception as exc:  # noqa: BLE001 - status must degrade, not crash
-            return f"Secretary status is unavailable ({type(exc).__name__})."
-        return secretary_status.render_chat(projection)
+            return f"Portal status is unavailable ({type(exc).__name__})."
+        return portal_status.render_chat(projection)
     if args in ("", "setup", "start", "onboard", "resume"):
         try:
             info = service.inspect()
         except OnboardingError as exc:
-            return f"Secretary setup is unavailable: {exc}"
+            return f"Portal setup is unavailable: {exc}"
         if info["state"]["status"] == "pending_verification":
-            return ("Secretary settings are saved, but delivery verification is still pending "
+            return ("Portal settings are saved, but delivery verification is still pending "
                     "(this is not a live-ready claim) and no job is armed yet. "
                     f"Next action: {info.get('next_question')} "
-                    "Run /secretary status to inspect, or repeat /secretary setup to review "
+                    "Run /portal status to inspect, or repeat /portal setup to review "
                     "and change settings. No job, schedule or grant is changed by this command.")
         if info["state"]["status"] == "ready":
-            return ("Secretary setup is already complete. Use /secretary status to inspect, or "
-                    "run /secretary setup again to review and change settings. No job or grant "
+            return ("Portal setup is already complete. Use /portal status to inspect, or "
+                    "run /portal setup again to review and change settings. No job or grant "
                     "is changed by this command.")
         pending = set_pending(ctx, action="setup")
         return (
-            "Start or resume secretary setup in this conversation. I will use only "
+            "Start or resume portal setup in this conversation. I will use only "
             "already-authorised foreground memory to propose facts, ask for missing or "
             "conflicting details and genuine permissions, then show a preview before anything "
             "is saved.\n"
@@ -611,7 +611,7 @@ def command_text(ctx: Any, service: OnboardingService, raw_args: str) -> str:
             "No schedule, source grant or destination is activated by this command, and never "
             "send credentials in chat."
         )
-    return ("Usage: /secretary setup | status | pause | resume | disable | cancel-setup | "
+    return ("Usage: /portal setup | status | pause | resume | disable | cancel-setup | "
             "cancel. Setup is resumable and never arms jobs or expands access by itself. "
             "`cancel` remains an alias for cancelling setup; it does not pause alerts.")
 
@@ -623,7 +623,7 @@ def make_command_handler(ctx: Any, service: OnboardingService | None = None):
         try:
             return command_text(ctx, service, raw_args)
         except Exception as exc:  # noqa: BLE001
-            return f"Secretary command failed safely ({type(exc).__name__})."
+            return f"Portal command failed safely ({type(exc).__name__})."
 
     return handler
 
@@ -637,8 +637,8 @@ def register_conversation_surfaces(ctx: Any, *, service: OnboardingService | Non
     result = {"command": False, "hook": False, "injection_used": False}
     if callable(command_reg):
         try:
-            command_reg("secretary", make_command_handler(ctx, service),
-                        description="Start, resume, inspect or cancel proactive-secretary setup.",
+            command_reg("portal", make_command_handler(ctx, service),
+                        description="Start, resume, inspect or cancel proactive-portal setup.",
                         args_hint="[setup|status|pause|resume|disable|cancel-setup|cancel]")
             result["command"] = True
         except Exception as exc:  # noqa: BLE001
@@ -654,16 +654,16 @@ def register_conversation_surfaces(ctx: Any, *, service: OnboardingService | Non
 
 def register_onboarding_tool(ctx: Any, *, service: OnboardingService | None = None,
                              register_tool: Any = None) -> dict[str, Any]:
-    from .secretary_onboarding import TOOL_SCHEMA, tool_handler
+    from .portal_onboarding import TOOL_SCHEMA, tool_handler
     service = service or OnboardingService(ctx)
     tool_reg = register_tool if register_tool is not None else getattr(ctx, "register_tool", None)
     if not callable(tool_reg):
         return {"tool": False, "error": "register_tool unavailable"}
     try:
         tool_reg(
-            "secretary_onboarding", "secretary", TOOL_SCHEMA, tool_handler(service),
+            "portal_onboarding", "portal", TOOL_SCHEMA, tool_handler(service),
             description=("Inspect, propose from foreground memory, validate, preview and confirm "
-                         "resumable secretary onboarding. Never grants access on a model assertion."),
+                         "resumable portal onboarding. Never grants access on a model assertion."),
             emoji="",
         )
         return {"tool": True}

@@ -33,9 +33,9 @@ def _load_plugin_package(name: str):
     return module
 
 
-_PKG = _load_plugin_package("hermes_proactive_secretary_notices_tool_schema_qa")
+_PKG = _load_plugin_package("hermes_proactive_portal_notices_tool_schema_qa")
 notices = importlib.import_module(
-    f"{_PKG.__name__}.secretary.secretary_portal_notices"
+    f"{_PKG.__name__}.portal.portal_portal_notices"
 )
 
 ALLOWED = {"event_key", "topic", "message", "evidence_refs", "expiry"}
@@ -87,8 +87,8 @@ class PortalToolSchemaTests(unittest.TestCase):
         schema = entry["schema"]
 
         self.assertEqual(set(schema), {"name", "description", "parameters"})
-        self.assertEqual(entry["category"], "secretary")
-        self.assertEqual(schema["name"], "secretary_propose_notice")
+        self.assertEqual(entry["category"], "portal")
+        self.assertEqual(schema["name"], "portal_propose_notice")
         self.assertEqual(schema["name"], entry["name"])
         self.assertEqual(schema["description"], notices.TOOL_DESCRIPTION)
         self.assertEqual(schema["description"], entry["kwargs"]["description"])

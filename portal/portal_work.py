@@ -34,8 +34,8 @@ if _SRC_DIR.is_dir() and str(_SRC_DIR) not in sys.path:
 from proactive_pilot import ownerpaths as _ownerpaths  # noqa: E402
 
 TOOLSET = "proactive_preparation"
-PLUGIN_NAME = "hermes-proactive-secretary"
-DATA_ENV = "HERMES_PROACTIVE_SECRETARY_DATA"
+PLUGIN_NAME = "hermes-proactive-portal"
+DATA_ENV = "HERMES_PROACTIVE_PORTAL_DATA"
 READ_TOOL = "preparation_read_brief"
 WRITE_TOOL = "preparation_write_artifact"
 

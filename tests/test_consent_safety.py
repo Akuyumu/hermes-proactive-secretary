@@ -23,7 +23,7 @@ sys.path.insert(0, str(_ROOT / "src"))
 
 
 def _load_package():
-    name = "hermes_proactive_secretary_consent_safety"
+    name = "hermes_proactive_portal_consent_safety"
     spec = importlib.util.spec_from_file_location(
         name, _ROOT / "__init__.py", submodule_search_locations=[str(_ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -34,19 +34,19 @@ def _load_package():
 
 
 _PKG = _load_package()
-onboarding = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_onboarding")
-responsibilities = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_responsibilities")
-approvals = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_approvals")
+onboarding = importlib.import_module(f"{_PKG.__name__}.portal.portal_onboarding")
+responsibilities = importlib.import_module(f"{_PKG.__name__}.portal.portal_responsibilities")
+approvals = importlib.import_module(f"{_PKG.__name__}.portal.portal_approvals")
 userconfig = importlib.import_module("proactive_pilot.userconfig")
 R = importlib.import_module("proactive_pilot.responsibilities")
 feedback = importlib.import_module("proactive_pilot.feedback")
 clock_mod = importlib.import_module("proactive_pilot.clock")
 state_mod = importlib.import_module("proactive_pilot.state")
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
-cli = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
+cli = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
 plugin_paths = importlib.import_module(f"{_PKG.__name__}.paths")
 
-_ENV_KEYS = ("HOME", "HERMES_HOME", "HERMES_PROACTIVE_SECRETARY_DATA")
+_ENV_KEYS = ("HOME", "HERMES_HOME", "HERMES_PROACTIVE_PORTAL_DATA")
 
 
 class MemoryState:
@@ -70,7 +70,7 @@ class StrictCtx:
         self.commands = {}
         self.hooks = {}
         self.saved_config = []
-        self.plugin_id = "hermes-proactive-secretary"
+        self.plugin_id = "hermes-proactive-portal"
 
     def get_config(self, key, default=None):
         return self.settings.get(key, default)
@@ -106,10 +106,10 @@ class _ProfileTestCase(unittest.TestCase):
         self.root = tempfile.mkdtemp(prefix="secretary-consent-")
         os.environ["HOME"] = os.path.join(self.root, "home")
         os.environ["HERMES_HOME"] = os.path.join(self.root, "profile")
-        os.environ["HERMES_PROACTIVE_SECRETARY_DATA"] = os.path.join(
+        os.environ["HERMES_PROACTIVE_PORTAL_DATA"] = os.path.join(
             self.root, "profile-a")
         for path in (os.environ["HOME"], os.environ["HERMES_HOME"],
-                     os.environ["HERMES_PROACTIVE_SECRETARY_DATA"]):
+                     os.environ["HERMES_PROACTIVE_PORTAL_DATA"]):
             Path(path).mkdir(parents=True, exist_ok=True)
 
     def tearDown(self):
@@ -139,7 +139,7 @@ class _ProfileTestCase(unittest.TestCase):
 class ApprovalConsentTests(_ProfileTestCase):
     def _request(self, ctx, tools, session="s-1"):
         self.human(ctx, "Please send the private draft to the team.", session)
-        return self.tool(tools, "secretary_responsibility", {
+        return self.tool(tools, "portal_responsibility", {
             "action": "request_approval", "proposal_kind": "send",
             "proposal_effect": "Send the private draft", "proposal_scope": "external mail",
             "ttl_minutes": 30, "session_id": session})
@@ -149,7 +149,7 @@ class ApprovalConsentTests(_ProfileTestCase):
         first = self._request(ctx, tools)
         ref = first["approval"]["ref"]
         self.human(ctx, "yes", "s-1")
-        denied = self.tool(tools, "secretary_responsibility", {
+        denied = self.tool(tools, "portal_responsibility", {
             "action": "approve", "approval_ref": ref, "session_id": "s-1",
             "evidence_quote": "yes",
             "reply_context": f"Approval needed: send the private draft {ref}"})
@@ -162,7 +162,7 @@ class ApprovalConsentTests(_ProfileTestCase):
         ctx, tools = self.registered()
         ref = self._request(ctx, tools)["approval"]["ref"]
         self.human(ctx, f"yes {ref}", "s-1")
-        approved = self.tool(tools, "secretary_responsibility", {
+        approved = self.tool(tools, "portal_responsibility", {
             "action": "approve", "approval_ref": ref, "session_id": "s-1",
             "evidence_quote": f"yes {ref}"})
         self.assertTrue(approved["ok"], approved)
@@ -181,7 +181,7 @@ class ApprovalConsentTests(_ProfileTestCase):
                     user_message=prefix + f"yes {ref}")
                 current = responsibilities.latest_turn(ctx, session_id="s-1")
                 self.assertEqual(current, previous)
-                result = self.tool(tools, "secretary_responsibility", {
+                result = self.tool(tools, "portal_responsibility", {
                     "action": "approve", "approval_ref": ref,
                     "session_id": "s-1", "evidence_quote": f"yes {ref}"})
                 self.assertFalse(result["ok"], result)
@@ -189,16 +189,16 @@ class ApprovalConsentTests(_ProfileTestCase):
 
 class OnboardingConsentTests(_ProfileTestCase):
     def _complete_updates(self, ctx, tools, session="s-1"):
-        self.tool(tools, "secretary_onboarding", {
+        self.tool(tools, "portal_onboarding", {
             "action": "update", "session_id": session, "explicit_consent": True,
             "settings": {"timezone": "UTC", "daily_allowance": 3,
                          "quiet_start_hour": 22, "quiet_end_hour": 7}})
-        self.tool(tools, "secretary_onboarding", {
+        self.tool(tools, "portal_onboarding", {
             "action": "update", "session_id": session, "destination": "telegram",
             "explicit_consent": False})
         self.human(ctx, "Yes, enable private preparation for the conversation scope.",
                    session)
-        return self.tool(tools, "secretary_onboarding", {
+        return self.tool(tools, "portal_onboarding", {
             "action": "update", "session_id": session, "explicit_consent": True,
             "evidence_quote": "Yes, enable private preparation for the conversation scope.",
             "settings": {"autonomy_mode": "prepare_private",
@@ -207,15 +207,15 @@ class OnboardingConsentTests(_ProfileTestCase):
 
     def test_model_booleans_without_a_human_turn_deny(self):
         ctx, tools = self.registered()
-        grant = self.tool(tools, "secretary_onboarding", {
+        grant = self.tool(tools, "portal_onboarding", {
             "action": "update", "session_id": "s-1", "explicit_consent": True,
             "grants": {"mail": True}})
         self.assertFalse(grant["ok"])
-        confirm = self.tool(tools, "secretary_onboarding", {
+        confirm = self.tool(tools, "portal_onboarding", {
             "action": "confirm", "session_id": "s-1", "user_confirmed": True,
             "apply_settings": True, "evidence_quote": "yes"})
         self.assertFalse(confirm["ok"])
-        arm = self.tool(tools, "secretary_onboarding", {
+        arm = self.tool(tools, "portal_onboarding", {
             "action": "arm", "session_id": "s-1", "user_confirmed": True,
             "evidence_quote": "yes"})
         self.assertFalse(arm["ok"])
@@ -226,12 +226,12 @@ class OnboardingConsentTests(_ProfileTestCase):
                      "What is the weather today?",
                      "Yes."):
             self.human(ctx, text, "s-1")
-            denied = self.tool(tools, "secretary_onboarding", {
+            denied = self.tool(tools, "portal_onboarding", {
                 "action": "update", "session_id": "s-1", "explicit_consent": True,
                 "evidence_quote": text, "grants": {"mail": True}})
             self.assertFalse(denied["ok"], (text, denied))
         self.human(ctx, "Yes, grant mail access explicitly.", "s-1")
-        allowed = self.tool(tools, "secretary_onboarding", {
+        allowed = self.tool(tools, "portal_onboarding", {
             "action": "update", "session_id": "s-1", "explicit_consent": True,
             "evidence_quote": "Yes, grant mail access explicitly.",
             "grants": {"mail": True}})
@@ -241,7 +241,7 @@ class OnboardingConsentTests(_ProfileTestCase):
         ctx, tools = self.registered()
         self._complete_updates(ctx, tools)
         self.human(ctx, "Yes, confirm these settings now.", "s-1")
-        confirmed = self.tool(tools, "secretary_onboarding", {
+        confirmed = self.tool(tools, "portal_onboarding", {
             "action": "confirm", "session_id": "s-1", "user_confirmed": True,
             "apply_settings": False,
             "evidence_quote": "Yes, confirm these settings now."})
@@ -249,7 +249,7 @@ class OnboardingConsentTests(_ProfileTestCase):
         self.assertFalse(confirmed["saved"])
         self.assertFalse(confirmed["applied_settings"])
         self.assertEqual(confirmed["status"], "pending_settings")
-        armed = self.tool(tools, "secretary_onboarding", {
+        armed = self.tool(tools, "portal_onboarding", {
             "action": "arm", "session_id": "s-1", "user_confirmed": True,
             "evidence_quote": "Yes, arm the schedule."})
         self.assertFalse(armed["ok"])
@@ -258,7 +258,7 @@ class OnboardingConsentTests(_ProfileTestCase):
         ctx, tools = self.registered()
         self._complete_updates(ctx, tools)
         self.human(ctx, "Yes, confirm and save the onboarding settings.", "s-1")
-        confirmed = self.tool(tools, "secretary_onboarding", {
+        confirmed = self.tool(tools, "portal_onboarding", {
             "action": "confirm", "session_id": "s-1", "user_confirmed": True,
             "apply_settings": True,
             "evidence_quote": "Yes, confirm and save the onboarding settings."})
@@ -271,16 +271,16 @@ class OnboardingConsentTests(_ProfileTestCase):
         backend = cron_mod.InMemoryCronBackend()
         self.human(ctx, "Yes, arm the schedule now.", "s-1")
         with mock.patch.object(cli, "_backend", return_value=backend):
-            armed = self.tool(tools, "secretary_onboarding", {
+            armed = self.tool(tools, "portal_onboarding", {
                 "action": "arm", "session_id": "s-1", "user_confirmed": True,
                 "evidence_quote": "Yes, arm the schedule now."})
         self.assertTrue(armed["ok"], armed)
         self.assertTrue(armed["schedule_armed"])
         self.assertEqual(armed["status"], "ready")
         names = {job["name"] for job in backend.list_jobs()}
-        self.assertTrue(any(name.endswith("secretary-monitoring") for name in names), names)
-        self.assertTrue(any(name.endswith("secretary-reminders") for name in names), names)
-        self.assertTrue(any(name.endswith("secretary-preparation") for name in names), names)
+        self.assertTrue(any(name.endswith("portal-monitoring") for name in names), names)
+        self.assertTrue(any(name.endswith("portal-reminders") for name in names), names)
+        self.assertTrue(any(name.endswith("portal-preparation") for name in names), names)
 
 
 class ApprovalGenerationAndPauseTests(_ProfileTestCase):
@@ -298,7 +298,7 @@ class ApprovalGenerationAndPauseTests(_ProfileTestCase):
         ctx, tools = self.registered()
         record = self._record()
         self.human(ctx, "Please send the comparison to the team.", "s-1")
-        first = self.tool(tools, "secretary_responsibility", {
+        first = self.tool(tools, "portal_responsibility", {
             "action": "request_approval", "proposal_kind": "send",
             "proposal_effect": "Send the comparison", "proposal_scope": "external mail",
             "session_id": "s-1", "responsibility_id": record["id"],
@@ -308,7 +308,7 @@ class ApprovalGenerationAndPauseTests(_ProfileTestCase):
         R.update(state_mod.StateStore(plugin_paths.state_dir(), clock_mod.Clock()),
                  record["id"], desired_outcome="compare three suppliers")
         self.human(ctx, f"yes {ref}", "s-1")
-        denied = self.tool(tools, "secretary_responsibility", {
+        denied = self.tool(tools, "portal_responsibility", {
             "action": "approve", "approval_ref": ref, "session_id": "s-1",
             "evidence_quote": f"yes {ref}"})
         self.assertFalse(denied["ok"], denied)
@@ -319,7 +319,7 @@ class ApprovalGenerationAndPauseTests(_ProfileTestCase):
             with self.subTest(corrupt=corrupt):
                 ctx, tools = self.registered()
                 self.human(ctx, "Please send the private draft to the team.", "s-1")
-                ref = self.tool(tools, "secretary_responsibility", {
+                ref = self.tool(tools, "portal_responsibility", {
                     "action": "request_approval", "proposal_kind": "send",
                     "proposal_effect": "Send the private draft",
                     "proposal_scope": "external mail", "session_id": "s-1"}
@@ -335,7 +335,7 @@ class ApprovalGenerationAndPauseTests(_ProfileTestCase):
                         prefs, {"action": "pause", "provenance": "test"}, now)
                     feedback.save_preferences_file(path, prefs, now)
                 self.human(ctx, f"yes {ref}", "s-1")
-                denied = self.tool(tools, "secretary_responsibility", {
+                denied = self.tool(tools, "portal_responsibility", {
                     "action": "approve", "approval_ref": ref, "session_id": "s-1",
                     "evidence_quote": f"yes {ref}"})
                 self.assertFalse(denied["ok"], denied)
@@ -345,16 +345,16 @@ class ApprovalGenerationAndPauseTests(_ProfileTestCase):
         ctx, tools = self.registered()
         record = self._record()
         self.human(ctx, "Please send the comparison to the team.", "s-1")
-        ref = self.tool(tools, "secretary_responsibility", {
+        ref = self.tool(tools, "portal_responsibility", {
             "action": "request_approval", "proposal_kind": "send",
             "proposal_effect": "Send the comparison", "proposal_scope": "external mail",
             "session_id": "s-1", "responsibility_id": record["id"]}
         )["approval"]["ref"]
-        os.environ["HERMES_PROACTIVE_SECRETARY_DATA"] = os.path.join(
+        os.environ["HERMES_PROACTIVE_PORTAL_DATA"] = os.path.join(
             self.root, "profile-b")
         other, other_tools = self.registered(state=ctx.state)
         self.human(other, f"yes {ref}", "s-1")
-        denied = self.tool(other_tools, "secretary_responsibility", {
+        denied = self.tool(other_tools, "portal_responsibility", {
             "action": "approve", "approval_ref": ref, "session_id": "s-1",
             "evidence_quote": f"yes {ref}"})
         self.assertFalse(denied["ok"], denied)
@@ -375,7 +375,7 @@ class ResponsibilityAcceptanceTests(_ProfileTestCase):
         ctx, tools = self.registered()
         record = self._tentative()
         self.human(ctx, "What is the weather today?", "s-1")
-        denied = self.tool(tools, "secretary_responsibility", {
+        denied = self.tool(tools, "portal_responsibility", {
             "action": "accept", "responsibility_id": record["id"],
             "session_id": "s-1", "evidence_quote": "What is the weather today?"})
         self.assertFalse(denied["ok"], denied)
@@ -388,7 +388,7 @@ class ResponsibilityAcceptanceTests(_ProfileTestCase):
         record = self._tentative()
         text = "Yes, accept the compare two suppliers opportunity."
         self.human(ctx, text, "s-1")
-        accepted = self.tool(tools, "secretary_responsibility", {
+        accepted = self.tool(tools, "portal_responsibility", {
             "action": "accept", "responsibility_id": record["id"],
             "session_id": "s-1", "evidence_quote": text})
         self.assertTrue(accepted["ok"], accepted)

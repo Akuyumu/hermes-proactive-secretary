@@ -14,13 +14,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-import secretary.secretary_work as W  # noqa: E402
+import portal.portal_work as W  # noqa: E402
 from proactive_pilot import responsibilities as R  # noqa: E402
 from proactive_pilot.clock import SeededClock  # noqa: E402
 from proactive_pilot.state import StateStore  # noqa: E402
 
 T0 = datetime.fromisoformat("2026-10-20T10:00:00+08:00")
-PLUGIN = "hermes-proactive-secretary"
+PLUGIN = "hermes-proactive-portal"
 
 
 class FakeCtx:
@@ -47,7 +47,7 @@ class ToolTests(unittest.TestCase):
         self.data.mkdir()
         self.env = mock.patch.dict(os.environ, {
             "HERMES_HOME": str(self.root / "home"),
-            "HERMES_PROACTIVE_SECRETARY_DATA": str(self.data),
+            "HERMES_PROACTIVE_PORTAL_DATA": str(self.data),
         })
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -203,15 +203,15 @@ class ToolTests(unittest.TestCase):
             "import importlib.util,json,sys\n"
             f"sys.path[:] = [p for p in sys.path if p not in ({str(ROOT)!r}, '' )]\n"
             f"sys.path.insert(0, {str(ROOT / 'src')!r})\n"
-            f"spec=importlib.util.spec_from_file_location('secretary_work_probe',"
-            f"{str(ROOT / 'secretary' / 'secretary_work.py')!r})\n"
+            f"spec=importlib.util.spec_from_file_location('portal_work_probe',"
+            f"{str(ROOT / 'portal' / 'portal_work.py')!r})\n"
             "mod=importlib.util.module_from_spec(spec)\n"
             "spec.loader.exec_module(mod)\n"
             "store=mod._store()\n"
             "print(json.dumps({'root': str(store.root)}))\n"
         )
         env = dict(os.environ)
-        env.update({"HERMES_PROACTIVE_SECRETARY_DATA": str(self.data),
+        env.update({"HERMES_PROACTIVE_PORTAL_DATA": str(self.data),
                     "HERMES_HOME": str(self.root / "home")})
         proc = __import__("subprocess").run(
             [sys.executable, "-c", script], env=env, capture_output=True, text=True,

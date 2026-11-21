@@ -25,7 +25,7 @@ class NativeDoctorImportTests(unittest.TestCase):
             stack.enter_context(mock.patch.object(sc, "_emit", side_effect=lambda payload, **_: emitted.append(payload)))
             stack.enter_context(mock.patch.object(native_runtime, "bound_model_lane_status", return_value={"strict_active": strict}))
             # A global top-level import is unavailable, as under the native loader.
-            stack.enter_context(mock.patch.dict("sys.modules", {"secretary_models": None}))
+            stack.enter_context(mock.patch.dict("sys.modules", {"portal_models": None}))
             self.assertEqual(sc.doctor_command(argparse.Namespace(json=True)), 0)
         check = next(row for row in emitted[0]["checks"] if row["check"] == "model_strict_capability")
         self.assertEqual(check["ok"], strict)

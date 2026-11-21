@@ -1,4 +1,4 @@
-"""Lifecycle service for the single local normal-agent secretary cron job.
+"""Lifecycle service for the single local normal-agent portal cron job.
 
 Only the native normal-agent lane is managed here. Local delivery remains
 enforced; notice proposals are queued for the existing monitoring lane rather
@@ -13,11 +13,11 @@ from typing import Any
 
 try:  # package import
     from .. import cron, paths
-    from . import secretary_portal_controls as portal_controls
+    from . import portal_portal_controls as portal_controls
 except ImportError:  # direct/standalone import
     import cron  # type: ignore
     import paths  # type: ignore
-    from secretary import secretary_portal_controls as portal_controls  # type: ignore
+    from portal import portal_portal_controls as portal_controls  # type: ignore
 
 LIMITATIONS = (
     "notifications depend on an already-enabled monitoring lane; a proposal is not "
@@ -27,7 +27,7 @@ LIMITATIONS = (
 )
 
 PROMPT = (
-    "Act as the owning profile's private secretary, not a notifier. You run with "
+    "Act as the owning profile's private portal, not a notifier. You run with "
     "the same owning-profile Hermes identity, tools, connectors, skills, memory, "
     "and standing permission and approval rules as an ordinary session; there is "
     "no separate portal tool allowlist. Proactively seek useful information in "
@@ -54,7 +54,7 @@ PROMPT = (
     "Persist progress, evidence and any next due follow-up in native memory or "
     "existing work artifacts; never create a parallel memory, preference, "
     "scheduling or permission engine. Consult any additional active follow-ups "
-    "through the typed secretary_followup tool; when there are none or it is "
+    "through the typed portal_followup tool; when there are none or it is "
     "unavailable, use your original initiative independently. Follow-ups never "
     "grant new authority and must never add a schedule or mutate this per-watch "
     "prompt. Apply explicit corrections, preserve "
@@ -62,7 +62,7 @@ PROMPT = (
     "or non-response as a request to drop an obligation or as learned dislike. "
     "Leave every approval-required action unexecuted and surface a concrete "
     "pending blocker with the exact approval needed. For a user notice, use "
-    "secretary_propose_notice so the existing monitoring gates decide delivery; "
+    "portal_propose_notice so the existing monitoring gates decide delivery; "
     "never send directly or attempt to evade plugin controls. Keep the native "
     "final local. Prefer meaningful silence when no changed evidence warrants "
     "action; never spam or fill quotas. Learned comfort or preference never grants "
@@ -450,6 +450,21 @@ def portal_command(args: Any, *, backend: Any = None, native_ctx: Any = None) ->
         return _failure(action, "error", f"could not prepare portal backend: {exc}", as_json)
 
     name = cron.PORTAL_JOB_NAME
+    retired_removed: list[dict[str, Any]] = []
+    if action == "enable":
+        # Cut over only the retired portal row recorded as ours; the new name is
+        # then reconciled normally below. A failed removal aborts before any
+        # mutation rather than leaving two portal jobs armed.
+        try:
+            retired_removed = cron.reconcile_retired_jobs(
+                backend, {name}, ownership=ownership,
+                ownership_path=ownership_path,
+                retired_names=(cron.RETIRED_PORTAL_JOB_NAME,))
+        except Exception as exc:
+            return _failure(action, "error",
+                            f"could not retire the old portal job: {exc}", as_json,
+                            name=name)
+
     if action in {"enable", "resume"}:
         # An explicit enable/resume must never silently bypass an outstanding
         # global pause. Read-only actions (preview/status/pause/remove) remain
@@ -465,7 +480,7 @@ def portal_command(args: Any, *, backend: Any = None, native_ctx: Any = None) ->
             return _failure(
                 action, "globally-paused",
                 (why or "global pause is active")
-                + "; run `hermes secretary resume` before this action",
+                + "; run `hermes portal resume` before this action",
                 as_json, name=name)
 
     try:
@@ -535,6 +550,8 @@ def portal_command(args: Any, *, backend: Any = None, native_ctx: Any = None) ->
                 "effective_pins": _effective(job2, record2, desired),
                 "state": _state(job2 or {}) if job2 is not None else "unknown",
             }
+            if retired_removed:
+                payload["retired"] = retired_removed
             if payload["status"] == "already-present" and payload["state"] == "paused":
                 payload["detail"] = (payload["detail"] + "; " if payload["detail"] else "") + \
                     "existing owned paused state left paused"

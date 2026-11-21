@@ -34,7 +34,7 @@ _MODEL_LANES: dict[int, dict[str, Any]] = {}
 # failures without every caller threading a store into its planner/proposer.
 _HEALTH_LANES: dict[int, dict[str, Any]] = {}
 
-NATIVE_PLUGIN_ID = "hermes-proactive-secretary"
+NATIVE_PLUGIN_ID = "hermes-proactive-portal"
 # Paths that must never spend a model call, ever.
 MODEL_FREE_PATHS = frozenset({"reminder", "disabled", "paused", "public-only"})
 # Plugin-owned auxiliary slot (registered in __init__.register). Routing it is
@@ -111,7 +111,7 @@ def model_lane_allowed(ctx: Any) -> tuple[bool, str]:
         return False, "no host context supplied"
     entry = _MODEL_LANES.get(id(ctx))
     if entry is None or entry.get("ctx") is not ctx:
-        return False, ("secretary model lane is not initialized for this context; "
+        return False, ("portal model lane is not initialized for this context; "
                        "fail closed until plugin registration succeeds")
     return bool(entry.get("allowed")), str(entry.get("reason") or "")
 

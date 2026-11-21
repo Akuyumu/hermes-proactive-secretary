@@ -1,4 +1,4 @@
-"""Reproducible code-only 1.0.4 export builder and installed-candidate doctor.
+"""Reproducible code-only 1.0.5 export builder and installed-candidate doctor.
 
 This is not a new package manager. It uses the plugin's existing manifest and
 Python modules, applies the same export rules the release review requires, and
@@ -10,7 +10,7 @@ Rules enforced by :func:`build_package`:
 * every shipped file comes from an explicit allowlist of code/docs/policy/skill/
   runner trees (no ``.build-context``, tests, git metadata, caches, private
   runtime state or scratch files);
-* the manifest and ``src/proactive_pilot/__init__.py`` both say 1.0.4;
+* the manifest and ``src/proactive_pilot/__init__.py`` both say 1.0.5;
 * sanitisation terms and absolute personal home paths are rejected;
 * file order, timestamps and hashes are deterministic.
 """
@@ -38,9 +38,9 @@ ROOT = Path(__file__).resolve().parent.parent
 _SRC = ROOT / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
-from proactive_pilot.layout import legacy_shadows  # noqa: E402
-VERSION = "1.0.4"
-SHIPPED_DIRS = ("src", "policy", "skills", "runners", "secretary", "public_samples",
+from proactive_pilot.layout import legacy_artifacts, legacy_shadows  # noqa: E402
+VERSION = "1.0.5"
+SHIPPED_DIRS = ("src", "policy", "skills", "runners", "portal", "public_samples",
                 "fixtures", "desktop", "dashboard", "docs")
 # Nested trees contain executable/assets as well as docs. Keep the same
 # conservative extension allowlist as root files so an editor backup, source map
@@ -175,7 +175,7 @@ root = Path({str(installed)!r})
 assert (root / "LICENSE").is_file(), "LICENSE missing from extracted package"
 sys.path.insert(0, str(root))
 spec = importlib.util.spec_from_file_location(
-    "hermes_proactive_secretary_installed", root / "__init__.py",
+    "hermes_proactive_portal_installed", root / "__init__.py",
     submodule_search_locations=[str(root)])
 module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = module
@@ -185,17 +185,17 @@ sys.path.insert(0, str(root / "src"))
 import proactive_pilot.preparation as prep
 import proactive_pilot.native_runtime as runtime
 pkg = spec.name
-cli = importlib.import_module(pkg + ".secretary.secretary_cli")
+cli = importlib.import_module(pkg + ".portal.portal_cli")
 runners = importlib.import_module(pkg + ".runner_install")
 assert callable(getattr(prep, "preflight", None))
-assert (root / "runners" / "proactive_secretary_prepare_runner.py").is_file()
+assert (root / "runners" / "proactive_portal_prepare_runner.py").is_file()
 api_spec = importlib.util.spec_from_file_location(
-    "hermes_proactive_secretary_dashboard_api", root / "dashboard" / "plugin_api.py")
+    "hermes_proactive_portal_dashboard_api", root / "dashboard" / "plugin_api.py")
 api = importlib.util.module_from_spec(api_spec)
 sys.modules[api_spec.name] = api
 api_spec.loader.exec_module(api)
 assert getattr(api, "router", None) is not None, "dashboard router missing"
-assert getattr(api, "PLUGIN_ID", "") == "hermes-proactive-secretary"
+assert getattr(api, "PLUGIN_ID", "") == "hermes-proactive-portal"
 print("ok")
 """
         try:
@@ -364,24 +364,30 @@ def doctor(installed: Path) -> dict[str, Any]:
     ``hermes plugins doctor --ci`` under a synthetic offline profile.
     """
     installed = Path(installed)
-    required = ("plugin.yaml", "__init__.py", "secretary/secretary_cli.py", "paths.py",
+    required = ("plugin.yaml", "__init__.py", "portal/portal_cli.py", "paths.py",
                 "LICENSE", "src/proactive_pilot/__init__.py",
-                "runners/proactive_secretary_prepare_runner.py",
+                "runners/proactive_portal_prepare_runner.py",
                 "desktop/plugin.js", "dashboard/plugin_api.py",
                 "dashboard/manifest.json")
     missing = [name for name in required if not (installed / name).is_file()]
     manifest_version, module_version = _version(installed)
     shipped = scan(installed)
     shadows = legacy_shadows(installed)
+    artifacts = legacy_artifacts(installed)
     layout_problems = []
     if shadows:
         layout_problems.append(
-            "legacy root module(s) shadow secretary/: "
+            f"{len(shadows)} legacy root module(s) shadow portal/: "
             + ", ".join(shadows)
             + "; remove the stale root modules and reinstall instead of copying over")
+    if artifacts:
+        layout_problems.append(
+            f"{len(artifacts)} stale legacy secretary artifact(s) at the package root: "
+            + ", ".join(artifacts)
+            + "; remove them and reinstall instead of copying over")
     server_assets = all((installed / "runners" / name).is_file() for name in (
-        "proactive_secretary_runner.py", "proactive_secretary_reminder_runner.py",
-        "proactive_secretary_prepare_runner.py"))
+        "proactive_portal_runner.py", "proactive_portal_reminder_runner.py",
+        "proactive_portal_prepare_runner.py"))
     imports = _import_registration(installed) if not missing else {
         "ok": False, "reason": "required files missing"}
     # An incomplete package cannot be a valid host candidate. Running the native
@@ -399,8 +405,9 @@ def doctor(installed: Path) -> dict[str, Any]:
             "entrypoint_import_registration": imports,
             "native_host_doctor": host,
             "scan_ok": shipped["ok"], "scan_problems": shipped["problems"],
-            "layout_shadows": shadows, "layout_problems": layout_problems,
-            "identity": "hermes-proactive-secretary",
+            "layout_shadows": shadows, "layout_artifacts": artifacts,
+            "layout_problems": layout_problems,
+            "identity": "hermes-proactive-portal",
             "scope": "package-local validation plus canonical host doctor; not live activation"}
 
 

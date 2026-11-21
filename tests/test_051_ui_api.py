@@ -23,7 +23,7 @@ if str(ROOT / "src") not in sys.path:
 
 from proactive_pilot import userconfig  # noqa: E402
 
-PLUGIN_NAME = "hermes-proactive-secretary"
+PLUGIN_NAME = "hermes-proactive-portal"
 
 def _version_from(path: Path, pattern: str) -> str:
     match = re.search(pattern, path.read_text(encoding="utf-8"))
@@ -38,7 +38,7 @@ class PackagingAndSchemaTests(unittest.TestCase):
         module_version = _version_from(ROOT / "src" / "proactive_pilot" / "__init__.py",
                                        r'__version__\s*=\s*"([^"]+)"')
         self.assertEqual(manifest_version, module_version)
-        self.assertEqual(manifest_version, "1.0.4")
+        self.assertEqual(manifest_version, "1.0.5")
         report = exporter.scan(ROOT)
         self.assertTrue(report["ok"], report["problems"])
         for name in ("desktop/plugin.js", "dashboard/plugin_api.py", "dashboard/manifest.json"):
@@ -70,7 +70,7 @@ class PackagingAndSchemaTests(unittest.TestCase):
         imported = exporter._import_registration(extracted)
         self.assertTrue(imported["ok"], imported)
         dashboard = json.loads((extracted / "dashboard" / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(dashboard["version"], "1.0.4")
+        self.assertEqual(dashboard["version"], "1.0.5")
         self.assertEqual(dashboard["api"], "plugin_api.py")
 
     def test_doctor_requires_the_real_custom_ui_and_api(self):
@@ -82,16 +82,16 @@ class PackagingAndSchemaTests(unittest.TestCase):
         extracted.mkdir()
         for name in ("plugin.yaml", "__init__.py", "paths.py", "LICENSE"):
             shutil.copy(ROOT / name, extracted / name)
-        (extracted / "secretary").mkdir()
-        shutil.copy(ROOT / "secretary" / "secretary_cli.py",
-                    extracted / "secretary" / "secretary_cli.py")
+        (extracted / "portal").mkdir()
+        shutil.copy(ROOT / "portal" / "portal_cli.py",
+                    extracted / "portal" / "portal_cli.py")
         src = extracted / "src" / "proactive_pilot"
         src.mkdir(parents=True)
         shutil.copy(ROOT / "src" / "proactive_pilot" / "__init__.py", src / "__init__.py")
         runners = extracted / "runners"
         runners.mkdir()
-        for name in ("proactive_secretary_runner.py", "proactive_secretary_reminder_runner.py",
-                     "proactive_secretary_prepare_runner.py"):
+        for name in ("proactive_portal_runner.py", "proactive_portal_reminder_runner.py",
+                     "proactive_portal_prepare_runner.py"):
             (runners / name).write_text("", encoding="utf-8")
         result = exporter.doctor(extracted)
         self.assertFalse(result["ok"])
@@ -101,11 +101,11 @@ class PackagingAndSchemaTests(unittest.TestCase):
 
     def test_manifest_and_desktop_id_match_native_plugin(self):
         manifest = json.loads((ROOT / "dashboard" / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["name"], "hermes-proactive-secretary")
+        self.assertEqual(manifest["name"], "hermes-proactive-portal")
         self.assertEqual(manifest["api"], "plugin_api.py")
         self.assertTrue((ROOT / "dashboard" / manifest["api"]).is_file())
         js = (ROOT / "desktop" / "plugin.js").read_text(encoding="utf-8")
-        self.assertIn("id: 'hermes-proactive-secretary'", js)
+        self.assertIn("id: 'hermes-proactive-portal'", js)
         self.assertIn("ctx.registerSettingsPage?.(", js)
         imports = re.findall(r"^import .*? from '([^']+)'", js, re.MULTILINE)
         self.assertEqual(set(imports), {"@hermes/plugin-sdk", "react/jsx-runtime", "react"})
@@ -134,7 +134,7 @@ class _ApiBase(unittest.TestCase):
         except Exception as exc:  # noqa: BLE001
             raise unittest.SkipTest(f"FastAPI test client unavailable: {type(exc).__name__}")
         spec = importlib.util.spec_from_file_location(
-            "secretary_051_plugin_api", ROOT / "dashboard" / "plugin_api.py")
+            "portal_051_plugin_api", ROOT / "dashboard" / "plugin_api.py")
         cls.api = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = cls.api
         spec.loader.exec_module(cls.api)
@@ -323,7 +323,7 @@ class SettingsApiTests(_ApiBase):
 class PluginContextBindingTests(unittest.TestCase):
     def _api(self):
         spec = importlib.util.spec_from_file_location(
-            "secretary_051_plugin_api_context", ROOT / "dashboard" / "plugin_api.py")
+            "portal_051_plugin_api_context", ROOT / "dashboard" / "plugin_api.py")
         api = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = api
         spec.loader.exec_module(api)
@@ -339,9 +339,9 @@ class PluginContextBindingTests(unittest.TestCase):
         with mock.patch.object(host_plugins, "get_plugin_manager", return_value=manager):
             ctx, package = api._plugin_context()
         self.assertTrue(package)
-        self.assertEqual(ctx.manifest.name, "hermes-proactive-secretary")
+        self.assertEqual(ctx.manifest.name, "hermes-proactive-portal")
         self.assertEqual(Path(ctx.manifest.path).resolve(), ROOT.resolve())
-        self.assertEqual(ctx.plugin_id, "hermes-proactive-secretary")
+        self.assertEqual(ctx.plugin_id, "hermes-proactive-portal")
         loaded_package = importlib.import_module(package)
         self.assertEqual(Path(loaded_package.__file__).resolve().parent, ROOT.resolve())
 
@@ -473,7 +473,7 @@ function walk(node) {
 let page = null
 const restCalls = []
 const ctx = {
-  rest: async (path, opts) => { restCalls.push([path, opts && opts.method || 'GET']); return page ? { command: '/secretary setup' } : {} },
+  rest: async (path, opts) => { restCalls.push([path, opts && opts.method || 'GET']); return page ? { command: '/portal setup' } : {} },
   registerSettingsPage: value => { page = value }
 }
 plugin.register(ctx)
@@ -515,7 +515,7 @@ console.log(JSON.stringify(output))
                               text=True, timeout=30)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         result = json.loads(proc.stdout.strip().splitlines()[-1])
-        self.assertEqual(result["title"], 'Proactive Secretary')
+        self.assertEqual(result["title"], 'Proactive Portal')
         self.assertEqual(result["children"], ['Sources', 'Advanced'])
         self.assertTrue(result["hasFresh"])
         self.assertTrue(result["hasStale"])

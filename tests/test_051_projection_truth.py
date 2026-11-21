@@ -30,7 +30,7 @@ from proactive_pilot import userconfig as uc  # noqa: E402
 
 
 def _load_package():
-    name = "hermes_proactive_secretary_051_projection"
+    name = "hermes_proactive_portal_051_projection"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -41,9 +41,9 @@ def _load_package():
 
 
 PKG = _load_package()
-sc = importlib.import_module(f"{PKG.__name__}.secretary.secretary_cli")
+sc = importlib.import_module(f"{PKG.__name__}.portal.portal_cli")
 paths = importlib.import_module(f"{PKG.__name__}.paths")
-setup_actions = importlib.import_module("secretary.secretary_setup_actions")
+setup_actions = importlib.import_module("portal.portal_setup_actions")
 cron_mod = importlib.import_module(f"{PKG.__name__}.cron")
 
 
@@ -51,7 +51,7 @@ class FormCtx:
     def __init__(self, settings=None):
         self.settings = copy.deepcopy(dict(settings or {}))
         self.writes = []
-        self.plugin_id = "hermes-proactive-secretary"
+        self.plugin_id = "hermes-proactive-portal"
 
     def get_config(self, key, default=None):
         return self.settings.get(key, default)
@@ -140,12 +140,12 @@ class _Base(unittest.TestCase):
                 os.environ[key] = value
 
     def _run_registered(self, argv):
-        parser = argparse.ArgumentParser(prog="hermes secretary")
+        parser = argparse.ArgumentParser(prog="hermes portal")
         sc.register_cli(parser)
         args = parser.parse_args(argv)
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            rc = sc.secretary_command(args)
+            rc = sc.portal_cli_command(args)
         try:
             payload = json.loads(buf.getvalue())
         except ValueError:

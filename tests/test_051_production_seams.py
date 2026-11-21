@@ -20,9 +20,9 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from proactive_pilot import userconfig  # noqa: E402
-from secretary.secretary_setup_actions import SetupActionError  # noqa: E402
+from portal.portal_setup_actions import SetupActionError  # noqa: E402
 
-PLUGIN_NAME = "hermes-proactive-secretary"
+PLUGIN_NAME = "hermes-proactive-portal"
 
 
 def _write_json(path: Path, payload) -> None:
@@ -92,7 +92,7 @@ class _Dashboard:
     @classmethod
     def load(cls):
         spec = importlib.util.spec_from_file_location(
-            "secretary_051_production_dashboard", ROOT / "dashboard" / "plugin_api.py")
+            "portal_051_production_dashboard", ROOT / "dashboard" / "plugin_api.py")
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
         spec.loader.exec_module(module)
@@ -112,9 +112,9 @@ class DefaultProductionServiceTests(unittest.TestCase):
         self.host_plugins = host_plugins
         self.constants = constants
         self._saved_env = {key: os.environ.get(key) for key in
-                           ("HERMES_HOME", "HERMES_PROACTIVE_SECRETARY_DATA")}
+                           ("HERMES_HOME", "HERMES_PROACTIVE_PORTAL_DATA")}
         os.environ["HERMES_HOME"] = str(self.f.a)
-        os.environ["HERMES_PROACTIVE_SECRETARY_DATA"] = str(self.f.a_override)
+        os.environ["HERMES_PROACTIVE_PORTAL_DATA"] = str(self.f.a_override)
         self.addCleanup(self._restore_env)
         self.token = constants.set_hermes_home_override(str(self.f.b))
         self.addCleanup(constants.reset_hermes_home_override, self.token)

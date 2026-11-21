@@ -194,7 +194,7 @@ def _with_timeout(fn: Callable[[], Any], seconds: float) -> Any:
         return fn()
 
 
-class SecretaryEventGetter:
+class PortalEventGetter:
     """Read-only, exact, single GET through the shipped secretary client.
 
     Validates the account alias and the selected/primary calendar before the
@@ -1028,7 +1028,7 @@ def main(
 
     if args.scheduler_command:
         launcher = (Path(__file__).resolve().parents[2] / "runners"
-                    / "proactive_secretary_reminder_runner.py")
+                    / "proactive_portal_reminder_runner.py")
         print(json.dumps({
             "note": "parent installs the native one-minute script job; this does not create it",
             "schedule": "every 1 minute",
@@ -1069,7 +1069,7 @@ def main(
                     entry = add_event(reg, text=args.text, alias=args.alias, calendar_id=args.calendar_id,
                                       event_id=args.event_id, lead_minutes=args.lead_minutes,
                                       provenance=args.provenance, now=now,
-                                      getter=getter or SecretaryEventGetter(
+                                      getter=getter or PortalEventGetter(
                                           aliases=configured_aliases, policy=policy),
                                       late_grace_minutes=args.late_grace_minutes)
             except ReminderError as exc:
@@ -1144,7 +1144,7 @@ def _dispatch(store: StateStore, args: Namespace, clock: Clock, now: datetime, *
     clock = build_clock(policy.get("timezone"), getattr(args, "seeded_clock", None))
     now = clock.now()
     store = StateStore(store.root, clock)
-    getter = getter or SecretaryEventGetter(aliases=configured_aliases, policy=policy)
+    getter = getter or PortalEventGetter(aliases=configured_aliases, policy=policy)
     with store.lock() as acquired:
         if not acquired:
             _diag({"diagnostic": "skip-lock", "reason": "another run holds the lock"})

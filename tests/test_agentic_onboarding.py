@@ -17,13 +17,13 @@ from unittest import mock
 _ROOT = Path(__file__).resolve().parents[1]
 _SCRATCH = tempfile.mkdtemp(prefix="secretary-agentic-")
 os.environ["HERMES_HOME"] = os.path.join(_SCRATCH, "home")
-os.environ["HERMES_PROACTIVE_SECRETARY_DATA"] = os.path.join(_SCRATCH, "profile-a")
+os.environ["HERMES_PROACTIVE_PORTAL_DATA"] = os.path.join(_SCRATCH, "profile-a")
 atexit.register(shutil.rmtree, _SCRATCH, True)
 sys.path.insert(0, str(_ROOT / "src"))
 
 
 def _load_package():
-    name = "hermes_proactive_secretary_agentic"
+    name = "hermes_proactive_portal_agentic"
     spec = importlib.util.spec_from_file_location(
         name, _ROOT / "__init__.py", submodule_search_locations=[str(_ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -34,10 +34,10 @@ def _load_package():
 
 
 _PKG = _load_package()
-onboarding = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_onboarding")
-conversation = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_conversation")
-responsibilities = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_responsibilities")
-approvals = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_approvals")
+onboarding = importlib.import_module(f"{_PKG.__name__}.portal.portal_onboarding")
+conversation = importlib.import_module(f"{_PKG.__name__}.portal.portal_conversation")
+responsibilities = importlib.import_module(f"{_PKG.__name__}.portal.portal_responsibilities")
+approvals = importlib.import_module(f"{_PKG.__name__}.portal.portal_approvals")
 userconfig = importlib.import_module("proactive_pilot.userconfig")
 native_runtime = importlib.import_module("proactive_pilot.native_runtime")
 
@@ -89,7 +89,7 @@ class StrictCtx:
         self.commands = {}
         self.hooks = {}
         self.saved_config = []
-        self.plugin_id = "hermes-proactive-secretary"
+        self.plugin_id = "hermes-proactive-portal"
 
     def get_config(self, key, default=None):
         return self.settings.get(key, default)
@@ -148,7 +148,7 @@ class ConversationOnboardingTests(unittest.TestCase):
         first = hook(platform="telegram", user_message="hello", session_id="s-1")
         self.assertIn("Next question:", first["context"])
         self.assertIn("timezone", first["context"].lower())
-        self.assertNotIn("/secretary setup", first["context"])
+        self.assertNotIn("/portal setup", first["context"])
         self.assertIn("onboarding_invitation", ctx.state.data)
 
         # The same conversation continues with the next genuine question and
@@ -156,15 +156,15 @@ class ConversationOnboardingTests(unittest.TestCase):
         again = hook(platform="telegram", user_message="ok", session_id="s-1")
         self.assertIn("onboarding continuation", again["context"].lower())
 
-        _tool(tools, "secretary_onboarding", {
+        _tool(tools, "portal_onboarding", {
             "action": "update", "settings": {"timezone": "Europe/London"},
             "explicit_consent": False})
-        _tool(tools, "secretary_onboarding", {
+        _tool(tools, "portal_onboarding", {
             "action": "update", "destination": "telegram", "explicit_consent": False})
         consent_text = "Yes, enable private preparation for the conversation scope."
         hook(platform="telegram", user_message=consent_text, session_id="s-1",
              chat_type="dm")
-        _tool(tools, "secretary_onboarding", {
+        _tool(tools, "portal_onboarding", {
             "action": "update", "session_id": "s-1",
             "evidence_quote": consent_text,
             "settings": {"daily_allowance": 3, "quiet_start_hour": 22,
@@ -172,7 +172,7 @@ class ConversationOnboardingTests(unittest.TestCase):
                          "preparation_scopes": ["conversation"],
                          "preparation_source_consent": False},
             "explicit_consent": True})
-        state = _tool(tools, "secretary_onboarding", {"action": "inspect"})["state"]
+        state = _tool(tools, "portal_onboarding", {"action": "inspect"})["state"]
         self.assertEqual(state["settings"]["autonomy_mode"], "prepare_private")
         self.assertTrue(state["settings"]["preparation_scopes"])
 
@@ -181,7 +181,7 @@ class ConversationOnboardingTests(unittest.TestCase):
         confirm_text = "Yes, confirm and save the onboarding settings."
         hook(platform="telegram", user_message=confirm_text, session_id="s-1",
              chat_type="dm")
-        result = _tool(tools, "secretary_onboarding", {
+        result = _tool(tools, "portal_onboarding", {
             "action": "confirm", "session_id": "s-1",
             "evidence_quote": confirm_text,
             "user_confirmed": True, "apply_settings": True})
@@ -228,7 +228,7 @@ class CaptureAndPreparationTests(unittest.TestCase):
     def test_clear_foreground_task_is_captured_and_privately_prepared(self):
         text = "Please prepare the renewal checklist before Friday."
         self._human(text)
-        result = _tool(self.tools, "secretary_responsibility", {
+        result = _tool(self.tools, "portal_responsibility", {
             "action": "capture", "kind": "commitment", "session_id": "s-1",
             "evidence_quote": text,
             "desired_outcome": "Prepare the renewal checklist",
@@ -251,7 +251,7 @@ class CaptureAndPreparationTests(unittest.TestCase):
         context = self.ctx.hooks["pre_llm_call"](
             platform="telegram", user_message="what time is it?", session_id="s-1")
         self.assertTrue(context is None or "responsibility" not in context["context"].lower())
-        failed = _tool(self.tools, "secretary_responsibility", {
+        failed = _tool(self.tools, "portal_responsibility", {
             "action": "capture", "kind": "commitment", "session_id": "s-1",
             "evidence_quote": "thanks!", "desired_outcome": "Invented task"})
         self.assertFalse(failed["ok"])
@@ -259,7 +259,7 @@ class CaptureAndPreparationTests(unittest.TestCase):
     def test_inferred_opportunity_is_tentative_private_and_not_due(self):
         text = "The conference deadline is mentioned in this chat."
         self._human(text)
-        result = _tool(self.tools, "secretary_responsibility", {
+        result = _tool(self.tools, "portal_responsibility", {
             "action": "capture", "kind": "opportunity", "session_id": "s-1",
             "evidence_quote": text,
             "desired_outcome": "Consider a conference checklist"})
@@ -285,7 +285,7 @@ class CaptureAndPreparationTests(unittest.TestCase):
         ctx.hooks["pre_llm_call"](platform="telegram",
                                   user_message="Please prepare the checklist.",
                                   session_id="s-3")
-        result = _tool(tools, "secretary_responsibility", {
+        result = _tool(tools, "portal_responsibility", {
             "action": "capture", "kind": "commitment", "session_id": "s-3",
             "evidence_quote": "Please prepare the checklist.",
             "desired_outcome": "Prepare the checklist"})
@@ -329,12 +329,12 @@ class FinalIntegrationBoundaryTests(unittest.TestCase):
                          "source_consent": False})) + (route,)
 
     def test_tentative_request_is_json_mode_and_shared_bounded_budget(self):
-        from secretary.secretary_preparation import DRAFT_MAX_TOKENS, DRAFT_TIMEOUT_SECONDS
+        from portal.portal_preparation import DRAFT_MAX_TOKENS, DRAFT_TIMEOUT_SECONDS
         ctx, tools, route = self._ctx()
         text = "The conference deadline is mentioned in this chat."
         ctx.hooks["pre_llm_call"](platform="telegram", user_message=text,
                                   session_id="s-bound", chat_type="dm")
-        result = _tool(tools, "secretary_responsibility", {
+        result = _tool(tools, "portal_responsibility", {
             "action": "capture", "kind": "opportunity", "session_id": "s-bound",
             "evidence_quote": text, "desired_outcome": "Consider a checklist"})
         self.assertTrue(result["ok"], result)
@@ -354,7 +354,7 @@ class FinalIntegrationBoundaryTests(unittest.TestCase):
         text = "The conference deadline is mentioned in this chat."
         self.ctx.hooks["pre_llm_call"](platform="telegram", user_message=text,
                                        session_id="s-revoke", chat_type="dm")
-        result = _tool(self.tools, "secretary_responsibility", {
+        result = _tool(self.tools, "portal_responsibility", {
             "action": "capture", "kind": "opportunity", "session_id": "s-revoke",
             "evidence_quote": text, "desired_outcome": "Consider a checklist"})
         self.assertTrue(result["ok"], result)
@@ -372,7 +372,7 @@ class FinalIntegrationBoundaryTests(unittest.TestCase):
         text = "The conference deadline is mentioned in this chat."
         self.ctx.hooks["pre_llm_call"](platform="telegram", user_message=text,
                                        session_id="s-turn", chat_type="dm")
-        result = _tool(self.tools, "secretary_responsibility", {
+        result = _tool(self.tools, "portal_responsibility", {
             "action": "capture", "kind": "opportunity", "session_id": "s-turn",
             "evidence_quote": text, "desired_outcome": "Consider a checklist"})
         self.assertTrue(result["ok"], result)
@@ -385,7 +385,7 @@ class FinalIntegrationBoundaryTests(unittest.TestCase):
         text = "The conference deadline is mentioned in this chat."
         self.ctx.hooks["pre_llm_call"](platform="telegram", user_message=text,
                                        session_id="s-bad", chat_type="dm")
-        result = _tool(self.tools, "secretary_responsibility", {
+        result = _tool(self.tools, "portal_responsibility", {
             "action": "capture", "kind": "opportunity", "session_id": "s-bad",
             "evidence_quote": text, "desired_outcome": "Consider a checklist"})
         self.assertTrue(result["ok"], result)
@@ -394,16 +394,16 @@ class FinalIntegrationBoundaryTests(unittest.TestCase):
 
     def test_confirmed_conversation_setup_arms_via_existing_engine(self):
         ctx, tools = _registered()
-        _tool(tools, "secretary_onboarding", {
+        _tool(tools, "portal_onboarding", {
             "action": "update", "settings": {"timezone": "UTC"},
             "explicit_consent": False})
-        _tool(tools, "secretary_onboarding", {
+        _tool(tools, "portal_onboarding", {
             "action": "update", "destination": "telegram", "explicit_consent": False})
         consent_text = "Yes, enable private preparation for the conversation scope."
         hook = ctx.hooks["pre_llm_call"]
         hook(platform="telegram", user_message=consent_text, session_id="s-1",
              chat_type="dm")
-        _tool(tools, "secretary_onboarding", {
+        _tool(tools, "portal_onboarding", {
             "action": "update", "session_id": "s-1",
             "evidence_quote": consent_text,
             "settings": {"daily_allowance": 3, "quiet_start_hour": 22,
@@ -414,24 +414,24 @@ class FinalIntegrationBoundaryTests(unittest.TestCase):
         confirm_text = "Yes, confirm and save the onboarding settings."
         hook(platform="telegram", user_message=confirm_text, session_id="s-1",
              chat_type="dm")
-        confirmed = _tool(tools, "secretary_onboarding", {
+        confirmed = _tool(tools, "portal_onboarding", {
             "action": "confirm", "session_id": "s-1", "evidence_quote": confirm_text,
             "user_confirmed": True, "apply_settings": True})
         self.assertEqual(confirmed.get("status"), "pending_verification", confirmed)
         self.assertFalse(confirmed["schedule_armed"])
-        cli = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
+        cli = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
         arm_text = "Yes, arm the schedule now."
         hook(platform="telegram", user_message=arm_text, session_id="s-1",
              chat_type="dm")
 
         def fake_setup(args):
             print(json.dumps({"ok": True, "jobs": [
-                {"name": "proactive-secretary-monitoring", "action": "kept"},
-                {"name": "proactive-secretary-reminders", "action": "kept"}],
+                {"name": "proactive-portal-monitoring", "action": "kept"},
+                {"name": "proactive-portal-reminders", "action": "kept"}],
                 "deliver": args.deliver, "preparation": args.with_preparation}))
             return 0
         with mock.patch.object(cli, "setup_command", side_effect=fake_setup) as setup:
-            armed = _tool(tools, "secretary_onboarding", {
+            armed = _tool(tools, "portal_onboarding", {
                 "action": "arm", "session_id": "s-1", "evidence_quote": arm_text,
                 "user_confirmed": True})
         self.assertTrue(armed["ok"], armed)
@@ -452,7 +452,7 @@ class ExactApprovalTests(unittest.TestCase):
             session_id="s-1", chat_type="dm")
 
     def _request(self, effect="Send the private draft to the team chat"):
-        return _tool(self.tools, "secretary_responsibility", {
+        return _tool(self.tools, "portal_responsibility", {
             "action": "request_approval", "proposal_kind": "send",
             "proposal_effect": effect,
             "proposal_scope": "external mail", "ttl_minutes": 30,
@@ -465,12 +465,12 @@ class ExactApprovalTests(unittest.TestCase):
         ref = first["approval"]["ref"]
         self.assertEqual(second["approval"]["ref"], ref)
 
-        silence = _tool(self.tools, "secretary_responsibility", {
+        silence = _tool(self.tools, "portal_responsibility", {
             "action": "approve", "approval_ref": ref, "session_id": "s-1",
             "evidence_quote": "yes"})
         self.assertFalse(silence["ok"])
 
-        unrelated = _tool(self.tools, "secretary_responsibility", {
+        unrelated = _tool(self.tools, "portal_responsibility", {
             "action": "approve", "approval_ref": ref, "session_id": "s-1",
             "evidence_quote": "yes send the draft to the team"})
         self.assertFalse(unrelated["ok"])
@@ -478,13 +478,13 @@ class ExactApprovalTests(unittest.TestCase):
         self.ctx.hooks["pre_llm_call"](
             platform="telegram", user_message=f"yes {ref}",
             session_id="s-1", chat_type="dm")
-        approved = _tool(self.tools, "secretary_responsibility", {
+        approved = _tool(self.tools, "portal_responsibility", {
             "action": "approve", "approval_ref": ref, "session_id": "s-1",
             "evidence_quote": f"yes {ref}"})
         self.assertTrue(approved["ok"], approved)
         self.assertEqual(approved["grants"], "this_proposal_only")
         self.assertEqual(approved["execution"], "not_performed")
-        again = _tool(self.tools, "secretary_responsibility", {
+        again = _tool(self.tools, "portal_responsibility", {
             "action": "approve", "approval_ref": ref, "session_id": "s-1",
             "evidence_quote": f"yes {ref}"})
         self.assertFalse(again["ok"])
@@ -494,7 +494,7 @@ class ExactApprovalTests(unittest.TestCase):
         ref = first["approval"]["ref"]
         with mock.patch.object(approvals.time, "time",
                                return_value=first["approval"]["expires_at"] + 1):
-            expired = _tool(self.tools, "secretary_responsibility", {
+            expired = _tool(self.tools, "portal_responsibility", {
                 "action": "approve", "approval_ref": ref, "session_id": "s-1",
                 "evidence_quote": f"yes {ref}"})
         self.assertFalse(expired["ok"])
@@ -507,7 +507,7 @@ class ExactApprovalTests(unittest.TestCase):
         self.ctx.hooks["pre_llm_call"](
             platform="telegram", user_message=f"yes {ref2}",
             session_id="s-1", chat_type="dm")
-        revoked = _tool(self.tools, "secretary_responsibility", {
+        revoked = _tool(self.tools, "portal_responsibility", {
             "action": "approve", "approval_ref": ref2, "session_id": "s-1",
             "evidence_quote": f"yes {ref2}"})
         self.assertFalse(revoked["ok"])
@@ -526,7 +526,7 @@ class ExactApprovalTests(unittest.TestCase):
             self.ctx.hooks["pre_llm_call"](
                 platform="telegram", user_message=text.format(ref=ref),
                 session_id="s-1", chat_type="dm")
-            denied = _tool(self.tools, "secretary_responsibility", {
+            denied = _tool(self.tools, "portal_responsibility", {
                 "action": "approve", "approval_ref": ref, "session_id": "s-1",
                 "evidence_quote": text.format(ref=ref)})
             self.assertFalse(denied["ok"], (text, denied))
@@ -537,7 +537,7 @@ class ExactApprovalTests(unittest.TestCase):
         self.ctx.hooks["pre_llm_call"](
             platform="telegram", user_message="yes", session_id="s-1",
             chat_type="dm")
-        denied = _tool(self.tools, "secretary_responsibility", {
+        denied = _tool(self.tools, "portal_responsibility", {
             "action": "approve", "approval_ref": ref, "session_id": "s-1",
             "evidence_quote": "yes",
             "reply_context": f"Approval needed: send the verified draft {ref}"})
@@ -550,7 +550,7 @@ class ExactApprovalTests(unittest.TestCase):
         self.ctx.hooks["pre_llm_call"](
             platform="telegram", user_message=f"yes {ref}", session_id="s-2",
             chat_type="dm")
-        different = _tool(self.tools, "secretary_responsibility", {
+        different = _tool(self.tools, "portal_responsibility", {
             "action": "approve", "approval_ref": ref, "session_id": "s-2",
             "evidence_quote": f"yes {ref}"})
         self.assertFalse(different["ok"])
@@ -560,7 +560,7 @@ class ExactApprovalTests(unittest.TestCase):
             chat_type="dm")
         rows = self.ctx.state.data["responsibility_human_turn"]
         rows[-1]["at"] = float(first["approval"]["created_at"]) - 10
-        old = _tool(self.tools, "secretary_responsibility", {
+        old = _tool(self.tools, "portal_responsibility", {
             "action": "approve", "approval_ref": ref, "session_id": "s-1",
             "evidence_quote": f"yes {ref}"})
         self.assertFalse(old["ok"])
@@ -570,7 +570,7 @@ class ExactApprovalTests(unittest.TestCase):
         self.ctx.hooks["pre_llm_call"](
             platform="telegram", user_message=f"yes {other_ref}", session_id="s-1",
             chat_type="dm")
-        unrelated = _tool(self.tools, "secretary_responsibility", {
+        unrelated = _tool(self.tools, "portal_responsibility", {
             "action": "approve", "approval_ref": ref, "session_id": "s-1",
             "evidence_quote": f"yes {other_ref}", "reply_context": other_ref})
         self.assertFalse(unrelated["ok"])
@@ -596,7 +596,7 @@ class GateFailClosedTests(unittest.TestCase):
         text = "Please prepare the renewal checklist."
         ctx.hooks["pre_llm_call"](platform="telegram", user_message=text,
                                   session_id="s-r", chat_type="dm")
-        result = _tool(tools, "secretary_responsibility", {
+        result = _tool(tools, "portal_responsibility", {
             "action": "capture", "kind": "commitment", "session_id": "s-r",
             "evidence_quote": text, "desired_outcome": "Prepare the checklist"})
         self.assertTrue(result["ok"], result)
@@ -614,7 +614,7 @@ class GateFailClosedTests(unittest.TestCase):
         text = "Please prepare the renewal checklist."
         ctx.hooks["pre_llm_call"](platform="telegram", user_message=text,
                                   session_id="s-c", chat_type="dm")
-        result = _tool(tools, "secretary_responsibility", {
+        result = _tool(tools, "portal_responsibility", {
             "action": "capture", "kind": "commitment", "session_id": "s-c",
             "evidence_quote": text, "desired_outcome": "Prepare the checklist"})
         self.assertTrue(result["ok"], result)

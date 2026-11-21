@@ -22,7 +22,7 @@ _OMIT = object()
 
 
 def _load_plugin_package():
-    name = "hermes_proactive_secretary_optional_cap_test"
+    name = "hermes_proactive_portal_optional_cap_test"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -33,8 +33,8 @@ def _load_plugin_package():
 
 
 _PKG = _load_plugin_package()
-sa = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_setup_actions")
-onb = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_onboarding")
+sa = importlib.import_module(f"{_PKG.__name__}.portal.portal_setup_actions")
+onb = importlib.import_module(f"{_PKG.__name__}.portal.portal_onboarding")
 
 
 class _State:

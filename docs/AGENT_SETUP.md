@@ -6,13 +6,13 @@ Give this file to your Hermes agent with:
 
 > Install and configure Hermes Proactive Portal using this guide. Inspect my environment first, ask only for missing choices or authorisation, preserve existing configuration, and verify the result. Do not claim a connector works merely because it is installed.
 
-This guide uses no original owner's state, delivery address, credentials or interests. The repository is currently **private**: installation requires access to `Akuyumu/hermes-proactive-portal`. The native plugin id remains `hermes-proactive-secretary`, and existing jobs and state remain compatible. Do not make the repository public or change repository access automatically.
+This guide uses no original owner's state, delivery address, credentials or interests. The repository is currently **private**: installation requires access to `Akuyumu/hermes-proactive-portal`. The native plugin id is `hermes-proactive-portal`. Existing state is copied once from the legacy data root on first load, and old owner-facing jobs are retired through the ownership ledger. Do not make the repository public or change repository access automatically.
 
 ## 1. Inspect before changing anything
 
 - Confirm Hermes is installed and inspect `hermes plugins install --help` and `hermes cron --help`. This package targets Linux/macOS; Windows and fresh-machine portability have not been independently certified.
 - Resolve the active profile. Honour `HERMES_HOME`; do not configure a different profile or assume the default home.
-- Inspect existing plugins and scheduled jobs. If already installed, use `hermes secretary status` and `doctor` before reinstalling. Do not use `--force`, remove foreign jobs, or overwrite existing state to make setup succeed.
+- Inspect existing plugins and scheduled jobs. If already installed, use `hermes portal status` and `doctor` before reinstalling. Do not use `--force`, remove foreign jobs, or overwrite existing state to make setup succeed.
 - Check native model availability, configured public-search availability if requested, and the messaging gateway. Do not expose credentials or alter the user's provider, permissions, or paid services.
 - Explain that authorised evidence is sent to the configured model for judgment. Public acquisition uses external websites/search; read-only does not mean offline.
 
@@ -25,16 +25,16 @@ Ask together, only when not already explicitly established:
 3. Coverage: public sources only, or supported, already authorised private connectors too? Ask for public interests/source URLs if the user wants public monitoring.
 4. Adaptive discovery: whether to enable model-driven public-interest discovery, with the paired privacy review. It is off in the generic defaults and can add model/search usage.
 
-Optional v0.4.0 routed-retrieval fallbacks (`native_render_fallback_enabled`/`native_render_consent`, `firecrawl_enabled`/`firecrawl_consent`) are **off by default** and must not be turned on speculatively. They only ever apply to a `dynamic` JavaScript shell on a public page; a challenge/interstitial/paywall page is terminal. Firecrawl goes through the supported native `ctx.call_mcp` contract — the host owns the OAuth connection and the operator's MCP allowlist; name an already-configured MCP server/tool (`firecrawl_mcp_server`/`firecrawl_mcp_tool`), never an endpoint or a key, and never sign up, copy a credential, or make a paid call on the user's behalf. Every call is a locally capped, persisted attempt (per cycle and per UTC day, with a 429 cooldown); local attempts are not provider credits, and budget exhaustion defers rather than switching to another metered service. `hermes secretary status`/`doctor` reports these capabilities candidly (unavailable with the honest reason rather than a fake success).
+Optional v0.4.0 routed-retrieval fallbacks (`native_render_fallback_enabled`/`native_render_consent`, `firecrawl_enabled`/`firecrawl_consent`) are **off by default** and must not be turned on speculatively. They only ever apply to a `dynamic` JavaScript shell on a public page; a challenge/interstitial/paywall page is terminal. Firecrawl goes through the supported native `ctx.call_mcp` contract — the host owns the OAuth connection and the operator's MCP allowlist; name an already-configured MCP server/tool (`firecrawl_mcp_server`/`firecrawl_mcp_tool`), never an endpoint or a key, and never sign up, copy a credential, or make a paid call on the user's behalf. Every call is a locally capped, persisted attempt (per cycle and per UTC day, with a 429 cooldown); local attempts are not provider credits, and budget exhaustion defers rather than switching to another metered service. `hermes portal status`/`doctor` reports these capabilities candidly (unavailable with the honest reason rather than a fake success).
 
 Private preparation is **opt-in and off by default**. Enabling the setting alone
 arms nothing; to install the owned runner and one native `--no-agent` script job
-use `hermes secretary setup --with-preparation` only after the user's explicit
+use `hermes portal setup --with-preparation` only after the user's explicit
 decision, together with a small standing scope list (`conversation`, `public`,
 `mail`, `calendar`, `tasks`, `documents`, `memory`).
 Enabling it must not create a cron job. On a host without the explicit
 `register_auxiliary_task(..., fallback_policy="configured_only")` contract, run
-`hermes secretary prepare` only as a diagnostic: it must report the unsupported
+`hermes portal prepare` only as a diagnostic: it must report the unsupported
 lane and make no model call. Do not claim a prepared artifact, a working
 fallback ladder, or a verified model-outage notice when that metadata is absent.
 Requested reminders remain deterministic and independent.
@@ -47,8 +47,8 @@ For a new installation, with user approval:
 
 ```bash
 hermes plugins install Akuyumu/hermes-proactive-portal --no-enable
-hermes plugins enable hermes-proactive-secretary
-hermes secretary doctor
+hermes plugins enable hermes-proactive-portal
+hermes portal doctor
 ```
 
 The private repository must be accessible to the installer's Git transport. If it is not, stop and report the access requirement; do not bypass it. An immutable reviewed release may be pinned with `--ref <full-40-character-commit-sha>`.
@@ -62,30 +62,30 @@ hermes://plugin/install?repo=Akuyumu/hermes-proactive-portal&enable=1
 The [official plugin guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins#one-click-install-links-desktop) describes a confirmation dialog that detects agent and Desktop components and lets the user choose. Older clients may expose different controls. There is no separate native `--desktop` CLI flag. Client-side private-repository downloads require working Git access on the client; backend access alone does not prove that. Never create marker files, bypass a scanner or weaken a security check. Conversational onboarding works without the Desktop component and must not be blocked by a missing button.
 
 
-The plugin bundles its operational skill at `../skills/proactive-secretary/SKILL.md`. Load that installed file through your skill system if available; otherwise read it directly. Do not accidentally load an unrelated skill with the same short name.
+The plugin bundles its operational skill at `../skills/proactive-portal/SKILL.md`. Load that installed file through your skill system if available; otherwise read it directly. Do not accidentally load an unrelated skill with the same short name.
 
 ## 4. Prepare configuration before arming schedules
 
 ```bash
-hermes secretary setup --no-cron
-hermes secretary status
+hermes portal setup --no-cron
+hermes portal status
 ```
 
-This prepares owner-only policy/state and runs offline checks without installing schedules. The runtime root is `$HERMES_HOME/plugin-data/hermes-proactive-secretary/`, unless explicitly overridden with `HERMES_PROACTIVE_SECRETARY_DATA` or `--data-dir`.
+This prepares owner-only policy/state and runs offline checks without installing schedules. The runtime root is `$HERMES_HOME/plugin-data/hermes-proactive-portal/`, unless explicitly overridden with `HERMES_PROACTIVE_PORTAL_DATA` or `--data-dir`.
 
 Write the validated per-user configuration, then review it before arming anything:
 
 ```bash
-hermes secretary configure init
-hermes secretary configure validate
-hermes secretary configure preview
+hermes portal configure init
+hermes portal configure validate
+hermes portal configure preview
 ```
 
 Apply only the user's agreed changes, preserving other fields. Do not hand-edit Hermes's main configuration or store credential values anywhere. `user_config.json` is versioned and fail-closed; never overwrite a nonempty configuration without explicit consent (`--force` is not a normal step). If an existing deployment already has its own policy/preferences, migrate it explicitly instead of hand-copying:
 
 ```bash
-hermes secretary configure migrate --from-policy '<policy.json>' --dry-run  # review
-hermes secretary configure migrate --from-policy '<policy.json>'            # write (keeps pause in preferences)
+hermes portal configure migrate --from-policy '<policy.json>' --dry-run  # review
+hermes portal configure migrate --from-policy '<policy.json>'            # write (keeps pause in preferences)
 ```
 
 - Set the confirmed `timezone`, quiet hours and notification limits. When the host setting is unavailable and the user has not chosen, leave the neutral `UTC`.
@@ -94,7 +94,7 @@ hermes secretary configure migrate --from-policy '<policy.json>'            # wr
 - Migration supports repeatable `--mail-account`, `--calendar-account`, `--calendar-id`, `--task-account`, `--task-list` and `--adapter`. Omitted options retain prior explicit policy fields, including empty arrays and mail aliases. Review the source mappings in the dry-run report.
 - Empty account arrays disable their connector. Empty calendar IDs retain selected/primary/holiday calendars within the configured accounts; nonempty IDs restrict event reads. Empty task lists retain all visible lists within configured task accounts; nonempty entries are exact case-sensitive IDs/titles (`id:ID`/`name:TITLE` disambiguate). Task adapters are empty, `tasks` or `productivity_secretary`; unsupported adapters fail closed.
 - Only explicit legacy migration may retain omitted calendar/task account discovery (`advanced.legacy_account_discovery`). Old user configs lacking `tasks.accounts` copy explicit calendar accounts with a warning; new neutral configs include empty independent task accounts.
-- Generic source seeds are empty. Add explicitly requested public watches with `hermes secretary watch add "<public topic>"`, then read back `hermes secretary watch list`.
+- Generic source seeds are empty. Add explicitly requested public watches with `hermes portal watch add "<public topic>"`, then read back `hermes portal watch list`.
 - If adaptive discovery is approved, consult the bundled skill and policy implementation before changing mode. Keep inferred-goal acquisition and semantic privacy review paired; never send raw private context in public queries. Do not claim that adding a watch enables autonomous adaptation.
 - The optional Google Workspace calendar adapter (`adapters.gws_calendar`) uses the installed skill's existing authorisation; enable it only after the user confirms that authorisation, and never broaden scopes or run a setup/reauthorisation flow.
 - Keep location off unless a supported integration and separate authorisation are verified.
@@ -103,10 +103,10 @@ hermes secretary configure migrate --from-policy '<policy.json>'            # wr
   explicitly — for a few relevant entries only, never an entire vault and never
   guessed consent:
   ```bash
-  hermes secretary feedback context-update --note "<short fact>" \
+  hermes portal feedback context-update --note "<short fact>" \
     --provenance "assistant:memory" --kind interest --expires-at '<timezone-aware ISO>'
-  hermes secretary feedback context-list    # metadata only; no raw text
-  hermes secretary feedback context-revoke --id <entry id>
+  hermes portal feedback context-list    # metadata only; no raw text
+  hermes portal feedback context-revoke --id <entry id>
   ```
   Do not scrape USER/MEMORY/Hindsight/Library, credentials or connectors, and do
   not add a credential/connector/allowlist. `--provenance` must be one of the
@@ -143,14 +143,14 @@ Read doctor/status capabilities and perform bounded authorised reads when approp
 ## 5. Arm the plugin's own schedules
 
 After configuration and capability review, use the same foreground entry points
-the user sees. On a phone/chat the canonical start is `/secretary setup`; the
+the user sees. On a phone/chat the canonical start is `/portal setup`; the
 CLI equivalent is:
 
 ```bash
-hermes secretary setup --deliver local   # explicit local/no-send first
-hermes secretary status --json
-hermes secretary doctor
-hermes secretary self-test
+hermes portal setup --deliver local   # explicit local/no-send first
+hermes portal status --json
+hermes portal doctor
+hermes portal self-test
 ```
 
 The native `--deliver` grammar (from `hermes cron create --help`) is `origin`,
@@ -168,22 +168,22 @@ delivery adapter; this source worker never sends it.
 Status language is deliberately separated: **installed** (plugin present),
 **configured** (validated settings), **scheduled** (owned jobs recorded) and
 **delivery-confirmed** (a real receipt from an explicit canary). Do not collapse
-these into "enabled" or "verified". `/secretary pause|resume|disable|
+these into "enabled" or "verified". `/portal pause|resume|disable|
 cancel-setup` are the chat-native controls; `resume` reports actual readiness.
 
 Setup creates and records ownership of:
 
-- `hermes-proactive-secretary-monitoring`: every 15 minutes; may use the native LLM for discovery/planning/judgment.
-- `hermes-proactive-secretary-reminders`: every minute; deterministic reminder script, no scheduled-agent LLM calls.
-- `hermes-proactive-secretary-preparation` (only with explicit `--with-preparation`): optional bounded preparation script job; status and setup summaries include it whenever it is recorded and present.
+- `hermes-proactive-portal-monitoring`: every 15 minutes; may use the native LLM for discovery/planning/judgment.
+- `hermes-proactive-portal-reminders`: every minute; deterministic reminder script, no scheduled-agent LLM calls.
+- `hermes-proactive-portal-preparation` (only with explicit `--with-preparation`): optional bounded preparation script job; status and setup summaries include it whenever it is recorded and present.
 
-The default jobs and the optional preparation job are native script jobs with `--no-agent`; the monitoring script itself can invoke models. One-minute reminder checks use CPU and sometimes connector requests, not an LLM conversation per tick. On its normal schedule the monitoring runner invokes the registered `hermes secretary pipeline` handler with fixed argv and the same profile/data paths, so the host-built context (and thus the user's active model and native `get_config`) is authoritative; it does not import the pipeline directly unless the native CLI is verifiably unavailable before any work (which is reported). The reminder runner likewise enters the registered `hermes secretary reminders` handler, never calls a model and never accesses `ctx.llm`; event reads honour ONLY the explicit `calendar.accounts`/`calendar.calendars` (mail accounts are never unioned in), and a disabled or empty calendar scope reads no event source. A subprocess timeout/error after either native handler started fails closed: no second run and no fallback. Both production entries apply neutral generic defaults when no configuration is present, so a deleted/missing `user_config.json` never silently re-enables the legacy private sources.
+The default jobs and the optional preparation job are native script jobs with `--no-agent`; the monitoring script itself can invoke models. One-minute reminder checks use CPU and sometimes connector requests, not an LLM conversation per tick. On its normal schedule the monitoring runner invokes the registered `hermes portal pipeline` handler with fixed argv and the same profile/data paths, so the host-built context (and thus the user's active model and native `get_config`) is authoritative; it does not import the pipeline directly unless the native CLI is verifiably unavailable before any work (which is reported). The reminder runner likewise enters the registered `hermes portal reminders` handler, never calls a model and never accesses `ctx.llm`; event reads honour ONLY the explicit `calendar.accounts`/`calendar.calendars` (mail accounts are never unioned in), and a disabled or empty calendar scope reads no event source. A subprocess timeout/error after either native handler started fails closed: no second run and no fallback. Both production entries apply neutral generic defaults when no configuration is present, so a deleted/missing `user_config.json` never silently re-enables the legacy private sources.
 
-If an older profile recorded `hermes-proactive-secretary-pilot`, run `hermes secretary migrate-jobs` (dry-run), then `hermes secretary migrate-jobs --apply` before setup. The migration is idempotent, uses the host `cron.jobs.update_job` seam to change only the display name, and preserves the job id, schedule, delivery, enabled state, next run, history and ownership metadata. A name-only foreign row, ownership-id mismatch or occupied monitoring name is refused; a host without that seam is a reported blocker with no recreation.
+If an older profile recorded `hermes-proactive-secretary-pilot`, run `hermes portal migrate-jobs` (dry-run), then `hermes portal migrate-jobs --apply` before setup. The migration is idempotent, uses the host `cron.jobs.update_job` seam to change only the display name, and preserves the job id, schedule, delivery, enabled state, next run, history and ownership metadata. A name-only foreign row, ownership-id mismatch or occupied monitoring name is refused; a host without that seam is a reported blocker with no recreation.
 
 Verify exact script paths, schedules, ownership and delivery target through the native cron listing. Re-run setup with the same destination to verify idempotency; it must not duplicate jobs. A cron-name collision is a reason to stop, not permission to adopt someone else's job.
 
-Run `hermes secretary run-once --fixture healthy_empty` for a no-send fixture check. `run-once` is no-model by default, not proof of successful model-driven monitoring. For a real no-send model check, follow the installed skill using the **Hermes runtime interpreter**, explicit plugin state/policy/preferences paths and `--dry-run`; system Python may lack Hermes dependencies. Do not invoke debug/diagnostic modes as a scheduled delivery script.
+Run `hermes portal run-once --fixture healthy_empty` for a no-send fixture check. `run-once` is no-model by default, not proof of successful model-driven monitoring. For a real no-send model check, follow the installed skill using the **Hermes runtime interpreter**, explicit plugin state/policy/preferences paths and `--dry-run`; system Python may lack Hermes dependencies. Do not invoke debug/diagnostic modes as a scheduled delivery script.
 
 Do not create fake user-requested reminders or send a test message without approval. Empty output confirms no emitted message, not delivery or healthy collection. Report actual checks and remaining limits.
 
@@ -193,7 +193,7 @@ Do not import another person's deployment. For the user's own existing tree:
 
 1. Inspect and pause only the exact legacy recurring jobs; read back their paused state. Preserve unrelated one-shot reminders.
 2. Snapshot durable state under owner-only permissions, avoiding in-flight writers.
-3. Preview `hermes secretary setup --import-from '<legacy-tree>' --import-dry-run`.
+3. Preview `hermes portal setup --import-from '<legacy-tree>' --import-dry-run`.
 4. Import using `--import-from '<legacy-tree>' --no-cron` and verify byte-level parity for policy, preferences, deduplication and registries before arming anything.
 5. Arm plugin jobs, verify their run outcomes, and ensure legacy jobs are not also running.
 6. Remove obsolete jobs only with explicit approval. Keep a rollback snapshot unless deletion is separately approved.
@@ -203,8 +203,8 @@ Import refuses conflicting target files and does not delete/adopt legacy jobs. I
 ## 7. Pause, toggle and uninstall
 
 ```bash
-hermes secretary pause
-hermes secretary resume
+hermes portal pause
+hermes portal resume
 ```
 
 Global pause stops collection and output, including requested reminders. Native plugin disable makes the scheduled runners inert at their next invocation; it does not remove their cron entries or cancel work already in flight.
@@ -212,16 +212,16 @@ Global pause stops collection and output, including requested reminders. Native 
 For full uninstall, while the plugin CLI is available:
 
 ```bash
-hermes secretary uninstall
-hermes plugins disable hermes-proactive-secretary
-hermes plugins remove hermes-proactive-secretary
+hermes portal uninstall
+hermes plugins disable hermes-proactive-portal
+hermes plugins remove hermes-proactive-portal
 ```
 
-Read back that only recorded owned jobs/scripts were removed. Runtime policy, preferences and reminder state are preserved by default. `hermes secretary uninstall --purge` deletes that state and requires separate explicit consent. Do not delete unrelated files or disable other plugins.
+Read back that only recorded owned jobs/scripts were removed. Runtime policy, preferences and reminder state are preserved by default. `hermes portal uninstall --purge` deletes that state and requires separate explicit consent. Do not delete unrelated files or disable other plugins.
 
 If the plugin was already disabled and its CLI is unavailable, do not blindly enable it: enabling can reactivate existing schedules. Inspect the jobs and arrange a safe, user-approved cleanup first.
 
-Reinstallation is possible, but preserved global pause may still be active. Review state with the user, rerun setup and use `hermes secretary resume` only when they intend to resume monitoring.
+Reinstallation is possible, but preserved global pause may still be active. Review state with the user, rerun setup and use `hermes portal resume` only when they intend to resume monitoring.
 
 ## Completion report
 

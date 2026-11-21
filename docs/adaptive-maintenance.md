@@ -60,7 +60,7 @@ Rules:
   before stdout so a crash cannot exceed the cap. Health/urgent evidence keeps
   priority. A missing strict model lane does not block displaying an already
   deterministic pending notice.
-- Reversal: `hermes secretary feedback --feedback source-list` lists stable
+- Reversal: `hermes portal feedback --feedback source-list` lists stable
   references; `--feedback source-dispute --id <stable-ref>` performs a locked,
   idempotent exact restore and permanently blocks that same rejected replacement.
   Original failure history is preserved, not reset.

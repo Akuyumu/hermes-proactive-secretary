@@ -1,7 +1,7 @@
 """Contract tests for the portal job's autonomous useful-work prompt.
 
-These exercise the real lifecycle path (registered ``hermes secretary portal``
-parser -> ``secretary_cli`` -> ``secretary_portal`` -> cron backend) and assert
+These exercise the real lifecycle path (registered ``hermes portal job``
+parser -> ``portal_cli`` -> ``portal_job`` -> cron backend) and assert
 the prompt that is actually persisted on the native job and in the ownership
 ledger. They never touch the scheduler, network or a real profile: every test
 uses an ambient-TMPDIR synthetic ``HERMES_HOME``/data root and an in-memory
@@ -27,7 +27,7 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _load_plugin_package(name: str = "hermes_proactive_secretary_autonomy_qa"):
+def _load_plugin_package(name: str = "hermes_proactive_portal_autonomy_qa"):
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)]
     )
@@ -40,9 +40,9 @@ def _load_plugin_package(name: str = "hermes_proactive_secretary_autonomy_qa"):
 
 _PKG = _load_plugin_package()
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
-sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
-portal = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal")
+portal = importlib.import_module(f"{_PKG.__name__}.portal.portal_job")
 
 PORTAL = cron_mod.PORTAL_JOB_NAME
 
@@ -50,7 +50,7 @@ PORTAL = cron_mod.PORTAL_JOB_NAME
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="hermes")
     top = parser.add_subparsers(dest="command")
-    secretary = top.add_parser("secretary")
+    secretary = top.add_parser("portal")
     sc.register_cli(secretary)
     return parser
 
@@ -59,7 +59,7 @@ _PARSER = _build_parser()
 
 
 def _parse(*argv: str) -> argparse.Namespace:
-    return _PARSER.parse_args(["secretary", *argv])
+    return _PARSER.parse_args(["portal", *argv])
 
 
 def _capture_stdout(fn, *args, **kwargs):
@@ -136,11 +136,11 @@ class _Isolated(unittest.TestCase):
 
     def enable(self, backend, schedule: str = "*/5 * * * *", *extra: str):
         return self.run_portal(
-            backend, "portal", "enable", "--json", "--schedule", schedule, *extra)
+            backend, "job", "enable", "--json", "--schedule", schedule, *extra)
 
     def preview(self, backend, schedule: str = "*/5 * * * *", *extra: str):
         return self.run_portal(
-            backend, "portal", "preview", "--json", "--schedule", schedule, *extra)
+            backend, "job", "preview", "--json", "--schedule", schedule, *extra)
 
     def ledger(self) -> dict:
         return cron_mod.load_job_ownership(paths.job_ownership_path())
@@ -173,7 +173,7 @@ class PersistedWorkContractTests(_Isolated):
             "thanks, silence, or non-response",
             "approval-required action unexecuted",
             "pending blocker",
-            "secretary_propose_notice",
+            "portal_propose_notice",
             "Keep the native final local",
             "meaningful silence",
             "never grants new authority, sources, or spending",
@@ -197,7 +197,7 @@ class PersistedWorkContractTests(_Isolated):
 
 def _self_context_spec(**overrides) -> "cron_mod.NormalAgentJobSpec":
     values = {
-        "name": "hermes-proactive-secretary-portal",
+        "name": "hermes-proactive-portal-portal",
         "schedule": "*/5 * * * *",
         "prompt": portal.PROMPT,
         "context_from": ["self"],

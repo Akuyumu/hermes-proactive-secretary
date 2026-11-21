@@ -36,7 +36,7 @@ from proactive_pilot.userconfig import apply_user_config  # noqa: E402
 
 
 def _load_plugin_package():
-    name = "hermes_proactive_secretary_foundation_test"
+    name = "hermes_proactive_portal_foundation_test"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -47,7 +47,7 @@ def _load_plugin_package():
 
 
 _PKG = _load_plugin_package()
-sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
 
 
 class _FlatCtx:
@@ -367,7 +367,7 @@ class ProductionRuntimeTests(unittest.TestCase):
 
 class ForgetContractTests(unittest.TestCase):
     def test_skill_does_not_promise_forget_creates_tombstone(self):
-        text = (ROOT / "skills" / "proactive-secretary" / "SKILL.md").read_text(encoding="utf-8")
+        text = (ROOT / "skills" / "proactive-portal" / "SKILL.md").read_text(encoding="utf-8")
         lowered = text.lower()
         self.assertIn("does not create a topic tombstone", lowered)
         self.assertIn("inferred-revoke", lowered)

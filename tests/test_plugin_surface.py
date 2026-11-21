@@ -1,4 +1,4 @@
-"""Tests for the hermes-proactive-secretary plugin surface.
+"""Tests for the hermes-proactive-portal plugin surface.
 
 Covers CLI wiring, one-command setup idempotency and safety, pause stopping
 collection, disable removing this plugin's own jobs, the cron job specs and
@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 
 def _load_plugin_package():
-    name = "hermes_proactive_secretary_test"
+    name = "hermes_proactive_portal_test"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)]
     )
@@ -34,7 +34,7 @@ def _load_plugin_package():
 
 
 _PKG = _load_plugin_package()
-sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
 runner_install = importlib.import_module(f"{_PKG.__name__}.runner_install")
@@ -75,20 +75,20 @@ class _DataDirMixin(unittest.TestCase):
 
 class CliWiringTests(unittest.TestCase):
     def test_cli_tree_exposes_every_subcommand(self):
-        parser = argparse.ArgumentParser(prog="hermes secretary")
+        parser = argparse.ArgumentParser(prog="hermes portal")
         sc.register_cli(parser)
         args = parser.parse_args(["status", "--json"])
-        self.assertIs(args.func, sc.secretary_command)
-        self.assertEqual(args.secretary_command, "status")
+        self.assertIs(args.func, sc.portal_cli_command)
+        self.assertEqual(args.portal_cli_command, "status")
         self.assertTrue(args.json)
         for name in ("setup", "status", "pause", "resume", "disable", "uninstall",
                      "self-test", "run-once", "watch", "feedback", "doctor"):
             sub = parser.parse_args([name] + (["add", "topic"] if name == "watch" else []))
-            self.assertEqual(sub.secretary_command, name)
+            self.assertEqual(sub.portal_cli_command, name)
 
     def test_unknown_subcommand_is_nonzero(self):
-        ns = argparse.Namespace(secretary_command=None, data_dir=None, json=False)
-        self.assertEqual(sc.secretary_command(ns), 2)
+        ns = argparse.Namespace(portal_cli_command=None, data_dir=None, json=False)
+        self.assertEqual(sc.portal_cli_command(ns), 2)
 
 
 class JobSpecTests(unittest.TestCase):

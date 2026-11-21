@@ -1,4 +1,4 @@
-"""Offline acceptance for ``hermes secretary deliveries``."""
+"""Offline acceptance for ``hermes portal deliveries``."""
 from __future__ import annotations
 
 import argparse
@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 
 def _load_package():
-    name = "hermes_proactive_secretary_delivery_read_qa"
+    name = "hermes_proactive_portal_delivery_read_qa"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -31,7 +31,7 @@ def _load_package():
 
 
 PKG = _load_package()
-cli = importlib.import_module(f"{PKG.__name__}.secretary.secretary_cli")
+cli = importlib.import_module(f"{PKG.__name__}.portal.portal_cli")
 
 from proactive_pilot import deliveries  # noqa: E402
 from proactive_pilot.clock import SeededClock  # noqa: E402

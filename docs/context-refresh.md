@@ -20,7 +20,7 @@ that the scheduled pipeline already consumes.
   and slash-command turns receive no guidance. Native Desktop background-process
   and async-delegation completion envelopes are also excluded, including
   multi-part text input, because they are events rather than human turns.
-- The native `secretary_context` tool exposes only `list`, `show`, `update` and
+- The native `portal_context` tool exposes only `list`, `show`, `update` and
   `revoke`. Its schema is closed and bounded; `list` is metadata-only, `show`
   reads one entry back, and errors are generic and text-free.
 - An inferred update is always stored as `advisory: true`. The tool cannot
@@ -46,7 +46,7 @@ that the scheduled pipeline already consumes.
 - No source is read to discover facts. Refresh only uses context already
   available in the current conversation.
 - Pausing or disabling the setting stops new writes; it does not erase existing
-  entries. Entries expire normally. `secretary_context revoke` withdraws one
+  entries. Entries expire normally. `portal_context revoke` withdraws one
   assistant-advisory entry permanently; owner-declared entries are withdrawn
   only through the existing CLI.
 - Scheduled consumption is unchanged and only sees entries that are live,
@@ -55,6 +55,6 @@ that the scheduled pipeline already consumes.
 ## Settings and controls
 
 Enable `context_refresh` in the plugin settings. Disable it, or pause the
-secretary, to stop new assistant-mediated writes. Use `/secretary pause` for a
+secretary, to stop new assistant-mediated writes. Use `/portal pause` for a
 temporary stop and the existing CLI for inspection, revocation and profile
 maintenance. Each profile keeps its own snapshot and preferences.

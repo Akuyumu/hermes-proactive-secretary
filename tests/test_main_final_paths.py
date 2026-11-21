@@ -44,7 +44,7 @@ T0 = datetime.fromisoformat("2026-10-20T12:00:00+00:00")
 
 
 def _load_package():
-    name = "hermes_proactive_secretary_main_final"
+    name = "hermes_proactive_portal_main_final"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -55,12 +55,12 @@ def _load_package():
 
 
 PKG = _load_package()
-conversation = importlib.import_module(f"{PKG.__name__}.secretary.secretary_conversation")
-onboarding = importlib.import_module(f"{PKG.__name__}.secretary.secretary_onboarding")
-sc = importlib.import_module(f"{PKG.__name__}.secretary.secretary_cli")
+conversation = importlib.import_module(f"{PKG.__name__}.portal.portal_conversation")
+onboarding = importlib.import_module(f"{PKG.__name__}.portal.portal_onboarding")
+sc = importlib.import_module(f"{PKG.__name__}.portal.portal_cli")
 cron_mod = importlib.import_module(f"{PKG.__name__}.cron")
 runner_install = importlib.import_module(f"{PKG.__name__}.runner_install")
-responsibilities = importlib.import_module(f"{PKG.__name__}.secretary.secretary_responsibilities")
+responsibilities = importlib.import_module(f"{PKG.__name__}.portal.portal_responsibilities")
 release_export = importlib.import_module("release_export")
 
 
@@ -102,8 +102,8 @@ class Workspace(unittest.TestCase):
         self.data = self.root / "data"
         self.data.mkdir()
         self._old = {key: os.environ.get(key) for key in (
-            "HERMES_PROACTIVE_SECRETARY_DATA", "HERMES_HOME")}
-        os.environ["HERMES_PROACTIVE_SECRETARY_DATA"] = str(self.data)
+            "HERMES_PROACTIVE_PORTAL_DATA", "HERMES_HOME")}
+        os.environ["HERMES_PROACTIVE_PORTAL_DATA"] = str(self.data)
         os.environ["HERMES_HOME"] = str(self.root / "home")
         (self.root / "home").mkdir()
         self.addCleanup(self._restore)
@@ -126,13 +126,13 @@ class ResponsibilityProductionTests(Workspace):
         self.assertTrue(registered["responsibility_tool"])
         service = onboarding.OnboardingService(ctx)
         hook = conversation.make_pre_llm_hook(ctx, service)
-        return ctx, hook, ctx.tools["secretary_responsibility"]["handler"]
+        return ctx, hook, ctx.tools["portal_responsibility"]["handler"]
 
     def test_registered_hook_and_tool_capture_once_with_real_provenance(self):
         ctx, hook, handler = self._ctx_and_hook()
         message = "I will prepare the visa application by Friday"
         hint = hook(platform="telegram", user_message=message, session_id="s1")
-        self.assertIn("secretary_responsibility", hint["context"])
+        self.assertIn("portal_responsibility", hint["context"])
         first = json.loads(handler({
             "action": "capture", "session_id": "s1", "evidence_quote": message,
             "desired_outcome": "prepare the visa application",
@@ -175,7 +175,7 @@ class ResponsibilityProductionTests(Workspace):
         self.assertIsNone(responsibilities.responsibility_context(
             ctx, platform="telegram", user_message="", session_id="s1"))
         hook(platform="telegram", user_message="I will send the form", session_id="s1")
-        handler = ctx.tools["secretary_responsibility"]["handler"]
+        handler = ctx.tools["portal_responsibility"]["handler"]
         denied = json.loads(handler({
             "action": "capture", "session_id": "other",
             "evidence_quote": "I will send the form", "desired_outcome": "send form"}))
@@ -244,7 +244,7 @@ class PreparationInstallTests(Workspace):
             include_preparation=True)
         home = self.root / "home"
         (home / "config.json").write_text(json.dumps(
-            {"plugins": {"enabled": ["hermes-proactive-secretary"]}}), encoding="utf-8")
+            {"plugins": {"enabled": ["hermes-proactive-portal"]}}), encoding="utf-8")
         bin_dir = self.root / "bin"
         bin_dir.mkdir()
         fake = bin_dir / "hermes"
@@ -257,14 +257,14 @@ class PreparationInstallTests(Workspace):
         fake.chmod(0o700)
         env = dict(os.environ, HERMES_BIN=str(fake), FAKE_LOG=str(log),
                    HERMES_HOME=str(home),
-                   HERMES_PROACTIVE_SECRETARY_DATA=str(self.data))
+                   HERMES_PROACTIVE_PORTAL_DATA=str(self.data))
         proc = __import__("subprocess").run(
             [sys.executable, str(scripts / cron_mod.PREPARATION_SCRIPT)],
             env=env, capture_output=True, text=True, timeout=30)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout, "")
         argv = json.loads(log.read_text(encoding="utf-8").strip())
-        self.assertEqual(argv[:3], ["secretary", "prepare", "--data-dir"])
+        self.assertEqual(argv[:3], ["portal", "prepare", "--data-dir"])
 
 
 class ReadyNoticeGateTests(Workspace):
@@ -457,10 +457,10 @@ class OnboardingAndDiscoveryTests(Workspace):
 
 class PackagingTests(Workspace):
     def test_reproducible_code_only_package_and_doctor(self):
-        out = self.root / "secretary-1.0.4.tar.gz"
+        out = self.root / "portal-1.0.5.tar.gz"
         result = release_export.build_package(out, root=ROOT)
         self.assertTrue(result["ok"])
-        self.assertEqual(result["version"], "1.0.4")
+        self.assertEqual(result["version"], "1.0.5")
         with tarfile.open(out) as archive:
             names = archive.getnames()
             self.assertTrue(any(name.endswith("plugin.yaml") for name in names))
@@ -471,8 +471,8 @@ class PackagingTests(Workspace):
             archive.extractall(install)
         doctor = release_export.doctor(install)
         self.assertTrue(doctor["ok"], doctor)
-        self.assertEqual(doctor["version"], "1.0.4")
-        self.assertEqual(doctor["identity"], "hermes-proactive-secretary")
+        self.assertEqual(doctor["version"], "1.0.5")
+        self.assertEqual(doctor["identity"], "hermes-proactive-portal")
 
 
 

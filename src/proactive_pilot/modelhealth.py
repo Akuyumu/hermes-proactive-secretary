@@ -1,4 +1,4 @@
-"""Durable, model-free secretary model-outage lifecycle.
+"""Durable, model-free portal model-outage lifecycle.
 
 One bounded incident record is shared by every model-dependent lane (evaluator,
 planner, intake, preparation). It is deterministic metadata only: this module
@@ -33,7 +33,7 @@ STORE = "model_health.json"
 LOCK = "model_health.lock"
 
 NOTICE_TEXT = (
-    "No configured secretary model is currently available. "
+    "No configured portal model is currently available. "
     "Model-dependent work is deferred and will retry later. "
     "Requested reminders continue."
 )

@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 
 def _load_package():
-    name = "hermes_proactive_secretary_continuity_hook_qa"
+    name = "hermes_proactive_portal_continuity_hook_qa"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -35,9 +35,9 @@ def _load_package():
 
 PKG = _load_package()
 paths_mod = importlib.import_module(f"{PKG.__name__}.paths")
-onboarding = importlib.import_module(f"{PKG.__name__}.secretary.secretary_onboarding")
+onboarding = importlib.import_module(f"{PKG.__name__}.portal.portal_onboarding")
 conversation = importlib.import_module(
-    f"{PKG.__name__}.secretary.secretary_conversation")
+    f"{PKG.__name__}.portal.portal_conversation")
 
 from proactive_pilot import deliveries  # noqa: E402
 from proactive_pilot import main as main_mod  # noqa: E402
@@ -100,7 +100,7 @@ class DeliveryContinuityHookTests(unittest.TestCase):
             notice_id=notice_id,
             evidence_refs=("evidence-private",),
             job_id="job-private",
-            job_name="hermes-proactive-secretary-portal",
+            job_name="hermes-proactive-portal-portal",
             destination="telegram:owner",
             now=now or datetime.now(timezone.utc),
         )
@@ -114,7 +114,7 @@ class DeliveryContinuityHookTests(unittest.TestCase):
         self.assertIsNotNone(result)
         context = result["context"]
         self.assertIn("Recent proactive notices in this profile: 1 delivered", context)
-        self.assertIn("hermes secretary deliveries --since", context)
+        self.assertIn("hermes portal deliveries --since", context)
         self.assertIn("--limit 5", context)
         for sensitive in SENSITIVE:
             self.assertNotIn(sensitive, context)

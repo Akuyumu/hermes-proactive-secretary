@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 
 def _load_package():
-    name = "hermes_proactive_secretary_model_capability_health"
+    name = "hermes_proactive_portal_model_capability_health"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -35,13 +35,13 @@ def _load_package():
 
 
 PKG = _load_package()
-models = importlib.import_module(f"{PKG.__name__}.secretary.secretary_models")
-sc = importlib.import_module(f"{PKG.__name__}.secretary.secretary_cli")
-status_mod = importlib.import_module(f"{PKG.__name__}.secretary.secretary_status")
+models = importlib.import_module(f"{PKG.__name__}.portal.portal_models")
+sc = importlib.import_module(f"{PKG.__name__}.portal.portal_cli")
+status_mod = importlib.import_module(f"{PKG.__name__}.portal.portal_status")
 
 ROUTES = {"primary_provider": "provider-a", "primary_model": "model-a",
           "fallback_provider": "provider-b", "fallback_model": "model-b"}
-ENV_KEYS = ("HOME", "HERMES_HOME", "HERMES_PROACTIVE_SECRETARY_DATA", "TMPDIR")
+ENV_KEYS = ("HOME", "HERMES_HOME", "HERMES_PROACTIVE_PORTAL_DATA", "TMPDIR")
 
 
 class FakeLlm:
@@ -71,7 +71,7 @@ class OldHostCtx:
         self.settings = dict(settings or {})
         self.llm = FakeLlm()
         self.state = MemoryState()
-        self.plugin_id = "hermes-proactive-secretary"
+        self.plugin_id = "hermes-proactive-portal"
         self.aux_calls = []
 
     def get_config(self, key, default=None):
@@ -100,7 +100,7 @@ class _EnvCase(unittest.TestCase):
         self._old = {key: os.environ.get(key) for key in ENV_KEYS}
         os.environ["HOME"] = str(self.root / "home")
         os.environ["HERMES_HOME"] = str(self.root / "home")
-        os.environ["HERMES_PROACTIVE_SECRETARY_DATA"] = str(self.root / "data")
+        os.environ["HERMES_PROACTIVE_PORTAL_DATA"] = str(self.root / "data")
         os.environ["TMPDIR"] = str(self.root / "tmp")
         (self.root / "tmp").mkdir()
         self.addCleanup(self._restore)

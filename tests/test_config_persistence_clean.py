@@ -24,7 +24,7 @@ INTERNAL_PREFIX = "_"
 class ConfigPersistenceIsClean(unittest.TestCase):
     def test_internal_keys_are_not_persisted(self):
         _load_plugin_package("persist_probe_plugin")
-        cli = importlib.import_module("persist_probe_plugin.secretary.secretary_cli")
+        cli = importlib.import_module("persist_probe_plugin.portal.portal_cli")
         from proactive_pilot import userconfig
 
         payload = userconfig.validate_config(userconfig.default_config())

@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_plugin_package():
-    name = "hermes_proactive_secretary_pause_profile_qa"
+    name = "hermes_proactive_portal_pause_profile_qa"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -41,10 +41,10 @@ def _load_plugin_package():
 
 _PKG = _load_plugin_package()
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
-sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
-portal = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal")
-controls = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal_controls")
+portal = importlib.import_module(f"{_PKG.__name__}.portal.portal_job")
+controls = importlib.import_module(f"{_PKG.__name__}.portal.portal_portal_controls")
 ownerpaths = paths._owner
 
 PORTAL = cron_mod.PORTAL_JOB_NAME
@@ -54,7 +54,7 @@ MARKER = controls.GLOBAL_PAUSE_KEY
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="hermes")
     top = parser.add_subparsers(dest="command")
-    secretary = top.add_parser("secretary")
+    secretary = top.add_parser("portal")
     sc.register_cli(secretary)
     return parser
 
@@ -63,7 +63,7 @@ _PARSER = _build_parser()
 
 
 def _parse(*argv: str) -> argparse.Namespace:
-    return _PARSER.parse_args(["secretary", *argv])
+    return _PARSER.parse_args(["portal", *argv])
 
 
 def _capture_stdout(fn, *args, **kwargs):
@@ -151,7 +151,7 @@ class _Isolated(unittest.TestCase):
         return _capture_stdout(sc.portal_command, _parse(*argv), backend=backend)
 
     def enable(self, backend, schedule: str = "*/5 * * * *", *extra: str):
-        return self.run_portal(backend, "portal", "enable", "--json",
+        return self.run_portal(backend, "job", "enable", "--json",
                                "--schedule", schedule, *extra)
 
     def global_pause(self):
@@ -236,7 +236,7 @@ class GlobalPauseLifecycleTests(_Isolated):
     def test_manual_portal_pause_is_preserved_across_the_global_cycle(self):
         backend = _Backend()
         self.assertEqual(self.enable(backend)[0], 0)
-        rc, manual = self.run_portal(backend, "portal", "pause", "--json")
+        rc, manual = self.run_portal(backend, "job", "pause", "--json")
         self.assertEqual(rc, 0, manual)
         self.assertEqual(self.portal_state(backend), "paused")
         self.use_backend(backend)
@@ -384,7 +384,7 @@ class GlobalPauseAdmissionTests(_Isolated):
         self.assertEqual(backend.calls, [])
         self.assertEqual(backend.jobs[0]["state"], "paused")
 
-        rc, resume = self.run_portal(backend, "portal", "resume", "--json")
+        rc, resume = self.run_portal(backend, "job", "resume", "--json")
         self.assertEqual(rc, 1, resume)
         self.assertEqual(resume["status"], "globally-paused")
         self.assertEqual(backend.calls, [])
@@ -408,20 +408,20 @@ class GlobalPauseAdmissionTests(_Isolated):
         self.use_backend(backend)
         self.assertEqual(self.global_pause()[0], 0)
 
-        rc, status = self.run_portal(backend, "portal", "status", "--json")
+        rc, status = self.run_portal(backend, "job", "status", "--json")
         self.assertEqual(rc, 0, status)
         self.assertEqual(status["state"], "paused")
 
         rc, preview = self.run_portal(
-            backend, "portal", "preview", "--json", "--schedule", "*/5 * * * *")
+            backend, "job", "preview", "--json", "--schedule", "*/5 * * * *")
         self.assertEqual(rc, 0, preview)
 
-        rc, pause = self.run_portal(backend, "portal", "pause", "--json")
+        rc, pause = self.run_portal(backend, "job", "pause", "--json")
         self.assertEqual(rc, 0, pause)
         self.assertEqual(self.portal_state(backend), "paused")
 
         self.assertEqual(self.global_resume()[0], 0)
-        rc, removed = self.run_portal(backend, "portal", "remove", "--json")
+        rc, removed = self.run_portal(backend, "job", "remove", "--json")
         self.assertEqual(rc, 0, removed)
         self.assertEqual(backend.list_jobs(), [])
 

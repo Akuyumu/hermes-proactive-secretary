@@ -1,13 +1,13 @@
-"""``hermes secretary`` CLI for the hermes-proactive-secretary plugin.
+"""``hermes portal`` CLI for the hermes-proactive-portal plugin.
 
-This module is imported lazily (only when the ``secretary`` command tree is
+This module is imported lazily (only when the ``portal`` command tree is
 built or run) so unrelated ``hermes`` startup is unaffected. It never touches a
 source, the network, or the scheduler at import time.
 
 Commands
     setup      one-command, idempotent, verified setup
     status     enabled/disabled, job state, last run, coverage, counts
-    portal     manage the proactive secretary portal job
+    job        manage the proactive portal job (a nested action)
     pause      global pause (stops collection AND delivery)
     resume     clear the global pause
     disable    pause + remove this plugin's own cron jobs
@@ -44,8 +44,8 @@ except ImportError:  # direct/standalone import
     import paths  # type: ignore
     import runner_install  # type: ignore
     import state_import  # type: ignore
-from . import secretary_portal_controls as portal_controls
-from . import secretary_status
+from . import portal_portal_controls as portal_controls
+from . import portal_status
 
 # Host-built native context captured from the registered CLI handler closure.
 # It is only ever the context Hermes constructs and passes to ``register(ctx)``;
@@ -86,15 +86,15 @@ def _common_parent() -> argparse.ArgumentParser:
 
 
 def register_cli(subparser: argparse.ArgumentParser) -> None:
-    """Build the ``hermes secretary`` argparse tree."""
+    """Build the ``hermes portal`` argparse tree."""
     common = _common_parent()
-    subs = subparser.add_subparsers(dest="secretary_command")
+    subs = subparser.add_subparsers(dest="portal_cli_command")
     p = {name: subs.add_parser(name, parents=[common], help=help_)
          for name, help_ in (
              ("setup", "One-command setup: policy, state, native cron jobs, verification"),
               ("status", "Show enabled state, jobs, last run, coverage and counts"),
-              ("portal", "Manage the proactive secretary portal job "
-                         "(preview | enable | status | pause | resume | remove)"),
+              ("job", "Manage the proactive portal job "
+                      "(preview | enable | status | pause | resume | remove)"),
               ("pause", "Global pause: stop collection and delivery"),
              ("resume", "Clear the global pause"),
              ("disable", "Pause and remove this plugin's own cron jobs"),
@@ -113,21 +113,21 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
              ("deliveries", "Read recent delivered proactive notices (--since | --limit)"),
              ("doctor", "Check the environment and wiring"),
           )}
-    portal = p["portal"]
-    portal.add_argument(
+    job = p["job"]
+    job.add_argument(
         "portal_action",
         choices=("preview", "enable", "status", "pause", "resume", "remove"),
         help="portal lifecycle action",
     )
-    portal.add_argument("--schedule", default="",
-                        help="native schedule for enable (default: service validation)")
-    portal.add_argument("--model", default="")
-    portal.add_argument("--provider", default="")
-    portal.add_argument("--reasoning-effort", default="", dest="reasoning_effort")
-    portal.add_argument("--skill", action="append", default=[],
-                        help="native skill pin (repeatable)")
-    portal.add_argument("--deliver", default="local")
-    portal.add_argument("--workdir", default="")
+    job.add_argument("--schedule", default="",
+                     help="native schedule for enable (default: service validation)")
+    job.add_argument("--model", default="")
+    job.add_argument("--provider", default="")
+    job.add_argument("--reasoning-effort", default="", dest="reasoning_effort")
+    job.add_argument("--skill", action="append", default=[],
+                     help="native skill pin (repeatable)")
+    job.add_argument("--deliver", default="local")
+    job.add_argument("--workdir", default="")
     p["setup"].add_argument("--force", action="store_true",
                             help="overwrite an existing policy file (default: keep it)")
     p["setup"].add_argument("--no-cron", action="store_true",
@@ -231,7 +231,7 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
                                 help="overwrite an existing nonempty configuration")
     p["configure"].add_argument("--dry-run", action="store_true",
                                 help="preview only; write nothing")
-    subparser.set_defaults(func=secretary_command)
+    subparser.set_defaults(func=portal_cli_command)
 
 
 def _data_override(args: argparse.Namespace) -> None:
@@ -701,7 +701,7 @@ def setup_command(args: argparse.Namespace, *, backend: cron_mod.CronBackend | N
                 "user_config": str(_uc),
                 "action": "kept" if (_uc.exists() and _uc.read_text(
                     encoding="utf-8").strip()) else
-                    "deferred (existing policy; run `hermes secretary configure migrate`)",
+                    "deferred (existing policy; run `hermes portal configure migrate`)",
             }
         # Validate the AUTHORITATIVE configuration with the host context BEFORE
         # any runner or cron work. A present-but-invalid native/file setting is a
@@ -787,10 +787,13 @@ def setup_command(args: argparse.Namespace, *, backend: cron_mod.CronBackend | N
             if legacy_live is not None:
                 raise cron_mod.CronError(
                     "the recorded legacy monitoring job is still present "
-                    f"(id={legacy_live.get('id') or '?'}); run `hermes secretary "
+                    f"(id={legacy_live.get('id') or '?'}); run `hermes portal "
                     "migrate-jobs --apply` first. Setup refuses to create a duplicate "
                     "or recreate the existing schedule."
                 )
+            result["retired"] = cron_mod.reconcile_retired_jobs(
+                cron_backend, {spec.name for spec in specs},
+                ownership=ownership, ownership_path=paths.job_ownership_path())
             for spec in specs:
                 res = cron_mod.ensure_job(
                     cron_backend, spec,
@@ -879,7 +882,7 @@ def _setup_human(result: dict[str, Any]) -> str:
         imp = result["import"]
         counts = imp.get("counts", {})
         lines = [
-            "Proactive Secretary legacy import preview (no changes made).",
+            "Proactive Portal legacy import preview (no changes made).",
             f"  legacy        : {imp.get('legacy_root', '?')}",
             f"  files         : {counts.get('total', 0)} total, "
             f"{counts.get('copied', 0)} to copy, {counts.get('identical', 0)} identical, "
@@ -895,7 +898,7 @@ def _setup_human(result: dict[str, Any]) -> str:
             lines.append(f"  error         : {result.get('error', 'conflicting target state')}")
         return "\n".join(lines)
     if not result.get("ok"):
-        lines = ["Proactive Secretary setup FAILED.", f"  reason: {result.get('error', 'unknown')}"]
+        lines = ["Proactive Portal setup FAILED.", f"  reason: {result.get('error', 'unknown')}"]
         if result.get("rolled_back"):
             lines.append(f"  rolled back jobs: {', '.join(result['rolled_back'])}")
         if result.get("rollback_failures"):
@@ -913,7 +916,7 @@ def _setup_human(result: dict[str, Any]) -> str:
     else:
         monitored = ["public sources only (no mail/calendar connector detected)"]
     lines = [
-        "Proactive Secretary configuration and owned jobs were installed.",
+        "Proactive Portal configuration and owned jobs were installed.",
         f"  data           : {result.get('data_root')}",
         f"  policy         : {result.get('policy', {}).get('action', '?')} "
         f"({result.get('policy', {}).get('policy', '')})",
@@ -943,8 +946,8 @@ def _setup_human(result: dict[str, Any]) -> str:
                      f"manifest {result['import'].get('manifest_sha256', '')[:12]}")
     checks = result.get("checks", {})
     lines.append(f"  self-test      : {checks.get('self_test', {})}")
-    lines.append("  pause anytime  : hermes secretary pause")
-    lines.append("  remove jobs    : hermes secretary disable")
+    lines.append("  pause anytime  : hermes portal pause")
+    lines.append("  remove jobs    : hermes portal disable")
     for warning in result.get("warnings", []):
         lines.append(f"  warning        : {warning}")
     return "\n".join(lines)
@@ -1014,9 +1017,9 @@ def status_command(args: argparse.Namespace) -> int:
         if isinstance(r, dict) and r.get("status") in {"pending", "uncertain"}
     )
     ctx = get_native_context()
-    # One bounded safe projection shared with the /secretary status handler.
+    # One bounded safe projection shared with the /portal status handler.
     try:
-        projection = secretary_status.collect(ctx, cron_backend=_backend(),
+        projection = portal_status.collect(ctx, cron_backend=_backend(),
                                               probe_empty=True)
     except Exception as exc:  # noqa: BLE001 - status must degrade, not crash
         projection = {"model_status": {"strict_active": False,
@@ -1030,7 +1033,7 @@ def status_command(args: argparse.Namespace) -> int:
     model_routes: dict[str, Any] = dict(projection.get("model_status") or {})
     model_capability = dict(projection.get("model_capability") or {})
     if not model_capability:
-        model_capability = secretary_status.model_capability_health(
+        model_capability = portal_status.model_capability_health(
             model_routes, paused=_is_paused())
     onboarding = dict(projection.get("onboarding") or {})
     onboarding.pop("next_question", None)
@@ -1043,7 +1046,7 @@ def status_command(args: argparse.Namespace) -> int:
     next_run = str(projection.get("next_schedule") or "")
     next_action = ""
     if str(onboarding.get("status") or "") == "pending_verification":
-        next_action = ("hermes secretary setup --deliver "
+        next_action = ("hermes portal setup --deliver "
                        + (destination or "<target>")
                        + " (then an explicitly authorised native canary)")
     payload = {
@@ -1090,9 +1093,9 @@ def status_command(args: argparse.Namespace) -> int:
                       "to the library 'src' directory)")
     else:
         monitoring = caps.get("monitoring", "full")
-    layout_line = secretary_status.layout_diagnostic(paths.plugin_root())
+    layout_line = portal_status.layout_diagnostic(paths.plugin_root())
     human = "\n".join([
-        ("Proactive Secretary: installed; "
+        ("Proactive Portal: installed; "
          + ("paused (collection/delivery stopped)" if payload['paused'] else "not paused")
          + f"; onboarding={payload['onboarding'].get('status')}"
          + f"; jobs={len(owned_names)} owned"
@@ -1198,7 +1201,7 @@ def doctor_command(args: argparse.Namespace) -> int:
     except Exception as exc:  # noqa: BLE001 - invalid config is a hard doctor failure
         add("user_config_valid", False,
             f"invalid configuration: {exc} "
-            "(run `hermes secretary configure validate` or `configure migrate`)",
+            "(run `hermes portal configure validate` or `configure migrate`)",
             critical=True)
     try:
         from proactive_pilot.gws_calendar import readiness_report
@@ -1212,7 +1215,7 @@ def doctor_command(args: argparse.Namespace) -> int:
         "host ctx available" if get_native_context() is not None else "offline (subprocess route)",
         critical=False)
     try:
-        from .secretary_models import effective_route_status
+        from .portal_models import effective_route_status
         from proactive_pilot.native_runtime import bound_model_lane_status
         _ctx = get_native_context()
         _bound = bound_model_lane_status(_ctx)
@@ -1220,7 +1223,7 @@ def doctor_command(args: argparse.Namespace) -> int:
             _ctx, strict_active=bool((_bound or {}).get("strict_active")))
         if _bound:
             _route.update(_bound)
-        _capability = secretary_status.model_capability_health(
+        _capability = portal_status.model_capability_health(
             _route, paused=_is_paused())
         add("model_capability", bool(_capability.get("healthy", True)),
             str(_capability.get("detail") or ""),
@@ -1280,7 +1283,7 @@ def _apply_feedback(action: str, provenance: str) -> int:
 def pause_command(args: argparse.Namespace) -> int:
     as_json = bool(getattr(args, "json", False))
     try:
-        _apply_feedback("pause", "hermes secretary pause")
+        _apply_feedback("pause", "hermes portal pause")
     except Exception as exc:  # noqa: BLE001
         _emit({"ok": False, "error": str(exc)}, as_json=as_json, human=f"pause failed: {exc}")
         return 1
@@ -1295,11 +1298,11 @@ def pause_command(args: argparse.Namespace) -> int:
                "error": "collection and delivery are paused, but the owned portal "
                         f"job was not confirmed stopped: {detail}"},
               as_json=as_json,
-              human=("Proactive Secretary paused for collection and delivery, but the "
+              human=("Proactive Portal paused for collection and delivery, but the "
                      f"owned portal job was NOT confirmed stopped: {detail}"))
         return 1
     _emit({"ok": True, "paused": True, "portal": portal}, as_json=as_json,
-          human=("Proactive Secretary paused: collection and delivery are stopped"
+          human=("Proactive Portal paused: collection and delivery are stopped"
                  + ("" if portal.get("portal") == "not-opted-in"
                     else f"; portal job {portal.get('portal')}")))
     return 0
@@ -1308,7 +1311,7 @@ def pause_command(args: argparse.Namespace) -> int:
 def resume_command(args: argparse.Namespace) -> int:
     as_json = bool(getattr(args, "json", False))
     try:
-        _apply_feedback("resume", "hermes secretary resume")
+        _apply_feedback("resume", "hermes portal resume")
     except Exception as exc:  # noqa: BLE001
         _emit({"ok": False, "error": str(exc)}, as_json=as_json, human=f"resume failed: {exc}")
         return 1
@@ -1334,7 +1337,7 @@ def resume_command(args: argparse.Namespace) -> int:
            "readiness": "not-paused" if owned else "no-owned-jobs",
            "delivery": "unverified"},
           as_json=as_json,
-          human=f"Proactive Secretary is {ready}. Run `hermes secretary setup --deliver "
+          human=f"Proactive Portal is {ready}. Run `hermes portal setup --deliver "
                 "<verified-target>` to arm jobs, then perform the explicit canary.")
     return 0
 
@@ -1387,7 +1390,8 @@ def _remove_own_jobs() -> list[dict[str, Any]]:
     if not backend.is_available():
         raise cron_mod.CronError("the Hermes cron surface is unavailable; cannot remove jobs")
     ownership = cron_mod.load_job_ownership(paths.job_ownership_path())
-    names = OWNED_JOB_NAMES + cron_mod.OPTIONAL_JOB_NAMES + cron_mod.LEGACY_OWNED_JOB_NAMES
+    names = (OWNED_JOB_NAMES + cron_mod.OPTIONAL_JOB_NAMES
+             + cron_mod.LEGACY_OWNED_JOB_NAMES + cron_mod.RETIRED_JOB_NAMES)
     if cron_mod.owned_job_record(ownership, cron_mod.PORTAL_JOB_NAME) is not None:
         names += (cron_mod.PORTAL_JOB_NAME,)
     for name in names:
@@ -1410,7 +1414,7 @@ def disable_command(args: argparse.Namespace, *, uninstall: bool = False) -> int
     as_json = bool(getattr(args, "json", False))
     result: dict[str, Any] = {"ok": False, "removed": [], "scripts": [], "paused": False}
     try:
-        _apply_feedback("pause", "hermes secretary disable")
+        _apply_feedback("pause", "hermes portal disable")
         result["paused"] = True
         result["removed"] = _remove_own_jobs()
         result["scripts"] = _remove_own_runners()
@@ -1426,7 +1430,7 @@ def disable_command(args: argparse.Namespace, *, uninstall: bool = False) -> int
         f"{Path(r['file']).name} ({r['action']})" for r in result["scripts"]
     )
     human = (
-        f"Proactive Secretary {'uninstalled' if uninstall else 'disabled'}.\n"
+        f"Proactive Portal {'uninstalled' if uninstall else 'disabled'}.\n"
         f"  paused : yes (collection and delivery stopped)\n"
         f"  removed: {removed_desc or 'no owned jobs were present'}\n"
         f"  scripts: {scripts_desc or 'no owned runner scripts were present'}"
@@ -1508,7 +1512,7 @@ def run_once_command(args: argparse.Namespace) -> int:
 def pipeline_command(args: argparse.Namespace) -> int:
     """Internal scheduled handler: run the ordinary pipeline in the host context.
 
-    The scheduled pilot runner invokes ``hermes secretary pipeline`` (fixed argv,
+    The scheduled pilot runner invokes ``hermes portal pipeline`` (fixed argv,
     same profile/data paths) so the registered handler closure receives the
     host-built ``ctx`` from native plugin discovery. That is what makes
     ``ctx.llm`` and native ``get_config`` authoritative on the normal schedule;
@@ -1574,11 +1578,11 @@ def prepare_command(args: argparse.Namespace) -> int:
         _diag("no native host context")
         return 0
     try:
-        from . import secretary_preparation
+        from . import portal_preparation
     except Exception as exc:  # noqa: BLE001 - fail closed without work
         _diag("preparation runtime unavailable", error=type(exc).__name__)
         return 0
-    result = secretary_preparation.run_unit(ctx, clock=clock)
+    result = portal_preparation.run_unit(ctx, clock=clock)
     if not result.get("ok"):
         _diag(str(result.get("reason") or "preparation skipped"),
               stage=str(result.get("stage") or ""))
@@ -1638,9 +1642,9 @@ def responsibilities_command(args: argparse.Namespace) -> int:
     as_json = bool(getattr(args, "json", False))
     _ensure_src()
     try:
-        from .secretary_responsibilities import dispatch
+        from .portal_responsibilities import dispatch
     except ImportError:  # pragma: no cover - direct module execution
-        from secretary.secretary_responsibilities import dispatch
+        from portal.portal_responsibilities import dispatch
 
     action = str(getattr(args, "action", "list"))
     payload: dict[str, Any] = {
@@ -1753,7 +1757,7 @@ def feedback_command(args: argparse.Namespace) -> int:
     if not rest:
         _emit({"ok": False, "error": "feedback requires an action (e.g. list, add-explicit)"},
               as_json=bool(getattr(args, "json", False)),
-              human="usage: hermes secretary feedback <action> [options]")
+              human="usage: hermes portal feedback <action> [options]")
         return 2
     if str(rest[0]).startswith("config-proposal") or str(rest[0]) in {
             "config-show", "config-dismiss", "config-approve"}:
@@ -2117,7 +2121,7 @@ def deliveries_command(args: argparse.Namespace) -> int:
 
 def portal_command(args: argparse.Namespace, *, backend: Any = None) -> int:
     """Lazy glue: the portal service owns actions, backend and JSON output."""
-    from . import secretary_portal as _portal
+    from . import portal_job as _portal
 
     return _portal.portal_command(
         args,
@@ -2129,7 +2133,7 @@ def portal_command(args: argparse.Namespace, *, backend: Any = None) -> int:
 _DISPATCH = {
     "setup": setup_command,
     "status": status_command,
-    "portal": portal_command,
+    "job": portal_command,
     "pause": pause_command,
     "resume": resume_command,
     "disable": disable_command,
@@ -2150,16 +2154,16 @@ _DISPATCH = {
 }
 
 
-def secretary_command(args: argparse.Namespace) -> int:
+def portal_cli_command(args: argparse.Namespace) -> int:
     _data_override(args)
-    sub = getattr(args, "secretary_command", None)
+    sub = getattr(args, "portal_cli_command", None)
     if not sub:
-        print("usage: hermes secretary {setup,status,portal,pause,resume,disable,uninstall,"
+        print("usage: hermes portal {setup,status,job,pause,resume,disable,uninstall,"
               "migrate-jobs,self-test,run-once,prepare,responsibilities,watch,feedback,"
               "configure,deliveries,doctor}")
         return 2
     handler = _DISPATCH.get(sub)
     if handler is None:
-        print(f"unknown secretary subcommand: {sub}", file=sys.stderr)
+        print(f"unknown portal subcommand: {sub}", file=sys.stderr)
         return 2
     return handler(args)

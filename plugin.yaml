@@ -1,5 +1,5 @@
-name: hermes-proactive-secretary
-version: 1.0.4
+name: hermes-proactive-portal
+version: 1.0.5
 kind: standalone
 platforms:
   - linux
@@ -14,27 +14,27 @@ description: >-
 author: Hermes Plugin Community
 license: MIT
 tags:
-  - secretary
+  - portal
   - proactive
   - notifications
   - reminders
   - cron
 provides_skills:
-  - proactive-secretary
+  - proactive-portal
 provides_cli_commands:
-  - secretary
+  - portal
 provides_tools:
-  - secretary_onboarding
-  - secretary_context
-  - secretary_responsibility
-  - secretary_propose_notice
-  - secretary_followup
+  - portal_onboarding
+  - portal_context
+  - portal_responsibility
+  - portal_propose_notice
+  - portal_followup
 provides_hooks:
   - pre_llm_call
 
 # Ordinary native Desktop controls (Settings -> Plugins). Hermes reads this as a
 # mapping of setting key -> field spec and writes edits under
-# plugins.entries.hermes-proactive-secretary.settings.<key>, exactly where
+# plugins.entries.hermes-proactive-portal.settings.<key>, exactly where
 # ctx.get_config reads them. These controls are projected from / merged into the
 # same validated per-user configuration owner as configure/CLI and the scheduled
 # runners. Complex source consent/account setup stays in the conversational/CLI
@@ -61,7 +61,7 @@ config_schema:
     title: Most ordinary messages per day (optional)
     description: >-
       An optional ceiling on ordinary messages per local day, never a target.
-      Leave blank for no deterministic daily count limit: the secretary still
+      Leave blank for no deterministic daily count limit: the portal still
       stays restrained and useful rather than aiming at a number. Enter a whole
       number to set an explicit ceiling; 0 stops ordinary discretionary
       messages. Negative, fractional or non-numeric values are rejected. Urgent
@@ -253,9 +253,9 @@ config_schema:
     default: false
   primary_provider:
     type: str
-    title: Secretary model provider (optional)
+    title: Portal model provider (optional)
     description: >-
-      The provider for the secretary's own small task. Set both provider and
+      The provider for the portal's own small task. Set both provider and
       model, or leave both empty to inherit the active chat model at first.
       The monitoring auxiliary route uses its existing routing rules. A native
       portal job snapshots the selected pair only when you explicitly enable or
@@ -264,7 +264,7 @@ config_schema:
     default: ""
   primary_model:
     type: str
-    title: Secretary model name (optional)
+    title: Portal model name (optional)
     description: >-
       The model name paired with the provider above. Both fields must be set
       together or both left empty. The monitoring auxiliary route uses its

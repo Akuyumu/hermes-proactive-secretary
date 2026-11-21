@@ -139,7 +139,7 @@ def _owner_paths() -> Any:
         if cached is not None:
             return cached
         spec = importlib.util.spec_from_file_location(
-            f"_hermes_proactive_secretary_owner_paths_{hashlib.sha256(str(target).encode('utf-8')).hexdigest()[:16]}",
+            f"_hermes_proactive_portal_owner_paths_{hashlib.sha256(str(target).encode('utf-8')).hexdigest()[:16]}",
             target,
         )
         if spec is None or spec.loader is None:
@@ -184,17 +184,17 @@ def _load_runtime_services(package_name: str) -> dict[str, Any]:
         return services
     try:
         import importlib
-        services["status"] = importlib.import_module(f"{package_name}.secretary.secretary_status")
+        services["status"] = importlib.import_module(f"{package_name}.portal.portal_status")
     except Exception as exc:  # noqa: BLE001 - status degrades, never invents
         services["status_error"] = type(exc).__name__
     try:
         import importlib
-        services["cli"] = importlib.import_module(f"{package_name}.secretary.secretary_cli")
+        services["cli"] = importlib.import_module(f"{package_name}.portal.portal_cli")
     except Exception as exc:  # noqa: BLE001
         services["cli_error"] = type(exc).__name__
     try:
         import importlib
-        services["onboarding"] = importlib.import_module(f"{package_name}.secretary.secretary_onboarding")
+        services["onboarding"] = importlib.import_module(f"{package_name}.portal.portal_onboarding")
     except Exception as exc:  # noqa: BLE001
         services["onboarding_error"] = type(exc).__name__
     return services
@@ -425,7 +425,7 @@ class SetupActions:
             from proactive_pilot.native_runtime import bound_model_lane_status
             route = dict(bound_model_lane_status(self.ctx) or {})
             if not route and self.package_name:
-                models = importlib.import_module(f"{self.package_name}.secretary.secretary_models")
+                models = importlib.import_module(f"{self.package_name}.portal.portal_models")
                 route = dict(models.effective_route_status(self.ctx, strict_active=False) or {})
             primary = route.get("primary") if isinstance(route.get("primary"), Mapping) else {}
             fallback = route.get("fallback") if isinstance(route.get("fallback"), Mapping) else None
@@ -446,7 +446,7 @@ class SetupActions:
                                       "primary": {}, "fallback": None,
                                       "blockers": [], "error": type(exc).__name__}
         result["jobs"] = self._jobs()
-        result["trigger"] = {"command": "/secretary setup", "non_destructive": True}
+        result["trigger"] = {"command": "/portal setup", "non_destructive": True}
         return result
 
     # -- bounded ordinary settings --------------------------------------
@@ -679,7 +679,7 @@ class SetupActions:
         return {
             "ok": True,
             "changed": False,
-            "command": "/secretary setup",
+            "command": "/portal setup",
             "note": ("Nothing was cleared or started by the plugin. The desktop action places this "
                      "command in the composer for you to review and send; if it cannot, type it in a chat."),
         }
@@ -956,8 +956,8 @@ class SetupActions:
                 "projected_fields": sorted(projected),
                 "permissions": {"reading_enabled": False, "needs_reconfirmation": True,
                                 "paused": bool((reset_preferences.get("paused") or {}).get("active"))},
-                "next": {"command": "/secretary setup",
-                         "note": ("Reset complete. Reading permissions are off. Send /secretary setup "
+                "next": {"command": "/portal setup",
+                         "note": ("Reset complete. Reading permissions are off. Send /portal setup "
                                   "in a chat to re-confirm them; reminders and model routes were kept.")},
             }
 

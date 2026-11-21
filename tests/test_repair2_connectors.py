@@ -35,11 +35,11 @@ from proactive_pilot.state import StateStore  # noqa: E402
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 
 ENV_KEYS = ("HOME", "HERMES_HOME", "SECRETARY_SRC", "PRODUCTIVITY_SECRETARY_SRC",
-            "HERMES_PROACTIVE_SECRETARY_DATA")
+            "HERMES_PROACTIVE_PORTAL_DATA")
 
 
 def _load_plugin_package():
-    name = "hermes_proactive_secretary_repair2_connectors"
+    name = "hermes_proactive_portal_repair2_connectors"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)]
     )
@@ -51,7 +51,7 @@ def _load_plugin_package():
 
 
 _PKG = _load_plugin_package()
-sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
 
@@ -70,7 +70,7 @@ class _EnvMixin(unittest.TestCase):
         self.addCleanup(self._restore)
         os.environ["HOME"] = str(self.home)
         os.environ["HERMES_HOME"] = str(self.hermes)
-        os.environ["HERMES_PROACTIVE_SECRETARY_DATA"] = str(self.data)
+        os.environ["HERMES_PROACTIVE_PORTAL_DATA"] = str(self.data)
         os.environ.pop("SECRETARY_SRC", None)
         os.environ.pop("PRODUCTIVITY_SECRETARY_SRC", None)
 
@@ -130,7 +130,7 @@ class MissingLibraryFailClosedTests(_EnvMixin):
         self.assertIn("Public-source monitoring", message)
 
     def test_insert_raises_typed_error_not_bare_importerror(self):
-        with self.assertRaises(collectors.SecretaryLibraryUnavailable) as ctx:
+        with self.assertRaises(collectors.PortalLibraryUnavailable) as ctx:
             collectors._insert_secretary_src()
         self.assertIn("SECRETARY_SRC", str(ctx.exception))
 

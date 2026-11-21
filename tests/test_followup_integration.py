@@ -38,12 +38,12 @@ def _load_plugin_package(name: str):
     return module
 
 
-_PKG = _load_plugin_package("hermes_proactive_secretary_followup_qa")
+_PKG = _load_plugin_package("hermes_proactive_portal_followup_qa")
 cron = importlib.import_module(f"{_PKG.__name__}.cron")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
-portal = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal")
+portal = importlib.import_module(f"{_PKG.__name__}.portal.portal_job")
 responsibility_surface = importlib.import_module(
-    f"{_PKG.__name__}.secretary.secretary_responsibilities")
+    f"{_PKG.__name__}.portal.portal_responsibilities")
 
 from proactive_pilot import followups as F  # noqa: E402
 from proactive_pilot import ownerpaths  # noqa: E402
@@ -153,15 +153,15 @@ class FollowupIntegrationTests(unittest.TestCase):
         ctx = Ctx(execution=None)
         result = _PKG._register_conversation(ctx)
         self.assertTrue(result.get("followup_tool"), result)
-        self.assertIn("secretary_followup", ctx.tools)
-        return ctx, ctx.tools["secretary_followup"]["handler"]
+        self.assertIn("portal_followup", ctx.tools)
+        return ctx, ctx.tools["portal_followup"]["handler"]
 
     def _portal(self, **kwargs):
         ctx = Ctx(profile_name=kwargs.pop("profile_name", "A"),
                   execution=self._execution(**kwargs))
         result = _PKG._register_conversation(ctx)
         self.assertTrue(result.get("followup_tool"), result)
-        return ctx, ctx.tools["secretary_followup"]["handler"]
+        return ctx, ctx.tools["portal_followup"]["handler"]
 
     @staticmethod
     def _call(handler, payload):
@@ -247,6 +247,120 @@ class FollowupIntegrationTests(unittest.TestCase):
                 self.assertEqual(again["followup"]["text"], f"{platform} harbour tide")
                 self.assertEqual(F.get(StateStore(self.state, self.clock), fid)["id"], fid)
 
+    def test_question_phrased_turn_files_with_provenance_and_no_cron(self):
+        ctx, handler = self._foreground()
+        quote = "Isn't there a built-in way to follow up on the upstream release?"
+        self._human(ctx, quote, session="s-question")
+        ledger = paths.job_ownership_path()
+        before_ledger = ledger.read_bytes()
+        with mock.patch.object(cron, "ensure_job") as ensure_job, \
+                mock.patch.object(cron, "remove_job") as remove_job, \
+                mock.patch.object(cron, "save_job_ownership") as save_ownership:
+            created = self._call(handler, {
+                "action": "create",
+                "kind": "ongoing",
+                "session_id": "s-question",
+                "evidence_quote": quote,
+                "text": "upstream release follow-up",
+                "check_hint": "check the upstream release notes for the fix",
+            })
+        self.assertTrue(created["ok"], created)
+        self.assertEqual(created["status"], "created")
+        self.assertIn("no schedule or cron job was created", created["note"])
+        self.assertIn('action="stop"', created["note"])
+        self.assertEqual(ensure_job.call_count, 0)
+        self.assertEqual(remove_job.call_count, 0)
+        self.assertEqual(save_ownership.call_count, 0)
+        self.assertEqual(ledger.read_bytes(), before_ledger)
+
+        followup = created["followup"]
+        self.assertEqual(followup["filed_by"], "owner")
+        self.assertEqual(followup["evidence_quote"], quote)
+        self.assertTrue(followup["source_ref"].startswith("conversation:"))
+        self.assertEqual(created["source_ref"], followup["source_ref"])
+
+        listed = self._call(handler, {"action": "list"})
+        row = next(row for row in listed["followups"] if row["id"] == followup["id"])
+        self.assertEqual(row["filed_by"], "owner")
+        self.assertEqual(row["evidence_quote"], quote)
+        self.assertEqual(row["source_ref"], followup["source_ref"])
+
+        inspected = self._call(handler, {"action": "inspect",
+                                         "followup_id": followup["id"]})
+        self.assertEqual(inspected["followup"]["filed_by"], "owner")
+        self.assertEqual(inspected["followup"]["evidence_quote"], quote)
+        self.assertEqual(inspected["followup"]["source_ref"], followup["source_ref"])
+
+    def test_explicit_request_without_quote_files_as_agent(self):
+        ctx, handler = self._foreground()
+        created = self._call(handler, {
+            "action": "create",
+            "session_id": "s-request",
+            "request": "watch the upstream release notes",
+            "check_hint": "check the upstream release notes for the fix",
+        })
+        self.assertTrue(created["ok"], created)
+        self.assertEqual(created["followup"]["filed_by"], "agent")
+        self.assertEqual(created["followup"]["evidence_quote"], "")
+        self.assertEqual(created["followup"]["source_ref"], "")
+        self.assertEqual(created["followup"]["text"],
+                         "watch the upstream release notes")
+
+    def test_retraction_is_refused_and_nothing_is_stored(self):
+        ctx, handler = self._foreground()
+        retractions = (
+            "Don't watch the harbour tide.",
+            "Do not watch the harbour tide.",
+            "No need to watch the harbour tide.",
+            "Please stop watching the harbour tide.",
+            "Never mind the harbour tide.",
+            "Forget it.",
+            "Don't follow up on the harbour tide.",
+        )
+        for index, quote in enumerate(retractions):
+            with self.subTest(quote=quote):
+                session = f"s-retraction-{index}"
+                self._human(ctx, quote, session=session)
+                refused = self._call(handler, {
+                    "action": "create", "session_id": session,
+                    "evidence_quote": quote, "text": "retracted tide",
+                    "check_hint": "check the retracted tide"})
+                self.assertFalse(refused["ok"], refused)
+        self.assertFalse((self.state / F.STORE).exists())
+
+    def test_create_with_no_quote_and_no_request_is_refused(self):
+        ctx, handler = self._foreground()
+        refused = self._call(handler, {
+            "action": "create", "session_id": "s-nothing",
+            "text": "nothing to file", "check_hint": "check nothing"})
+        self.assertFalse(refused["ok"], refused)
+        self.assertIn("nothing to file", refused["error"].lower())
+        self.assertFalse((self.state / F.STORE).exists())
+
+    def test_created_entry_is_reversible_with_stop(self):
+        ctx, handler = self._foreground()
+        quote = "Could you track the upstream release for me?"
+        created = self._create(ctx, handler, text="upstream release",
+                               quote=quote, session="s-reversible",
+                               hint="check the upstream release notes")
+        self.assertTrue(created["ok"], created)
+        fid = created["followup"]["id"]
+        self.assertEqual(F.summary(StateStore(self.state, self.clock))["active"], 1)
+
+        stop_quote = f"Please stop the upstream release watch {fid} now."
+        self._human(ctx, stop_quote, session="s-reversible")
+        stopped = self._call(handler, {
+            "action": "stop", "session_id": "s-reversible",
+            "followup_id": fid, "evidence_quote": stop_quote})
+        self.assertTrue(stopped["ok"], stopped)
+        self.assertEqual(stopped["followup"]["status"], "done")
+        self.assertEqual(stopped["followup"]["close_reason"], "owner_stopped")
+
+        listed = self._call(handler, {"action": "list"})
+        self.assertEqual(listed["followups"], [])
+        self.assertEqual(listed["awaiting_delivery"], [])
+        self.assertEqual(F.summary(StateStore(self.state, self.clock))["active"], 0)
+
     def test_foreground_create_rejects_background_shared_stale_and_untrusted(self):
         ctx, handler = self._foreground()
         quote = "Please keep an eye on the harbour tide."
@@ -278,18 +392,21 @@ class FollowupIntegrationTests(unittest.TestCase):
             "action": "create", "session_id": "s-stale",
             "evidence_quote": quote, "text": "stale tide"})["ok"])
 
-        # Quoted/reported and conditional text cannot authorise creation.
+        # Quoted/reported text cannot authorise creation.
         reported = 'She said "please keep an eye on the harbour tide"'
         self._human(ctx, reported, session="s-reported")
         self.assertFalse(self._call(handler, {
             "action": "create", "session_id": "s-reported",
             "evidence_quote": reported, "text": "reported tide"})["ok"])
 
-        conditional = "If I have time, I will keep an eye on the harbour tide."
-        self._human(ctx, conditional, session="s-cond")
-        self.assertFalse(self._call(handler, {
-            "action": "create", "session_id": "s-cond",
-            "evidence_quote": conditional, "text": "conditional tide"})["ok"])
+        # An explicit retraction is the only narrow veto; it writes nothing.
+        retraction = "No need to watch the harbour tide."
+        self._human(ctx, retraction, session="s-retract")
+        refused = self._call(handler, {
+            "action": "create", "session_id": "s-retract",
+            "evidence_quote": retraction, "text": "retracted tide"})
+        self.assertFalse(refused["ok"], refused)
+        self.assertIn("retract", refused["error"].lower())
 
         # A model-invented quote is refused.
         self.assertFalse(self._call(handler, {
@@ -1134,7 +1251,7 @@ class FollowupIntegrationTests(unittest.TestCase):
             with self.subTest(label=label):
                 result = _PKG._register_conversation(bad)
                 self.assertTrue(result.get("followup_tool"), result)
-                bad_handler = bad.tools["secretary_followup"]["handler"]
+                bad_handler = bad.tools["portal_followup"]["handler"]
                 refused = self._call(bad_handler, {
                     "action": "record_check", "followup_id": fid,
                     "result": "match", "fingerprint": "bad-fp"})
@@ -1156,7 +1273,7 @@ class FollowupIntegrationTests(unittest.TestCase):
                                quote="Please keep an eye on the secret raw watch marker.")
         self.assertTrue(created["ok"], created)
         prompt = portal.PROMPT
-        self.assertIn("secretary_followup", prompt)
+        self.assertIn("portal_followup", prompt)
         self.assertIn("original initiative", prompt)
         self.assertIn("never grant new authority", prompt)
         self.assertIn("never add a schedule", prompt)
@@ -1166,9 +1283,9 @@ class FollowupIntegrationTests(unittest.TestCase):
     def test_empty_followups_prompt_is_unchanged_and_schema_is_typed(self):
         ctx, _handler = self._foreground()
         before = portal.PROMPT
-        tool = ctx.tools["secretary_followup"]
+        tool = ctx.tools["portal_followup"]
         self.assertEqual(tool["schema"], importlib.import_module(
-            f"{_PKG.__name__}.secretary.secretary_followups").TOOL_SCHEMA)
+            f"{_PKG.__name__}.portal.portal_followups").TOOL_SCHEMA)
         self.assertEqual(tool["schema"]["type"], "object")
         self.assertIs(tool["schema"]["additionalProperties"], False)
         self.assertIn("action", tool["schema"]["required"])

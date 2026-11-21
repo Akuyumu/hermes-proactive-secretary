@@ -94,7 +94,7 @@ def shadow_command(args: argparse.Namespace) -> int:
     try:
         prefs = load_preferences_file(Path(args.preferences), strict=True)
     except FeedbackError as exc:
-        print(f"proactive-secretary shadow: preferences corrupt, failing closed: {exc}", file=sys.stderr)
+        print(f"proactive-portal shadow: preferences corrupt, failing closed: {exc}", file=sys.stderr)
         _emit("")
         return 1
     policy["_preferences"] = prefs
@@ -159,7 +159,7 @@ def shadow_command(args: argparse.Namespace) -> int:
                     resolver=getattr(args, "dns_resolver", None),
                 )
         except Exception as exc:  # noqa: BLE001 - shadow never breaks the scheduler
-            print(f"proactive-secretary shadow internal error: {exc}", file=sys.stderr)
+            print(f"proactive-portal shadow internal error: {exc}", file=sys.stderr)
             _emit("")
             return 1
     _diag({"command": "shadow", "summary": _redact_summary(summary)})
@@ -196,7 +196,7 @@ def _redact_summary(summary: dict[str, Any]) -> dict[str, Any]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="proactive-secretary-shadow",
+        prog="proactive-portal-shadow",
         description="Isolated adaptive watch shadow runner (public sources only).",
     )
     parser.add_argument("--state-dir", required=True)

@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_plugin_package():
-    name = "hermes_proactive_secretary_repair2_cron"
+    name = "hermes_proactive_portal_repair2_cron"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)]
     )
@@ -35,7 +35,7 @@ def _load_plugin_package():
 
 
 _PKG = _load_plugin_package()
-sc = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
+sc = importlib.import_module(f"{_PKG.__name__}.portal.portal_cli")
 cron_mod = importlib.import_module(f"{_PKG.__name__}.cron")
 paths = importlib.import_module(f"{_PKG.__name__}.paths")
 
@@ -93,10 +93,10 @@ class _DataDirMixin(unittest.TestCase):
 class NamespacedSpecTests(unittest.TestCase):
     def test_build_job_specs_are_namespaced(self):
         names = {s.name for s in cron_mod.build_job_specs()}
-        self.assertEqual(names, {"hermes-proactive-secretary-monitoring",
-                                 "hermes-proactive-secretary-reminders"})
+        self.assertEqual(names, {"hermes-proactive-portal-monitoring",
+                                 "hermes-proactive-portal-reminders"})
         for name in names:
-            self.assertTrue(name.startswith("hermes-proactive-secretary-"))
+            self.assertTrue(name.startswith("hermes-proactive-portal-"))
         self.assertEqual(set(sc.OWNED_JOB_NAMES), set(cron_mod.OWNED_JOB_NAMES))
 
 

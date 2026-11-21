@@ -2,7 +2,7 @@
 
 No Hermes runtime, no network, no model, no live profile, no credential. Every
 host module the loader touches (``hermes_cli.plugins``, ``hermes_cli.plugins_loader``,
-``hermes_constants``, ``tools.mcp_tool_discovery``) plus the ``secretary_cli``
+``hermes_constants``, ``tools.mcp_tool_discovery``) plus the ``portal_cli``
 context holder are stubbed in ``sys.modules`` and restored afterwards.
 
 Two layers are covered so production coverage survives an installed/release
@@ -178,8 +178,8 @@ class HostStub:
             _resolve_server_lazy=lambda n, cfg: cfg.get("lazy", False),
             probe_mcp_server_tools=forbidden,
             register_mcp_servers=forbidden))
-        self._install("secretary_cli", self._mod(
-            "secretary_cli", get_native_context=lambda: _SENTINEL_CTX))
+        self._install("portal_cli", self._mod(
+            "portal_cli", get_native_context=lambda: _SENTINEL_CTX))
         return self
 
     def __exit__(self, *exc):
@@ -355,7 +355,7 @@ class NativePreflightLoaderTests(unittest.TestCase):
 
     def test_un_capturable_context_fails_closed(self):
         with HostStub(inside_status=[], outside_status=[]) as stub:
-            sys.modules["secretary_cli"].get_native_context = lambda: None
+            sys.modules["portal_cli"].get_native_context = lambda: None
             with self.assertRaises(NativeBootstrapError) as caught:
                 self.loader.bootstrap_report("firecrawl")
         self.assertIn("not captured", str(caught.exception))

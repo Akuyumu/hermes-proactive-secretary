@@ -1,7 +1,7 @@
 """Shared, bounded, read-only status projection for CLI and chat surfaces.
 
-This module owns the one safe shape used by ``hermes secretary status`` and
-``/secretary status``. It reads only existing profile metadata: validated
+This module owns the one safe shape used by ``hermes portal status`` and
+``/portal status``. It reads only existing profile metadata: validated
 configuration, the plugin's own job-ownership ledger/native cron listing, the
 common model-health incident and the ready preparation queue.
 
@@ -38,16 +38,23 @@ def _bounded_list(values: Any, *, limit: int = MAX_LIST) -> list[str]:
 
 
 def layout_diagnostic(root: Any) -> str:
-    """Return one bounded legacy-layout warning line, or ``""`` when clean."""
+    """Return one bounded stale-layout warning line, or ``""`` when clean."""
     try:
-        from proactive_pilot.layout import legacy_shadows
+        from proactive_pilot.layout import legacy_artifacts, legacy_shadows
         shadows = legacy_shadows(root)
+        artifacts = legacy_artifacts(root)
     except Exception:  # noqa: BLE001 - diagnostics degrade, never crash status
         return ""
-    if not shadows:
+    total = len(shadows) + len(artifacts)
+    if not total:
         return ""
-    return (f"layout        : {len(shadows)} legacy root module(s) shadow "
-            "secretary/ — reinstall to clear")
+    parts = []
+    if shadows:
+        parts.append(f"{len(shadows)} shadow")
+    if artifacts:
+        parts.append(f"{len(artifacts)} legacy")
+    return (f"layout        : {total} stale layout artifact(s) "
+            f"({', '.join(parts)}) — reinstall to clear")
 
 
 def _read_prefs() -> dict[str, Any]:
@@ -96,10 +103,10 @@ def _route_summary(ctx: Any, service: Any = None,
             from proactive_pilot.native_runtime import bound_model_lane_status
             route = dict(bound_model_lane_status(ctx) or {})
             if not route:
-                from .secretary_models import effective_route_status
+                from .portal_models import effective_route_status
                 route = effective_route_status(ctx, strict_active=False)
             elif "route_configured" not in route:
-                from .secretary_models import effective_route_status
+                from .portal_models import effective_route_status
                 effective = effective_route_status(
                     ctx, strict_active=bool(route.get("strict_active")))
                 for key, value in effective.items():
@@ -367,7 +374,7 @@ def _onboarding(ctx: Any, service: Any = None,
                 "confirmed_at": _text(
                     (state.get("destination") or {}).get("confirmed_at"), 64),
             }
-        from .secretary_onboarding import next_step
+        from .portal_onboarding import next_step
         raw = None
         state_facade = getattr(ctx, "state", None)
         if state_facade is not None:
@@ -452,7 +459,7 @@ def render_chat(status: dict[str, Any]) -> str:
     capability = status.get("model_capability") or {}
     job_ids = status.get("owned_job_ids") or []
     lines = [
-        ("Secretary: installed; "
+        ("Portal: installed; "
          + ("paused" if status.get("paused") else "active")
          + f"; setup={onboarding.get('status') or 'not_started'}"
          + f"; configured={'yes' if status.get('configured') else 'no'}"
@@ -475,7 +482,7 @@ def render_chat(status: dict[str, Any]) -> str:
     ]
     if onboarding.get("status") == "pending_verification":
         action = (onboarding.get("next_question")
-                  or "Run hermes secretary setup --deliver <saved-target> in the "
+                  or "Run hermes portal setup --deliver <saved-target> in the "
                      "foreground, then an authorised native canary.")
         lines.append(f"Next (delivery_verification): {_text(action, 400)}")
     elif onboarding.get("next_step"):

@@ -18,8 +18,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-PLUGIN_NAME = "hermes-proactive-secretary"
-DATA_ENV = "HERMES_PROACTIVE_SECRETARY_DATA"
+PLUGIN_NAME = "hermes-proactive-portal"
+DATA_ENV = "HERMES_PROACTIVE_PORTAL_DATA"
 _NATIVE_MODULE = "hermes_constants"
 
 
@@ -89,7 +89,7 @@ def _same_path(left: Path, right: Path) -> bool:
 def data_root() -> Path:
     """Owner-only plugin data root for the active profile.
 
-    ``HERMES_PROACTIVE_SECRETARY_DATA`` belongs to the process's own launch
+    ``HERMES_PROACTIVE_PORTAL_DATA`` belongs to the process's own launch
     profile (and standalone CLI). A routed foreign profile ignores it and uses
     its own profile's ``plugin-data`` directory instead.
     """

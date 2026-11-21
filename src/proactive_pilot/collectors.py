@@ -41,7 +41,7 @@ from urllib.parse import urlencode
 from . import ownerpaths as _ownerpaths
 
 
-class SecretaryLibraryUnavailable(RuntimeError):
+class PortalLibraryUnavailable(RuntimeError):
     """The shipped productivity-secretary library could not be located.
 
     Raised (or surfaced as a failed ``SourceResult``) instead of leaking a bare
@@ -115,7 +115,7 @@ def _insert_secretary_src() -> str:
     """Put the resolved library on ``sys.path`` or fail closed with a message."""
     src = resolve_secretary_src()
     if not Path(src).is_dir():
-        raise SecretaryLibraryUnavailable(secretary_library_error())
+        raise PortalLibraryUnavailable(secretary_library_error())
     if src not in sys.path:
         sys.path.insert(0, src)
     return src
@@ -309,7 +309,7 @@ def safe_source_error(exc: Any, *, kind: str = "source") -> str:
     """
     if isinstance(exc, SourceTimeout):
         return f"{kind} budget-deferred"
-    if isinstance(exc, SecretaryLibraryUnavailable):
+    if isinstance(exc, PortalLibraryUnavailable):
         return str(exc)
     text = exc if isinstance(exc, str) else str(exc)
     lowered = text.lower()
@@ -1091,7 +1091,7 @@ def collect_himalaya(
                         previewed_ids=previewed_out, scanned=scanned)
 
 
-# -- Secretary-backed Google sources (lazy import; shipped library untouched) --
+# -- Portal-backed Google sources (lazy import; shipped library untouched) --
 
 _GOOGLE_CACHE: dict[str, Any] = {}
 

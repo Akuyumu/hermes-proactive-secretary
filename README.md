@@ -26,21 +26,21 @@ Install the plugin, enable it, then check the result:
 
 ```bash
 hermes plugins install Akuyumu/hermes-proactive-portal --no-enable
-hermes plugins enable hermes-proactive-secretary
-hermes secretary doctor
+hermes plugins enable hermes-proactive-portal
+hermes portal doctor
 ```
 
 Prepare a local setup so you can try it without messaging anyone. This normal setup creates the routine monitoring and reminder schedules and keeps output local rather than sending it externally:
 
 ```bash
-hermes secretary setup --deliver local
+hermes portal setup --deliver local
 ```
 
 The background portal itself remains separately opt-in. Preview a schedule and enable it explicitly; nothing is created for the portal until you do. This example runs every two hours:
 
 ```bash
-hermes secretary portal preview --schedule "0 */2 * * *"
-hermes secretary portal enable --schedule "0 */2 * * *"
+hermes portal job preview --schedule "0 */2 * * *"
+hermes portal job enable --schedule "0 */2 * * *"
 ```
 
 Setup does not activate the portal by itself, and private sources stay off until you choose them.
@@ -50,20 +50,20 @@ Setup does not activate the portal by itself, and private sources stay off until
 In chat:
 
 ```text
-/secretary status
-/secretary pause
-/secretary resume
+/portal status
+/portal pause
+/portal resume
 ```
 
 From the terminal:
 
 ```bash
-hermes secretary portal status
-hermes secretary portal pause
-hermes secretary portal resume
+hermes portal job status
+hermes portal job pause
+hermes portal job resume
 ```
 
-A global `hermes secretary pause` stops collection and future notices too. The portal's own final answer stays local; when something is worth telling you, it proposes a notice through the existing monitoring gates rather than sending through two paths.
+A global `hermes portal pause` stops collection and future notices too. The portal's own final answer stays local; when something is worth telling you, it proposes a notice through the existing monitoring gates rather than sending through two paths.
 
 ## A note on installation
 
@@ -77,7 +77,7 @@ hermes://plugin/install?repo=Akuyumu/hermes-proactive-portal&enable=1
 
 The optional client component and refresh behaviour depend on your installed client. The [official plugin guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins) describes the native flow.
 
-The native plugin id stays `hermes-proactive-secretary`, and commands stay `hermes secretary`; existing jobs and state keep working. This release is version 1.0.3.
+The native plugin id is `hermes-proactive-portal`, and commands are `hermes portal`; existing state is copied once from the legacy data root on first load. This release is version 1.0.5.
 
 ## Learn more
 

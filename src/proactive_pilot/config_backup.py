@@ -53,8 +53,8 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-# The four own-task route fields are declared in secretary/secretary_models.py in
-# the secretary/ subpackage. They are repeated here only as opaque key names so
+# The four own-task route fields are declared in portal/portal_models.py in
+# the portal/ subpackage. They are repeated here only as opaque key names so
 # this backup helper stays inside the stdlib-only runtime package.
 _ROUTE_KEYS = ("primary_provider", "primary_model",
                "fallback_provider", "fallback_model")
@@ -126,7 +126,7 @@ def _snapshot(data_root: Path, native: Any, state: Any) -> dict[str, bytes]:
 
 
 def create_backup(data_root: str | Path, *, native: Any = None, state: Any = None,
-                  reason: str = "", plugin: str = "hermes-proactive-secretary") -> dict[str, Any]:
+                  reason: str = "", plugin: str = "hermes-proactive-portal") -> dict[str, Any]:
     """Snapshot the plugin's own settings records into a new owner-only backup.
 
     Raises :class:`BackupError` on any failure. The caller must not perform the

@@ -29,7 +29,7 @@ from proactive_pilot import userconfig as uc  # noqa: E402
 
 
 def _load_package():
-    name = "hermes_proactive_secretary_051"
+    name = "hermes_proactive_portal_051"
     spec = importlib.util.spec_from_file_location(
         name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
     module = importlib.util.module_from_spec(spec)
@@ -40,17 +40,17 @@ def _load_package():
 
 
 PKG = _load_package()
-sc = importlib.import_module(f"{PKG.__name__}.secretary.secretary_cli")
+sc = importlib.import_module(f"{PKG.__name__}.portal.portal_cli")
 paths = importlib.import_module(f"{PKG.__name__}.paths")
-onboarding = importlib.import_module(f"{PKG.__name__}.secretary.secretary_onboarding")
-conversation = importlib.import_module(f"{PKG.__name__}.secretary.secretary_conversation")
+onboarding = importlib.import_module(f"{PKG.__name__}.portal.portal_onboarding")
+conversation = importlib.import_module(f"{PKG.__name__}.portal.portal_conversation")
 
 
 class FormCtx:
     def __init__(self, settings=None):
         self.settings = copy.deepcopy(dict(settings or {}))
         self.writes = []
-        self.plugin_id = "hermes-proactive-secretary"
+        self.plugin_id = "hermes-proactive-portal"
 
     def get_config(self, key, default=None):
         return self.settings.get(key, default)
@@ -464,7 +464,7 @@ class HostFormSchemaTests(unittest.TestCase):
             from hermes_cli.plugins_settings import plugin_settings_fields
         except Exception as exc:  # noqa: BLE001 - host module is optional offline
             raise unittest.SkipTest(f"host settings module unavailable: {type(exc).__name__}")
-        fields = plugin_settings_fields("hermes-proactive-secretary", ROOT)
+        fields = plugin_settings_fields("hermes-proactive-portal", ROOT)
         self.assertTrue(fields)
         by_key = {field["key"]: field for field in fields}
         self.assertEqual(set(by_key), set(uc.NATIVE_FLAT_FIELDS) | {

@@ -115,6 +115,49 @@ class FollowupTests(unittest.TestCase):
         self.assertFalse(hinted_row["needs_clarification"])
         self.assertNotIn("clarification", hinted_row)
 
+    def test_provenance_is_bounded_visible_and_optional_for_legacy(self):
+        entry = F.create(
+            self.store,
+            "provenance watch",
+            check_hint="check the provenance tide",
+            evidence_quote="Could you track the provenance tide?",
+            source_ref="conversation:abc123",
+            filed_by="owner",
+            now=self.now,
+        )
+        self.assertEqual(entry["filed_by"], "owner")
+        self.assertEqual(entry["evidence_quote"],
+                         "Could you track the provenance tide?")
+        self.assertEqual(entry["source_ref"], "conversation:abc123")
+        row = F.active_entries(self.store)[0]
+        self.assertEqual(row["filed_by"], "owner")
+        self.assertEqual(row["evidence_quote"], entry["evidence_quote"])
+        self.assertEqual(row["source_ref"], entry["source_ref"])
+
+        agent_entry = F.create(
+            self.store,
+            "agent request watch",
+            check_hint="check the agent request",
+            filed_by="agent",
+            now=self.now,
+        )
+        self.assertEqual(agent_entry["filed_by"], "agent")
+        self.assertEqual(agent_entry["evidence_quote"], "")
+        self.assertEqual(agent_entry["source_ref"], "")
+
+        before = (self.root / F.STORE).read_bytes()
+        with self.assertRaises(F.FollowupError):
+            F.create(self.store, "bad filer", check_hint="check the bad filer",
+                     filed_by="robot", now=self.now)
+        with self.assertRaises(F.FollowupError):
+            F.create(self.store, "long quote", check_hint="check the long quote",
+                     evidence_quote="q" * (F.MAX_EVIDENCE_QUOTE_CHARS + 1),
+                     now=self.now)
+        with self.assertRaises(F.FollowupError):
+            F.create(self.store, "long ref", check_hint="check the long ref",
+                     source_ref="r" * (F.MAX_SOURCE_REF_CHARS + 1), now=self.now)
+        self.assertEqual((self.root / F.STORE).read_bytes(), before)
+
     def test_one_shot_queue_and_delivered(self):
         entry = F.create(self.store, "check the parcel", kind="one_shot",
                          check_hint="check the parcel tracker", now=self.now)

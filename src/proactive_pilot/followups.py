@@ -41,6 +41,8 @@ LOCK = "followups.lock"
 MAX_TEXT_CHARS = 300
 MAX_SOURCE_CHARS = 24
 MAX_CHECK_HINT_CHARS = 200
+MAX_EVIDENCE_QUOTE_CHARS = 600
+MAX_SOURCE_REF_CHARS = 200
 MAX_FINGERPRINT_CHARS = 120
 MAX_EVENT_KEY_CHARS = 200
 MAX_ATTEMPT_TOKEN_CHARS = 64
@@ -68,6 +70,7 @@ NOTICE_STATUSES = frozenset({
 CLOSE_REASONS = frozenset({
     "", "notified", "owner_stopped", "owner_canceled", "owner_confirmed", "expired",
 })
+FILED_BY = frozenset({"owner", "agent"})
 BLANKET_TEXTS = frozenset({"", "*", "all", "everything", "anything"})
 NEEDS_CLARIFICATION_TEXT = (
     "The owner's check hint is missing; ask one short question about what to check."
@@ -189,11 +192,16 @@ def _validate_entry(followup_id: Any, entry: Any) -> None:
     if entry.get("close_reason") not in CLOSE_REASONS:
         raise _corrupt("entry close_reason is invalid")
     for key, limit in (("source", MAX_SOURCE_CHARS), ("check_hint", MAX_CHECK_HINT_CHARS),
+                       ("evidence_quote", MAX_EVIDENCE_QUOTE_CHARS),
+                       ("source_ref", MAX_SOURCE_REF_CHARS),
                        ("notice_event_key", MAX_EVENT_KEY_CHARS),
                        ("owner_confirmed_ref", MAX_RECEIPT_REF_CHARS)):
         value = entry.get(key, "")
         if not isinstance(value, str) or len(value) > limit or _CONTROL_RE.search(value):
             raise _corrupt(f"entry {key} is not bounded/safe")
+    filed_by = entry.get("filed_by", "")
+    if not isinstance(filed_by, str) or (filed_by and filed_by not in FILED_BY):
+        raise _corrupt("entry filed_by is invalid")
     for key in ("check_count", "notified_count"):
         value = entry.get(key, 0)
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
@@ -405,6 +413,9 @@ def create(
     kind: str = "ongoing",
     source: Any = "",
     check_hint: Any = "",
+    evidence_quote: Any = "",
+    source_ref: Any = "",
+    filed_by: Any = "owner",
     now: datetime | None = None,
 ) -> dict[str, Any]:
     kind_text = str(kind or "").strip().lower()
@@ -416,6 +427,11 @@ def create(
     clean_source = _bounded(source, "source", MAX_SOURCE_CHARS)
     clean_hint = _bounded(
         check_hint, "check_hint", MAX_CHECK_HINT_CHARS, required=True)
+    clean_quote = _bounded(evidence_quote, "evidence_quote", MAX_EVIDENCE_QUOTE_CHARS)
+    clean_ref = _bounded(source_ref, "source_ref", MAX_SOURCE_REF_CHARS)
+    clean_filed_by = str(filed_by or "").strip().lower()
+    if clean_filed_by not in FILED_BY:
+        raise FollowupError("filed_by must be owner or agent")
 
     target = _coerce_store(store)
     stamp = _now(target, now)
@@ -436,6 +452,9 @@ def create(
             "updated_at": stamp.isoformat(),
             "source": clean_source,
             "check_hint": clean_hint,
+            "filed_by": clean_filed_by,
+            "evidence_quote": clean_quote,
+            "source_ref": clean_ref,
             "last_checked_at": "",
             "last_result": "",
             "check_count": 0,
@@ -777,6 +796,10 @@ def _safe_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "notice_status": entry.get("notice_status", ""),
         "created_at": entry.get("created_at", ""),
     }
+    for key in ("filed_by", "evidence_quote", "source_ref"):
+        value = entry.get(key, "")
+        if value:
+            row[key] = value
     row.update(_clarification_fields(entry))
     return row
 

@@ -44,20 +44,31 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
-PILOT_SCRIPT = "proactive_secretary_runner.py"
+PILOT_SCRIPT = "proactive_portal_runner.py"
 MONITORING_SCRIPT = PILOT_SCRIPT
-REMINDER_SCRIPT = "proactive_secretary_reminder_runner.py"
-PREPARATION_SCRIPT = "proactive_secretary_prepare_runner.py"
+REMINDER_SCRIPT = "proactive_portal_reminder_runner.py"
+PREPARATION_SCRIPT = "proactive_portal_prepare_runner.py"
 
 # Namespaced to this plugin so a pre-existing unrelated job of a generic name can
 # never be matched (and therefore never removed) by accident.
-MONITORING_JOB_NAME = "hermes-proactive-secretary-monitoring"
+MONITORING_JOB_NAME = "hermes-proactive-portal-monitoring"
 LEGACY_PILOT_JOB_NAME = "hermes-proactive-secretary-pilot"
 # Backwards-compatible source symbol only: no new owner-facing job uses it.
 PILOT_JOB_NAME = MONITORING_JOB_NAME
-REMINDER_JOB_NAME = "hermes-proactive-secretary-reminders"
-PREPARATION_JOB_NAME = "hermes-proactive-secretary-preparation"
-PORTAL_JOB_NAME = "hermes-proactive-secretary-portal"
+REMINDER_JOB_NAME = "hermes-proactive-portal-reminders"
+PREPARATION_JOB_NAME = "hermes-proactive-portal-preparation"
+PORTAL_JOB_NAME = "hermes-proactive-portal-portal"
+# Retired owner-facing names from before the portal identity. Only an exact
+# ownership-ledger id/name match can be removed; a foreign same-named row is
+# always left untouched. The legacy ``-pilot`` name keeps its dedicated
+# in-place rename path above.
+RETIRED_PORTAL_JOB_NAME = "hermes-proactive-secretary-portal"
+RETIRED_JOB_NAMES: tuple[str, ...] = (
+    "hermes-proactive-secretary-monitoring",
+    "hermes-proactive-secretary-reminders",
+    "hermes-proactive-secretary-preparation",
+    RETIRED_PORTAL_JOB_NAME,
+)
 OWNED_JOB_NAMES: tuple[str, ...] = (MONITORING_JOB_NAME, REMINDER_JOB_NAME)
 LEGACY_OWNED_JOB_NAMES: tuple[str, ...] = (LEGACY_PILOT_JOB_NAME,)
 OPTIONAL_JOB_NAMES: tuple[str, ...] = (PREPARATION_JOB_NAME,)
@@ -65,7 +76,7 @@ KNOWN_JOB_NAMES: tuple[str, ...] = (
     MONITORING_JOB_NAME, REMINDER_JOB_NAME, PREPARATION_JOB_NAME,
     PORTAL_JOB_NAME, LEGACY_PILOT_JOB_NAME,
 )
-OWNED_PLUGIN = "hermes-proactive-secretary"
+OWNED_PLUGIN = "hermes-proactive-portal"
 JOB_OWNERSHIP_SCHEMA = 1
 
 
@@ -1014,6 +1025,35 @@ def remove_job(backend: CronBackend, name: str, *,
     return CronJobResult(name, "removed", f"id={recorded_id}")
 
 
+def reconcile_retired_jobs(
+    backend: CronBackend,
+    desired_names: set[str] | frozenset[str] | tuple[str, ...],
+    *,
+    ownership: dict[str, Any] | None = None,
+    ownership_path: str | os.PathLike[str] | None = None,
+    retired_names: tuple[str, ...] | None = None,
+) -> list[dict[str, Any]]:
+    """Remove only retired owner-facing jobs recorded as ours.
+
+    A name is retired when it no longer appears in the desired specs. Removal
+    still requires the ledger's exact id AND name, so a foreign job that merely
+    shares a retired name is never touched. Names absent from the ledger are
+    skipped without adopting them. The legacy ``-pilot`` name is handled by
+    ``migrate_legacy_monitoring_job`` and is not removed here.
+    """
+    if ownership is None:
+        ownership = load_job_ownership(ownership_path)
+    wanted = {str(name) for name in desired_names}
+    removed: list[dict[str, Any]] = []
+    for name in (retired_names if retired_names is not None else RETIRED_JOB_NAMES):
+        if name in wanted or owned_job_record(ownership, name) is None:
+            continue
+        result = remove_job(
+            backend, name, ownership=ownership, ownership_path=ownership_path)
+        removed.append(result.to_dict())
+    return removed
+
+
 def classify_jobs(jobs: list[dict[str, Any]], ownership: dict[str, Any] | None) -> dict[str, Any]:
     """Split the plugin's known job names into owned / foreign / missing.
 
@@ -1367,7 +1407,7 @@ def build_job_specs(*, deliver: str = "local", workdir: str = "",
 
     Preparation is a separate explicit opt-in: ``preparation_enabled`` in the
     user configuration never arms anything by itself. Only
-    ``hermes secretary setup --with-preparation`` passes ``True`` here.
+    ``hermes portal setup --with-preparation`` passes ``True`` here.
     """
     specs = [
         CronJobSpec(

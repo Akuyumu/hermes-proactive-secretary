@@ -413,7 +413,7 @@ def _run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) -
             policy = apply_user_config(policy, _loaded.config)
             if _loaded.warnings:
                 for _warning in _loaded.warnings:
-                    print(f"proactive-secretary: config warning: {_warning}", file=sys.stderr)
+                    print(f"proactive-portal: config warning: {_warning}", file=sys.stderr)
         elif getattr(args, "require_config", False):
             # Production entry with no configuration (fresh install, or config
             # deleted after setup): apply the NEUTRAL generic defaults so the run
@@ -422,11 +422,11 @@ def _run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) -
             # re-enables any private source.
             policy = apply_user_config(policy, default_config())
             policy["_config_present"] = False
-            print("proactive-secretary: no user configuration present; applying neutral "
-                  "generic defaults (run `hermes secretary configure init|migrate`)",
+            print("proactive-portal: no user configuration present; applying neutral "
+                  "generic defaults (run `hermes portal configure init|migrate`)",
                   file=sys.stderr)
     except ConfigError as exc:
-        print(f"proactive-secretary: user configuration invalid, failing closed: {exc}",
+        print(f"proactive-portal: user configuration invalid, failing closed: {exc}",
               file=sys.stderr)
         _emit("")
         return 1
@@ -437,7 +437,7 @@ def _run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) -
     try:
         prefs = load_preferences(args.preferences, strict=True)
     except FeedbackError as exc:
-        print(f"proactive-secretary: preferences corrupt, failing closed: {exc}", file=sys.stderr)
+        print(f"proactive-portal: preferences corrupt, failing closed: {exc}", file=sys.stderr)
         _emit("")
         return 1
     policy["_preferences"] = prefs
@@ -490,7 +490,7 @@ def _run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) -
         try:
             state = store.load_notify_state(strict=True)
         except CorruptStateError as exc:
-            print(f"proactive-secretary: state corrupt, failing closed: {exc}", file=sys.stderr)
+            print(f"proactive-portal: state corrupt, failing closed: {exc}", file=sys.stderr)
             _emit("")
             return 1
 
@@ -524,7 +524,7 @@ def _run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) -
                 "origin_unavailable",
             }:
                 print(
-                    "proactive-secretary: portal notice dispatch failed: "
+                    "proactive-portal: portal notice dispatch failed: "
                     f"{notice.get('reason') or notice_status}",
                     file=sys.stderr,
                 )
@@ -1185,7 +1185,7 @@ def _maybe_emit_tentative_notice(args: Any, store: Any, state: dict[str, Any],
                     alert_ref = str(record["ref"])
     except Exception:  # noqa: BLE001 - ref bookkeeping never blocks emission
         alert_ref = ""
-    text = ("A private tentative secretary draft is ready for your review. "
+    text = ("A private tentative portal draft is ready for your review. "
             "It is an inferred idea, not accepted work. Reference "
             + public_ref + ". No external action was taken.")
     if alert_ref:
@@ -1516,7 +1516,7 @@ def feedback_command(args: argparse.Namespace) -> int:
         if args.feedback == "show":
             target = str(getattr(args, "id", "") or "")
             if not target:
-                print("proactive-secretary feedback rejected: --id is required", file=sys.stderr)
+                print("proactive-portal feedback rejected: --id is required", file=sys.stderr)
                 return 2
             matches = find_records(prefs, target)
             print(json.dumps({"feedback": "show", "id": target,
@@ -1549,7 +1549,7 @@ def feedback_command(args: argparse.Namespace) -> int:
         }
         updated = save_preferences_file(path, apply_action(prefs, action, now), now)
     except FeedbackError as exc:
-        print(f"proactive-secretary feedback rejected: {exc}", file=sys.stderr)
+        print(f"proactive-portal feedback rejected: {exc}", file=sys.stderr)
         return 2
     # Read back the exact persisted record so the assistant can show the user a
     # truthful receipt and never claim a change that was not stored.
@@ -1600,7 +1600,7 @@ def canary(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="proactive-secretary", description="Read-only proactive secretary bridge")
+    parser = argparse.ArgumentParser(prog="proactive-portal", description="Read-only proactive portal bridge")
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--state-dir", default=str(DEFAULT_STATE_DIR))
     parser.add_argument("--policy", default=str(DEFAULT_POLICY))
@@ -1696,11 +1696,11 @@ def main(argv: list[str] | None = None) -> int:
         # lock is already released by ``StateStore.lock``'s finally. Report a
         # real (non-zero) failure on stderr only; stdout stays empty so the
         # scheduler never emits a diagnostic as a user-facing alert.
-        print("proactive-secretary: run exceeded wall-clock bound; aborted", file=sys.stderr)
+        print("proactive-portal: run exceeded wall-clock bound; aborted", file=sys.stderr)
         _emit("")
         return 1
     except Exception as exc:  # noqa: BLE001 - fail silent to stdout, log to stderr
-        print(f"proactive-secretary internal error: {exc}", file=sys.stderr)
+        print(f"proactive-portal internal error: {exc}", file=sys.stderr)
         _emit("")
         return 1
 

@@ -98,7 +98,7 @@ The `pre_llm_call` hook never injects notice text. The host passes no chat id or
 chat type to that hook, and a single platform value covers both direct messages
 and groups, so injected continuity is deliberately content-free: only a recency
 count, the newest timestamp and the on-demand read surface. The owner can resolve
-an old referent with `hermes secretary deliveries --since <ISO> --limit <n>`.
+an old referent with `hermes portal deliveries --since <ISO> --limit <n>`.
 
 Ledger rows stay `emitted-unconfirmed`. Remembering an emission is not a delivery
 receipt and does not change any delivery gate.

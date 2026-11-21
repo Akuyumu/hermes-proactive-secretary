@@ -15,7 +15,7 @@ the tests exercise.
 
 The first eligible foreground conversation is the primary setup path. The
 assistant asks for genuine gaps, one natural question at a time, using the
-registered `pre_llm_call` context and the `secretary_onboarding` tool. A user
+registered `pre_llm_call` context and the `portal_onboarding` tool. A user
 never has to know a slash command, edit JSON, or open a settings page to grant a
 responsibility, choose an autonomy level, or enable private preparation.
 

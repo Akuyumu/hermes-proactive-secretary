@@ -33,7 +33,7 @@ from proactive_pilot.policy import DEFAULT_POLICY  # noqa: E402
 from proactive_pilot.state import StateStore  # noqa: E402
 
 main_mod = importlib.import_module("proactive_pilot.main")
-autonomy = importlib.import_module(f"{agentic._PKG.__name__}.secretary.secretary_autonomy")
+autonomy = importlib.import_module(f"{agentic._PKG.__name__}.portal.portal_autonomy")
 
 T0 = datetime.fromisoformat("2026-10-20T12:00:00+00:00")
 TENTATIVE_RE = re.compile(r"tentative:[0-9a-f]{24}")
@@ -92,7 +92,7 @@ def _main_args(ctx, at=T0):
     (scratch / "preferences.json").write_text(json.dumps({
         "explicit": [], "inferred": [], "snoozes": [], "paused": {}}),
         encoding="utf-8")
-    state_dir = Path(os.environ["HERMES_PROACTIVE_SECRETARY_DATA"]) / "var"
+    state_dir = Path(os.environ["HERMES_PROACTIVE_PORTAL_DATA"]) / "var"
     args = main_mod.build_parser().parse_args([
         "--state-dir", str(state_dir),
         "--policy", str(scratch / "policy.json"),
@@ -128,7 +128,7 @@ class _IsolatedTentativeCase(unittest.TestCase):
         root = Path(profile.name)
         env = mock.patch.dict(os.environ, {
             "HERMES_HOME": str(root / "home"),
-            "HERMES_PROACTIVE_SECRETARY_DATA": str(root / "data"),
+            "HERMES_PROACTIVE_PORTAL_DATA": str(root / "data"),
         })
         env.start()
         self.addCleanup(env.stop)
@@ -236,12 +236,12 @@ class TentativeMainNoticeTests(_IsolatedTentativeCase):
 
         rc, out, err = _run_main(ctx, at=T0)
         self.assertEqual(rc, 0, err)
-        self.assertIn("private tentative secretary draft is ready", out.lower())
+        self.assertIn("private tentative portal draft is ready", out.lower())
         self.assertIn(ref, out)
         row = ctx.state.data[tentative.TENTATIVE_KEY][0]
         self.assertEqual(row["notification"]["status"], "emitted-unconfirmed")
         delivered = StateStore(
-            Path(os.environ["HERMES_PROACTIVE_SECRETARY_DATA"]) / "var",
+            Path(os.environ["HERMES_PROACTIVE_PORTAL_DATA"]) / "var",
             SeededClock(T0.isoformat())).load_notify_state(strict=True)
         self.assertEqual(delivered["delivered"][-1]["delivery"],
                          "emitted-unconfirmed")
@@ -249,7 +249,7 @@ class TentativeMainNoticeTests(_IsolatedTentativeCase):
         later = T0 + timedelta(minutes=1)
         rc2, out2, err2 = _run_main(ctx, at=later)
         self.assertEqual(rc2, 0, err2)
-        self.assertNotIn("private tentative secretary draft", out2.lower())
+        self.assertNotIn("private tentative portal draft", out2.lower())
 
     def test_quiet_cap_disable_and_revoked_scope_suppress_notice(self):
         cases = [
@@ -271,7 +271,7 @@ class TentativeMainNoticeTests(_IsolatedTentativeCase):
                 args = _main_args(ctx, at=at)
                 if seed_cap:
                     store = StateStore(
-                        Path(os.environ["HERMES_PROACTIVE_SECRETARY_DATA"]) / "var",
+                        Path(os.environ["HERMES_PROACTIVE_PORTAL_DATA"]) / "var",
                         SeededClock(at.isoformat()))
                     store.save("notify_state.json", {
                         "schema": 1, "items": {}, "health": {},
@@ -290,7 +290,7 @@ class TentativeMainNoticeTests(_IsolatedTentativeCase):
                         args, evaluator=FakeEvaluator(EvaluatorResult("silence")))
                 shutil.rmtree(args._scratch, ignore_errors=True)
                 self.assertEqual(rc, 0, err.getvalue())
-                self.assertNotIn("private tentative secretary draft",
+                self.assertNotIn("private tentative portal draft",
                                  out.getvalue().lower())
                 row = ctx.state.data[tentative.TENTATIVE_KEY][0]
                 self.assertEqual(row["notification"]["status"], "pending")

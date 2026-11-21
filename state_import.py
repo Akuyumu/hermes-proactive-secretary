@@ -1,4 +1,4 @@
-"""Explicit, non-destructive legacy-state import for ``hermes secretary setup``.
+"""Explicit, non-destructive legacy-state import for ``hermes portal setup``.
 
 The legacy contract is generic and fixed:
 
