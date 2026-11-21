@@ -12,6 +12,8 @@ Hermes Proactive Secretary keeps Hermes useful between conversations. It works a
 - **Gives you a head start.** Prepare briefings, checklists and drafts for responsibilities you have accepted.
 - **Suggests the next useful move.** Within your existing authority, it can notice a change, prepare the follow-up and suggest what to do next.
 - **Carries corrections and follow-up into later runs.** Corrections stick, follow-ups stay open, and temporary scope stays temporary.
+- **Files its own small watches.** A scheduled run may add at most three watches per run, each with a reason and an expiry; expired watches close themselves instead of lingering.
+- **Stages anything consequential for your approval.** Emails, messages, calendar entries, purchases and files are written to a pending draft directory. They are never sent, booked, bought or changed until you approve them in a foreground session.
 - **Respects your pace.** Quiet hours, cooldowns, an optional daily cap and simple pause controls.
 - **Keeps you in control.** Every external send, publication, purchase, booking or calendar/task change still needs your approval through the normal Hermes gates.
 
@@ -19,10 +21,16 @@ For example, it can prepare a short checklist before a recurring meeting, flag a
 
 ## Current state
 
-- Version: **1.0.7**
+- Version: **1.1.0**
 - Plugin id: `hermes-proactive-secretary`
 - Command: `hermes secretary`
 - `main` carries stable releases; `dev` is the active development branch.
+
+## Watches and drafts
+
+A **watch** is a small, reversible text entry that tells the portal what to keep an eye on. Foreground watches come from your own turns; a scheduled run may also file its own watches, with agent provenance, a required reason and an expiry. Watches expire and are closed (not silently deleted), so `list`/`inspect` still show why one ended.
+
+A **draft** is a staged action the portal would otherwise have to send, book, buy or change. It lives under the owner-only `drafts/pending/` tree with its body and manifest. Approving in a foreground session moves it to `drafts/approved/` and returns a local receipt with `executed: false`; the plugin itself never performs the action. Discarded drafts move to `drafts/discarded/`, and expired ones to `drafts/expired/`.
 
 ## Install
 

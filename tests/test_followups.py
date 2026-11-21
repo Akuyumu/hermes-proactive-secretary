@@ -586,6 +586,76 @@ class FollowupTests(unittest.TestCase):
         self.assertEqual(final["status"], "canceled")
         self.assertEqual(final["close_reason"], "owner_canceled")
 
+    def test_expiry_defaults_limits_and_legacy_rows(self):
+        portal_watch = F.create(
+            self.store, "portal expiry watch",
+            check_hint="check the portal expiry",
+            filed_by="agent",
+            default_expiry_days=F.DEFAULT_PORTAL_EXPIRY_DAYS,
+            now=self.now,
+        )
+        self.assertEqual(
+            datetime.fromisoformat(portal_watch["expires_at"]),
+            self.now + timedelta(days=F.DEFAULT_PORTAL_EXPIRY_DAYS))
+
+        owner_watch = F.create(
+            self.store, "owner no expiry", check_hint="check the owner watch",
+            filed_by="owner", now=self.now)
+        self.assertEqual(owner_watch["expires_at"], "")
+
+        before = (self.root / F.STORE).read_bytes()
+        with self.assertRaises(F.FollowupError):
+            F.create(self.store, "too far", check_hint="check too far",
+                     expires_at=(self.now + timedelta(days=F.MAX_EXPIRY_DAYS + 1)
+                                 ).isoformat(), now=self.now)
+        with self.assertRaises(F.FollowupError):
+            F.create(self.store, "naive expiry", check_hint="check naive",
+                     expires_at=(self.now + timedelta(days=1)).replace(
+                         tzinfo=None).isoformat(), now=self.now)
+        self.assertEqual((self.root / F.STORE).read_bytes(), before)
+
+        legacy = {
+            "id": "fu_legacyexpiry000",
+            "text": "legacy no expiry",
+            "kind": "ongoing",
+            "status": "active",
+            "created_at": self.now.isoformat(),
+            "updated_at": self.now.isoformat(),
+            "source": "legacy",
+            "check_hint": "check the legacy expiry",
+            "last_checked_at": "",
+            "last_result": "",
+            "check_count": 0,
+            "notified_count": 0,
+            "seen": [],
+            "notice_reservations": [],
+            "notice_event_key": "",
+            "notice_status": "",
+            "closed_at": "",
+            "close_reason": "",
+        }
+        data = F.empty_store()
+        data["entries"][legacy["id"]] = legacy
+        self.store.save(F.STORE, data)
+        row = next(row for row in F.active_entries(self.store)
+                   if row["id"] == legacy["id"])
+        self.assertEqual(row.get("expires_at", ""), "")
+        self.assertEqual([item["id"] for item in F.portal_rows(self.store)],
+                         [legacy["id"]])
+
+        data = F.empty_store()
+        expired = dict(legacy)
+        expired["id"] = "fu_expired0000000"
+        expired["expires_at"] = (self.now - timedelta(hours=1)).isoformat()
+        data["entries"][expired["id"]] = expired
+        self.store.save(F.STORE, data)
+        self.assertEqual(F.portal_rows(self.store), [])
+        closed = F.get(self.store, expired["id"])
+        self.assertEqual(closed["status"], "closed")
+        self.assertEqual(closed["close_reason"], "expired")
+        self.assertTrue(closed["closed_at"])
+        self.assertEqual(F.summary(self.store)["closed"], 1)
+
     def test_corrupt_and_unsupported_state_fail_closed(self):
         path = self.root / "followups.json"
         path.write_text("{not valid json", encoding="utf-8")

@@ -2,7 +2,7 @@
 
 This document is the developer and host-owner view of Hermes Proactive Secretary. It complements [Installation](INSTALLATION.md) and the read-only [portal behaviour guide](NATIVE-PORTAL.md). It contains no owner-specific identifiers, accounts, production summaries or private filesystem roots.
 
-The package version is **1.0.7**. The plugin id is `hermes-proactive-secretary`; the public repository is `Akuyumu/hermes-proactive-secretary`. The retired legacy plugin id `hermes-proactive-portal` is not read or registered. On first plugin load, owner-only state is copied once from the legacy data root into the new root, without modifying the legacy tree; old owner-facing job names are retired through the ownership ledger.
+The package version is **1.1.0**. The plugin id is `hermes-proactive-secretary`; the public repository is `Akuyumu/hermes-proactive-secretary`. The retired legacy plugin id `hermes-proactive-portal` is not read or registered. On first plugin load, owner-only state is copied once from the legacy data root into the new root, without modifying the legacy tree; old owner-facing job names are retired through the ownership ledger.
 
 ## Repository layout
 
@@ -123,6 +123,21 @@ The durable store is `src/proactive_pilot/followups.py`, persisted as
 atomic writes, a lock, an explicit schema and a monotonic version. It holds at
 most 20 active follow-ups and bounded text, hints, evidence and seen
 fingerprints. It does not schedule checks, call models or touch the network.
+
+A scheduled portal run may also create its own watch with the same tool. That
+path forces `filed_by="agent"`, requires a nonblank `check_hint` and reason,
+caps creations at three per execution and mints an expiry (14-day default, 60-day
+maximum). Selecting due work closes an expired active watch with
+`status="closed"`, `close_reason="expired"` and `closed_at`; the row is retained
+and legacy rows without `expires_at` never expire.
+
+Staged owner-approval drafts live under the plugin data root in
+`src/proactive_pilot/drafts.py`: `drafts/pending/<dr_id>/manifest.json` plus a
+Markdown/text body, with terminal `approved/`, `discarded/` and `expired/`
+siblings. The directory tree is the only state (no index, lock file or second
+database). Portal runs may stage and list pending ids/titles; only a foreground
+session may show, approve or discard. Approval moves the directory and returns a
+local receipt with `executed=false`; it never performs the staged action.
 
 The delivery ledger lives in `src/proactive_pilot/deliveries.py` and is
 persisted as `deliveries.json` through the same shared state store: owner-only

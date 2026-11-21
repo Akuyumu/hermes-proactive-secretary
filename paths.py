@@ -85,6 +85,11 @@ def runners_source_dir() -> Path:
     return plugin_root() / "runners"
 
 
+def drafts_dir() -> Path:
+    """The staged draft tree (pending/approved/discarded/expired)."""
+    return data_root() / "drafts"
+
+
 def runner_ownership_path() -> Path:
     """Ledger of the runner files this plugin installed and still owns."""
     return data_root() / "runner_ownership.json"
@@ -109,6 +114,14 @@ def ensure_data_dirs() -> Path:
     root = data_root()
     state = state_dir()
     for path in (root, state):
+        path.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(path, 0o700)
+        except OSError:
+            pass
+    drafts = drafts_dir()
+    for path in (drafts, *(drafts / stage for stage in
+                          ("pending", "approved", "discarded", "expired"))):
         path.mkdir(parents=True, exist_ok=True)
         try:
             os.chmod(path, 0o700)

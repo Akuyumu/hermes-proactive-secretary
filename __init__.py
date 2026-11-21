@@ -53,12 +53,14 @@ def _skill_description(skill: Path) -> str:
 def _register_conversation(ctx) -> dict:
     from .secretary.secretary_context_refresh import register_context_tool
     from .secretary.secretary_conversation import register_conversation_surfaces, register_onboarding_tool
+    from .secretary.secretary_draft import register_tool as register_draft_tool
     from .secretary.secretary_followups import register_tool as register_followup_tool
     from .secretary.secretary_responsibilities import register_tool as register_responsibility_tool
     result = register_onboarding_tool(ctx)
     result.update(register_context_tool(ctx))
     result.update(register_responsibility_tool(ctx))
     result.update(register_followup_tool(ctx))
+    result.update(register_draft_tool(ctx))
     result.update(register_conversation_surfaces(ctx))
     return result
 

@@ -17,7 +17,7 @@ import tempfile
 import time
 import types
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
@@ -1258,13 +1258,102 @@ class FollowupIntegrationTests(unittest.TestCase):
                 self.assertFalse(refused["ok"], refused)
                 self.assertEqual(F.get(StateStore(self.state, self.clock), fid)["check_count"], 0)
 
-        # Foreground create/stop is never available from a portal execution.
+        # A portal execution may now create its own watch, with agent provenance.
         _, portal_handler = self._portal(execution_id="exec-fg-denied")
+        created_portal = self._call(portal_handler, {
+            "action": "create",
+            "text": "portal-created tide",
+            "check_hint": "check the portal-created tide",
+            "reason": "the portal noticed a tide change worth tracking"})
+        self.assertTrue(created_portal["ok"], created_portal)
+        self.assertEqual(created_portal["followup"]["filed_by"], "agent")
+        self.assertNotEqual(created_portal["followup"]["expires_at"], "")
+
+    def test_portal_create_requires_reason_forces_agent_and_defaults_expiry(self):
+        _, portal_handler = self._portal(execution_id="exec-portal-create")
+        created = self._call(portal_handler, {
+            "action": "create",
+            "text": "portal harbour tide",
+            "check_hint": "check the portal harbour tide gauge",
+            "reason": "a real change was observed in the authorised tide source",
+        })
+        self.assertTrue(created["ok"], created)
+        followup = created["followup"]
+        self.assertEqual(followup["filed_by"], "agent")
+        self.assertEqual(followup["status"], "active")
+        self.assertEqual(
+            followup["evidence_quote"],
+            "a real change was observed in the authorised tide source")
+        self.assertTrue(followup["expires_at"])
+        expiry = datetime.fromisoformat(followup["expires_at"])
+        self.assertGreater(expiry, self.clock.now())
+        self.assertLessEqual(expiry, self.clock.now() + timedelta(days=14))
+
         denied = self._call(portal_handler, {
-            "action": "create", "session_id": "s-1",
-            "evidence_quote": "Please keep an eye on the harbour tide.",
-            "text": "portal-created"})
+            "action": "create",
+            "text": "owner provenance claim",
+            "check_hint": "check the claimed owner provenance",
+            "reason": "an explicit reason",
+            "filed_by": "owner",
+        })
         self.assertFalse(denied["ok"], denied)
+        self.assertIn("owner provenance", denied["reason"].lower())
+
+        no_reason = self._call(portal_handler, {
+            "action": "create",
+            "text": "no reason watch",
+            "check_hint": "check the no reason watch",
+        })
+        self.assertFalse(no_reason["ok"], no_reason)
+        self.assertIn("reason", no_reason["reason"].lower())
+
+    def test_portal_create_caps_at_three_per_execution(self):
+        _, portal_handler = self._portal(execution_id="exec-portal-cap")
+        for index in range(3):
+            created = self._call(portal_handler, {
+                "action": "create",
+                "text": f"portal capped watch {index}",
+                "check_hint": f"check portal capped gauge {index}",
+                "reason": f"reason for capped watch {index}",
+            })
+            self.assertTrue(created["ok"], created)
+        refused = self._call(portal_handler, {
+            "action": "create",
+            "text": "portal capped watch fourth",
+            "check_hint": "check portal capped gauge fourth",
+            "reason": "reason for capped watch fourth",
+        })
+        self.assertFalse(refused["ok"], refused)
+        self.assertEqual(refused["status"], "capacity")
+        self.assertEqual(refused["capacity"], "execution")
+
+    def test_expired_agent_watch_is_closed_by_due_and_not_returned(self):
+        _, portal_handler = self._portal(execution_id="exec-portal-expiry")
+        past = (self.clock.now() - timedelta(hours=1)).isoformat()
+        created = self._call(portal_handler, {
+            "action": "create",
+            "text": "short-lived portal watch",
+            "check_hint": "check the short-lived portal gauge",
+            "reason": "the portal noticed a short-lived change",
+            "expires_at": past,
+        })
+        self.assertTrue(created["ok"], created)
+        fid = created["followup"]["id"]
+
+        due = self._call(portal_handler, {"action": "due"})
+        self.assertTrue(due["ok"], due)
+        self.assertEqual(due["count"], 0)
+        closed = F.get(StateStore(self.state, self.clock), fid)
+        self.assertEqual(closed["status"], "closed")
+        self.assertEqual(closed["close_reason"], "expired")
+        self.assertTrue(closed["closed_at"])
+
+        ctx, handler = self._foreground()
+        listed = self._call(handler, {"action": "list"})
+        self.assertNotIn(fid, {row["id"] for row in listed["followups"]})
+        inspected = self._call(handler, {"action": "inspect", "followup_id": fid})
+        self.assertEqual(inspected["followup"]["close_reason"], "expired")
+        self.assertEqual(inspected["followup"]["expires_at"], past)
 
     def test_static_portal_prompt_mentions_tool_without_raw_watch_text(self):
         marker = "SECRET-RAW-WATCH-MARKER"

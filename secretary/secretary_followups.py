@@ -65,7 +65,9 @@ _NO_ENQUEUE_STATUSES = frozenset({
 })
 
 FOREGROUND_ACTIONS = frozenset({"create", "list", "inspect", "stop", "confirm_receipt"})
-PORTAL_ACTIONS = frozenset({"due", "record_check", "queue_notice", "resolve_notice"})
+PORTAL_ACTIONS = frozenset({
+    "create", "due", "record_check", "queue_notice", "resolve_notice",
+})
 _ACTION_ALIASES = {
     "get": "inspect",
     "cancel": "stop",
@@ -499,6 +501,7 @@ def _foreground_dispatch(action: str, args: Mapping[str, Any], ctx: Any,
             source_ref=_clean(turn.get("ref"), F.MAX_SOURCE_REF_CHARS)
             if turn is not None else "",
             filed_by="owner" if turn is not None else "agent",
+            expires_at=args.get("expires_at"),
             now=now,
         )
         return {
@@ -549,8 +552,70 @@ def _portal_dispatch(action: str, args: Mapping[str, Any], ctx: Any,
     if refusal is not None:
         return refusal
 
+    if action == "create":
+        claimed_by = str(args.get("filed_by") or "").strip().lower()
+        if claimed_by == "owner":
+            return _refusal(
+                "invalid_args",
+                "a portal call may never claim owner provenance; filed_by is agent",
+            )
+        reason_raw = args.get("reason")
+        if not isinstance(reason_raw, str) or not reason_raw.strip():
+            reason_raw = args.get("evidence_quote")
+        if not isinstance(reason_raw, str) or not reason_raw.strip():
+            return _refusal(
+                "invalid_args",
+                "a portal-created watch requires a non-blank reason",
+            )
+        if len(reason_raw) > F.MAX_EVIDENCE_QUOTE_CHARS:
+            return _refusal(
+                "invalid_args",
+                f"reason is too long (max {F.MAX_EVIDENCE_QUOTE_CHARS} chars)",
+            )
+        reason = _clean(reason_raw, F.MAX_EVIDENCE_QUOTE_CHARS)
+        criterion = args.get("text")
+        if not _clean(criterion, MAX_QUOTE):
+            criterion = args.get("request")
+        try:
+            followup = F.create(
+                store,
+                criterion,
+                kind=str(args.get("kind") or "ongoing").strip().lower(),
+                source="portal",
+                check_hint=args.get("check_hint"),
+                evidence_quote=reason,
+                source_ref="",
+                filed_by="agent",
+                expires_at=args.get("expires_at"),
+                default_expiry_days=F.DEFAULT_PORTAL_EXPIRY_DAYS,
+                execution_id=identity.get("execution_id", ""),
+                max_per_execution=F.MAX_CREATES_PER_EXECUTION,
+                now=now,
+            )
+        except F.FollowupCapacityError as exc:
+            return {
+                "ok": False,
+                "status": "capacity",
+                "capacity": exc.capacity,
+                "code": ("execution_limit" if exc.capacity == "execution"
+                         else "active_limit"),
+                "reason": str(exc),
+            }
+        except F.FollowupError as exc:
+            return _refusal("invalid_args", str(exc))
+        return {
+            "ok": True,
+            "status": "created",
+            "followup": followup,
+            "note": ("Created by the portal with agent provenance. It never grants "
+                     "new authority and creates no schedule or cron job; it expires "
+                     "automatically unless given an earlier expiry."),
+        }
+
     if action == "due":
-        rows = F.portal_rows(store, max_entries=int(args.get("max_entries") or DEFAULT_MAX_ROWS))
+        rows = F.portal_rows(
+            store, max_entries=int(args.get("max_entries") or DEFAULT_MAX_ROWS),
+            now=now)
         return {"ok": True, "status": "ok", "followups": rows, "count": len(rows)}
 
     if action == "record_check":
@@ -765,6 +830,14 @@ def dispatch(args: Mapping[str, Any], *, ctx: Any = None, now: Any = None) -> di
         return _refusal("invalid_args", f"unknown follow-up action {action!r}")
     store = _store()
     stamp = now if now is not None else store.clock.now()
+    if action == "create":
+        # ``create`` is available in both lanes; the presence of a native cron
+        # execution is the explicit router. A portal call must still pass the
+        # verified owned execution identity inside ``_portal_dispatch``.
+        if _cron_execution(ctx) is not None:
+            return _portal_dispatch(action, args, ctx, store, stamp)
+        _require_foreground(ctx)
+        return _foreground_dispatch(action, args, ctx, store, stamp)
     if action in FOREGROUND_ACTIONS:
         _require_foreground(ctx)
         return _foreground_dispatch(action, args, ctx, store, stamp)
@@ -854,6 +927,26 @@ TOOL_SCHEMA: dict[str, Any] = {
             "maxItems": MAX_EVIDENCE,
         },
         "expiry": {"type": "string", "format": "date-time", "maxLength": MAX_EXPIRY_TEXT},
+        "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64,
+            "description": (
+                "Optional timezone-aware ISO-8601 expiry. Portal-created watches "
+                "default to 14 days and may not exceed 60 days."),
+        },
+        "reason": {
+            "type": "string",
+            "maxLength": 600,
+            "description": (
+                "Required for a portal-created watch: why this watch was filed. "
+                "It is stored as evidence_quote."),
+        },
+        "filed_by": {
+            "type": "string",
+            "enum": ["agent"],
+            "description": "Portal calls may only file as agent.",
+        },
     },
     "required": ["action"],
     "additionalProperties": False,

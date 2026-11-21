@@ -53,6 +53,10 @@ MAX_PENDING_DELIVERIES = MAX_AWAITING_FOLLOWUPS
 MAX_UNRESOLVED_DELIVERIES = MAX_AWAITING_FOLLOWUPS
 MAX_PENDING_FOLLOWUPS = MAX_AWAITING_FOLLOWUPS
 MAX_PENDING = MAX_AWAITING_FOLLOWUPS
+MAX_EXPIRES_AT_CHARS = 64
+DEFAULT_PORTAL_EXPIRY_DAYS = 14
+MAX_EXPIRY_DAYS = 60
+MAX_CREATES_PER_EXECUTION = 3
 MAX_CLOSED = 20
 MAX_DEDUPE = 60
 MAX_SEEN = 50
@@ -61,7 +65,7 @@ DEFAULT_WAKE_ENTRIES = 15
 MAX_WAKE_ENTRIES = 15
 
 KINDS = frozenset({"ongoing", "one_shot"})
-STATUSES = frozenset({"active", "awaiting_delivery", "done", "canceled"})
+STATUSES = frozenset({"active", "awaiting_delivery", "done", "canceled", "closed"})
 RESULTS = frozenset({"", "no_match", "match", "error", "blocked"})
 CHECK_RESULTS = frozenset({"no_match", "match", "error", "blocked"})
 NOTICE_STATUSES = frozenset({
@@ -86,9 +90,10 @@ class FollowupError(ValueError):
 class FollowupCapacityError(FollowupError):
     """A bounded capacity limit was reached before any state change.
 
-    ``capacity`` is ``"active"`` for a new check and ``"pending"`` for an
-    unresolved one-shot delivery. Callers may defer the work explicitly; the
-    exception never means a notice was sent or a watch was closed.
+    ``capacity`` is ``"active"`` for a new check, ``"pending"`` for an
+    unresolved one-shot delivery, or ``"execution"`` for the per-execution
+    portal creation cap. Callers may defer the work explicitly; the exception
+    never means a notice was sent or a watch was closed.
     """
 
     def __init__(self, message: str, *, capacity: str) -> None:
@@ -195,7 +200,9 @@ def _validate_entry(followup_id: Any, entry: Any) -> None:
                        ("evidence_quote", MAX_EVIDENCE_QUOTE_CHARS),
                        ("source_ref", MAX_SOURCE_REF_CHARS),
                        ("notice_event_key", MAX_EVENT_KEY_CHARS),
-                       ("owner_confirmed_ref", MAX_RECEIPT_REF_CHARS)):
+                       ("owner_confirmed_ref", MAX_RECEIPT_REF_CHARS),
+                       ("expires_at", MAX_EXPIRES_AT_CHARS),
+                       ("created_execution_id", MAX_EVENT_KEY_CHARS)):
         value = entry.get(key, "")
         if not isinstance(value, str) or len(value) > limit or _CONTROL_RE.search(value):
             raise _corrupt(f"entry {key} is not bounded/safe")
@@ -235,7 +242,7 @@ def _validate_entry(followup_id: Any, entry: Any) -> None:
                     or _CONTROL_RE.search(token)):
                 raise _corrupt("entry notice reservation attempt token is invalid")
     for key in ("created_at", "updated_at", "last_checked_at", "closed_at",
-                "owner_confirmed_at"):
+                "owner_confirmed_at", "expires_at"):
         _stored_iso(entry, key)
 
 
@@ -406,6 +413,58 @@ def _awaiting_count(data: dict[str, Any]) -> int:
                if entry.get("status") == "awaiting_delivery")
 
 
+def _expiry_text(value: Any, stamp: datetime, *,
+                 default_days: int | None = None,
+                 max_days: int = MAX_EXPIRY_DAYS) -> str:
+    """Validate an optional timezone-aware expiry, or mint the portal default."""
+    if value is None:
+        text = ""
+    elif not isinstance(value, str):
+        raise FollowupError("expires_at must be a string")
+    else:
+        text = value.strip()
+    if not text:
+        if default_days is None:
+            return ""
+        return (stamp + timedelta(days=default_days)).isoformat()
+    if len(text) > MAX_EXPIRES_AT_CHARS or _CONTROL_RE.search(text):
+        raise FollowupError("expires_at is too long or unsafe")
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        raise FollowupError("expires_at must be an ISO-8601 timestamp") from None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise FollowupError("expires_at must include a UTC offset")
+    if parsed > stamp + timedelta(days=max_days):
+        raise FollowupError(
+            f"expires_at is too far in the future (max {max_days} days)")
+    return text
+
+
+def _expire_active_locked(data: dict[str, Any], stamp: datetime) -> list[str]:
+    """Close active watches whose expiry has passed; never delete a record."""
+    closed: list[str] = []
+    for entry in data["entries"].values():
+        if entry.get("status") != "active":
+            continue
+        expires = entry.get("expires_at") or ""
+        if not isinstance(expires, str) or not expires:
+            continue
+        try:
+            parsed = datetime.fromisoformat(expires.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            continue
+        if parsed < stamp:
+            entry["status"] = "closed"
+            entry["close_reason"] = "expired"
+            entry["closed_at"] = stamp.isoformat()
+            entry["updated_at"] = stamp.isoformat()
+            closed.append(str(entry.get("id") or ""))
+    return closed
+
+
 def create(
     store: Any,
     text: Any = None,
@@ -416,6 +475,10 @@ def create(
     evidence_quote: Any = "",
     source_ref: Any = "",
     filed_by: Any = "owner",
+    expires_at: Any = "",
+    default_expiry_days: int | None = None,
+    execution_id: Any = "",
+    max_per_execution: int | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     kind_text = str(kind or "").strip().lower()
@@ -432,9 +495,18 @@ def create(
     clean_filed_by = str(filed_by or "").strip().lower()
     if clean_filed_by not in FILED_BY:
         raise FollowupError("filed_by must be owner or agent")
+    clean_execution = _bounded(
+        execution_id, "execution_id", MAX_EVENT_KEY_CHARS)
+    if (default_expiry_days is not None
+            and (not isinstance(default_expiry_days, int)
+                 or isinstance(default_expiry_days, bool)
+                 or default_expiry_days < 0)):
+        raise FollowupError("default_expiry_days must be a non-negative integer")
 
     target = _coerce_store(store)
     stamp = _now(target, now)
+    clean_expiry = _expiry_text(
+        expires_at, stamp, default_days=default_expiry_days)
     with _locked(target):
         data = _load(target)
         if _active_count(data) >= MAX_ACTIVE_FOLLOWUPS:
@@ -442,6 +514,17 @@ def create(
                 f"active follow-up limit reached ({MAX_ACTIVE_FOLLOWUPS})",
                 capacity="active",
             )
+        if clean_execution and max_per_execution is not None:
+            used = sum(
+                1 for entry in data["entries"].values()
+                if entry.get("created_execution_id") == clean_execution
+            )
+            if used >= max_per_execution:
+                raise FollowupCapacityError(
+                    (f"per-execution follow-up limit reached "
+                     f"({max_per_execution})"),
+                    capacity="execution",
+                )
         fid = _new_id(data)
         entry = {
             "id": fid,
@@ -455,6 +538,8 @@ def create(
             "filed_by": clean_filed_by,
             "evidence_quote": clean_quote,
             "source_ref": clean_ref,
+            "expires_at": clean_expiry,
+            "created_execution_id": clean_execution,
             "last_checked_at": "",
             "last_result": "",
             "check_count": 0,
@@ -796,7 +881,8 @@ def _safe_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "notice_status": entry.get("notice_status", ""),
         "created_at": entry.get("created_at", ""),
     }
-    for key in ("filed_by", "evidence_quote", "source_ref"):
+    for key in ("filed_by", "expires_at", "close_reason",
+                "evidence_quote", "source_ref"):
         value = entry.get(key, "")
         if value:
             row[key] = value
@@ -852,17 +938,24 @@ def _portal_row(entry: dict[str, Any]) -> dict[str, Any]:
         "check_count": int(entry.get("check_count", 0)),
         "notified_count": int(entry.get("notified_count", 0)),
         "created_at": entry.get("created_at", ""),
+        "expires_at": entry.get("expires_at", ""),
     }
     row.update(_clarification_fields(entry))
     return row
 
 
-def portal_rows(store: Any, *, max_entries: int = DEFAULT_WAKE_ENTRIES) -> list[dict[str, Any]]:
-    """Bounded due rows for the verified portal lane (active watches only)."""
+def portal_rows(store: Any, *, max_entries: int = DEFAULT_WAKE_ENTRIES,
+                now: datetime | None = None) -> list[dict[str, Any]]:
+    """Close expired active watches, then return bounded due rows."""
     limit = min(max(0, int(max_entries)), MAX_WAKE_ENTRIES)
-    data = _load(_coerce_store(store))
-    rows = [_portal_row(entry) for entry in data["entries"].values()
-            if entry.get("status") == "active"]
+    target = _coerce_store(store)
+    stamp = _now(target, now)
+    with _locked(target):
+        data = _load(target)
+        if _expire_active_locked(data, stamp):
+            _save(target, data, stamp)
+        rows = [_portal_row(entry) for entry in data["entries"].values()
+                if entry.get("status") == "active"]
     rows.sort(key=_due_key)
     return rows[:limit]
 
@@ -880,6 +973,7 @@ def summary(store: Any) -> dict[str, int]:
         "awaiting_delivery": counts["awaiting_delivery"],
         "done": counts["done"],
         "canceled": counts["canceled"],
+        "closed": counts["closed"],
     }
 
 
@@ -887,7 +981,7 @@ def receipts(store: Any, *, max_entries: int = MAX_CLOSED) -> list[dict[str, Any
     data = _load(_coerce_store(store))
     rows = []
     for entry in data["entries"].values():
-        if entry.get("status") not in {"done", "canceled"}:
+        if entry.get("status") not in {"done", "canceled", "closed"}:
             continue
         rows.append({
             "id": entry["id"],
@@ -907,6 +1001,8 @@ def receipts(store: Any, *, max_entries: int = MAX_CLOSED) -> list[dict[str, Any
 
 __all__ = [
     "SCHEMA", "STORE", "LOCK", "MAX_ACTIVE_FOLLOWUPS", "MAX_AWAITING_FOLLOWUPS",
+    "MAX_EXPIRES_AT_CHARS", "DEFAULT_PORTAL_EXPIRY_DAYS", "MAX_EXPIRY_DAYS",
+    "MAX_CREATES_PER_EXECUTION",
     "MAX_PENDING_DELIVERIES", "MAX_UNRESOLVED_DELIVERIES",
     "MAX_PENDING_FOLLOWUPS", "MAX_PENDING", "MAX_CLOSED", "MAX_DEDUPE",
     "MAX_SEEN", "MAX_TEXT_CHARS", "MAX_RECEIPT_REF_CHARS", "KINDS", "STATUSES",

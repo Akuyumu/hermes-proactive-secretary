@@ -7,6 +7,7 @@ it.
 """
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import os
 import sys
@@ -116,7 +117,7 @@ class SkillRoutingTests(unittest.TestCase):
         self.assertEqual(SKILL.relative_to(ROOT).as_posix(),
                          "skills/proactive-secretary/SKILL.md")
         self.assertEqual(self.frontmatter.get("name"), "proactive-secretary")
-        self.assertEqual(self.frontmatter.get("version"), "1.0.7")
+        self.assertEqual(self.frontmatter.get("version"), "1.1.0")
 
     def test_description_carries_the_routing_triggers(self):
         lowered = self.description.lower()
@@ -136,6 +137,34 @@ class SkillRoutingTests(unittest.TestCase):
         self.assertIn("hand-edit the store", self.body)
         for bypass in ("hand-edit the store", "substitute a cron job"):
             self.assertIn(bypass, self.body)
+
+    def test_portal_prompt_adds_three_tiers_without_dropping_constraints(self):
+        package = _load_package()
+        portal = importlib.import_module(
+            f"{package.__name__}.secretary.secretary_portal")
+        prompt = portal.PROMPT
+        for sentence in (
+            "You may act on your own initiative inside these three tiers.",
+            "at most three new watches per run, each with a reason and an expiry",
+            "let expired ones close themselves",
+            "as a draft with `secretary_draft` `stage`",
+            "drafts sit in the pending directory until the owner approves them",
+            "staging never executes anything",
+            "Propose everything else and leave it unexecuted",
+            "never copy credentials, account numbers or full brokerage positions",
+        ):
+            with self.subTest(sentence=sentence):
+                self.assertIn(sentence, prompt)
+        for old in (
+            "not only fixed collector candidates or accepted tasks",
+            "never create a parallel memory, preference, ",
+            "Leave every approval-required action unexecuted",
+            "Prefer meaningful silence when no changed evidence warrants",
+            "never spam or fill quotas",
+            "This prompt is not enforcement or a sandbox",
+        ):
+            with self.subTest(old=old):
+                self.assertIn(old, prompt)
 
     def test_registration_passes_the_file_description(self):
         package = _load_package()
