@@ -2,7 +2,7 @@
 
 This document is the developer and host-owner view of Hermes Proactive Secretary. It complements [Installation](INSTALLATION.md) and the read-only [portal behaviour guide](NATIVE-PORTAL.md). It contains no owner-specific identifiers, accounts, production summaries or private filesystem roots.
 
-The package version is **1.0.7**. The plugin id is `hermes-proactive-secretary`; the public repository is `Akuyumu/hermes-proactive-portal`. The retired legacy plugin id `hermes-proactive-portal` is not read or registered. On first plugin load, owner-only state is copied once from the legacy data root into the new root, without modifying the legacy tree; old owner-facing job names are retired through the ownership ledger.
+The package version is **1.0.7**. The plugin id is `hermes-proactive-secretary`; the public repository is `Akuyumu/hermes-proactive-secretary`. The retired legacy plugin id `hermes-proactive-portal` is not read or registered. On first plugin load, owner-only state is copied once from the legacy data root into the new root, without modifying the legacy tree; old owner-facing job names are retired through the ownership ledger.
 
 ## Repository layout
 

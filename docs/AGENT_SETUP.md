@@ -6,7 +6,7 @@ Give this file to your Hermes agent with:
 
 > Install and configure Hermes Proactive Secretary using this guide. Inspect my environment first, ask only for missing choices or authorisation, preserve existing configuration, and verify the result. Do not claim a connector works merely because it is installed.
 
-This guide uses no original owner's state, delivery address, credentials or interests. The repository is public at `Akuyumu/hermes-proactive-portal`; installation uses the public Git URL and needs no access grant beyond ordinary read access. The native plugin id is `hermes-proactive-secretary`. Existing state is copied once from the legacy data root on first load, and old owner-facing jobs are retired through the ownership ledger.
+This guide uses no original owner's state, delivery address, credentials or interests. The repository is public at `Akuyumu/hermes-proactive-secretary`; installation uses the public Git URL and needs no access grant beyond ordinary read access. The native plugin id is `hermes-proactive-secretary`. Existing state is copied once from the legacy data root on first load, and old owner-facing jobs are retired through the ownership ledger.
 
 ## 1. Inspect before changing anything
 
@@ -46,7 +46,7 @@ Do not ask for passwords, tokens or chat authentication secrets in conversation.
 For a new installation, with user approval:
 
 ```bash
-hermes plugins install Akuyumu/hermes-proactive-portal --no-enable
+hermes plugins install Akuyumu/hermes-proactive-secretary --no-enable
 hermes plugins enable hermes-proactive-secretary
 hermes secretary doctor
 ```
@@ -56,7 +56,7 @@ The public repository must be reachable through the installer's Git transport. I
 Desktop installation uses the same unified native flow. Open **Capabilities → Plugins → Install from Git**, or use:
 
 ```text
-hermes://plugin/install?repo=Akuyumu/hermes-proactive-portal&enable=1
+hermes://plugin/install?repo=Akuyumu/hermes-proactive-secretary&enable=1
 ```
 
 The [official plugin guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins#one-click-install-links-desktop) describes a confirmation dialog that detects agent and Desktop components and lets the user choose. Older clients may expose different controls. There is no separate native `--desktop` CLI flag. Client-side downloads require the public Git URL to be reachable on the client; backend access alone does not prove that. Never create marker files, bypass a scanner or weaken a security check. Conversational onboarding works without the Desktop component and must not be blocked by a missing button.

@@ -20,14 +20,14 @@ The current host has been validated with this package, but no fresh-machine cert
 
 ## 2. Confirm repository access
 
-The repository is public at `Akuyumu/hermes-proactive-portal`. Installation uses the public Git URL, and no Git access grant is required beyond ordinary read access. There is no new account or new credential flow in this guide. If Git cannot reach the public repository, check your network or Git configuration before retrying.
+The repository is public at `Akuyumu/hermes-proactive-secretary`. Installation uses the public Git URL, and no Git access grant is required beyond ordinary read access. There is no new account or new credential flow in this guide. If Git cannot reach the public repository, check your network or Git configuration before retrying.
 
 ## 3. Install and enable the plugin
 
 With your approval, run:
 
 ```bash
-hermes plugins install Akuyumu/hermes-proactive-portal --no-enable
+hermes plugins install Akuyumu/hermes-proactive-secretary --no-enable
 hermes plugins enable hermes-proactive-secretary
 hermes secretary doctor
 ```
@@ -84,7 +84,7 @@ Use `hermes secretary pause` and `hermes secretary resume` for the global pause,
 On Desktop, the native plugin flow is **Capabilities → Plugins → Install from Git**, or the consent link:
 
 ```text
-hermes://plugin/install?repo=Akuyumu/hermes-proactive-portal&enable=1
+hermes://plugin/install?repo=Akuyumu/hermes-proactive-secretary&enable=1
 ```
 
 The optional client component and refresh behaviour depend on your installed client; this guide does not claim parity across clients. The [official plugin guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins) describes the native flow. Conversational setup works without the Desktop component.

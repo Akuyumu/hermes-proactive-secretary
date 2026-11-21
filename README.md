@@ -27,7 +27,7 @@ For example, it can prepare a short checklist before a recurring meeting, flag a
 ## Install
 
 ```bash
-hermes plugins install Akuyumu/hermes-proactive-portal --no-enable
+hermes plugins install Akuyumu/hermes-proactive-secretary --no-enable
 hermes plugins enable hermes-proactive-secretary
 hermes secretary doctor
 ```
@@ -43,7 +43,7 @@ The setup flow asks for the few choices it cannot safely guess, such as timezone
 Desktop users can use the native consent link:
 
 ```text
-hermes://plugin/install?repo=Akuyumu/hermes-proactive-portal&enable=1
+hermes://plugin/install?repo=Akuyumu/hermes-proactive-secretary&enable=1
 ```
 
 The [Installation guide](docs/INSTALLATION.md) covers host compatibility, optional setup, upgrades and removal.

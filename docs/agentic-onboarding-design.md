@@ -129,7 +129,7 @@ Desktop plugin form may differ between client versions.
 The current native install URI is the unified plugin link:
 
 ```
-hermes://plugin/install?repo=Akuyumu/hermes-proactive-portal&enable=1
+hermes://plugin/install?repo=Akuyumu/hermes-proactive-secretary&enable=1
 ```
 
 An older Desktop-only URI was previously documented, but it is deprecated in

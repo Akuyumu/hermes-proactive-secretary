@@ -5,7 +5,7 @@ Proactive Secretary. For the product overview, features and quick install, see
 the [README](../README.md). For step-by-step human setup and upgrades, see
 [Installation](INSTALLATION.md). For per-version change history and
 qualification totals, see
-[GitHub Releases](https://github.com/Akuyumu/hermes-proactive-portal/releases).
+[GitHub Releases](https://github.com/Akuyumu/hermes-proactive-secretary/releases).
 
 ## First run: prepare, preview, consent
 
@@ -38,7 +38,7 @@ The custom page and backend appear only after the package is installed in the ac
 Install and enable the backend with the native command:
 
 ```bash
-hermes plugins install Akuyumu/hermes-proactive-portal --no-enable
+hermes plugins install Akuyumu/hermes-proactive-secretary --no-enable
 hermes plugins enable hermes-proactive-secretary
 hermes secretary doctor
 ```
@@ -46,7 +46,7 @@ hermes secretary doctor
 For the Desktop component, use **Capabilities → Plugins → Install from Git** or the documented unified link:
 
 ```text
-hermes://plugin/install?repo=Akuyumu/hermes-proactive-portal&enable=1
+hermes://plugin/install?repo=Akuyumu/hermes-proactive-secretary&enable=1
 ```
 
 Current Hermes documentation describes one confirmation dialog that detects both components and lets the user choose them. Older Desktop builds can differ; use the controls your installed version exposes rather than assume a component checkbox exists. A repository download requires the public Git URL to be reachable on the machine doing the download; backend access alone does not prove client access. Do not use internal marker files, bypass scanners or weaken checks. See the [official installation and Desktop-link guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins#one-click-install-links-desktop).
@@ -282,7 +282,7 @@ Keep three script locations distinct. Repository scripts such as `scripts/releas
 ## Qualification and limitations
 
 Qualification results are recorded per version in
-[GitHub Releases](https://github.com/Akuyumu/hermes-proactive-portal/releases).
+[GitHub Releases](https://github.com/Akuyumu/hermes-proactive-secretary/releases).
 They do not establish that a particular user's sources have useful live
 alternatives or that a physical device received a notification. Real connector
 access, model calls, messaging delivery and Desktop/device interaction require
