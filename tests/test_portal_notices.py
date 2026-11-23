@@ -352,10 +352,12 @@ class RegistrationAndSchemaTests(_Base):
         self.assertFalse(schema["additionalProperties"])
         self.assertEqual(set(schema["properties"]),
                          {"action", "event_key", "topic", "message",
-                          "evidence_refs", "expiry"})
+                          "evidence_refs", "expiry", "observation_id",
+                          "version_id"})
         self.assertEqual(schema["required"], [])
         self.assertEqual(schema["properties"]["action"]["enum"],
-                         ["submit", "budget"])
+                         ["submit", "budget", "observations",
+                          "observations_ack"])
         for authority in ("job", "job_id", "profile", "target", "urgency"):
             self.assertNotIn(authority, schema["properties"])
 

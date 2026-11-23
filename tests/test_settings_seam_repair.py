@@ -266,10 +266,12 @@ class ManifestSeamTests(unittest.TestCase):
         route_fields = {"primary_provider", "primary_model",
                         "fallback_provider", "fallback_model"}
         self.assertEqual(set(schema), set(uc.NATIVE_FLAT_FIELDS) | route_fields
-                         | {"portal_reasoning_effort"})
+                         | {"portal_reasoning_effort", "portal_cadence"})
         self.assertEqual(
             (schema["portal_reasoning_effort"]["type"],
              schema["portal_reasoning_effort"]["default"]), ("str", ""))
+        self.assertEqual(schema["portal_cadence"]["default"], "3h")
+        self.assertEqual(schema["portal_cadence"]["choices"], ["3h", "6h"])
         self.assertNotIn("properties", schema)
         for key, spec in schema.items():
             self.assertIsInstance(spec, dict)
@@ -512,8 +514,10 @@ print("RESULT:" + json.dumps({{"before": before, "written": written,
             route_fields = {"primary_provider", "primary_model",
                             "fallback_provider", "fallback_model"}
             self.assertEqual(set(result["before"]), set(uc.NATIVE_FLAT_FIELDS)
-                             | route_fields | {"portal_reasoning_effort"})
+                             | route_fields | {"portal_reasoning_effort",
+                                               "portal_cadence"})
             self.assertEqual(result["before"]["portal_reasoning_effort"], "")
+            self.assertEqual(result["before"]["portal_cadence"], "3h")
             self.assertEqual(result["before"]["daily_normal_cap"], "")
             self.assertEqual(result["before"]["destination"], "")
             self.assertEqual({key: result["before"][key] for key in route_fields},

@@ -2824,6 +2824,7 @@ def collect_public_feeds(
     resolver: Callable[[str], list[str]] | None = None,
     maintenance_context: list[str] | None = None,
     maintenance_privacy_verifier: Any = None,
+    pre_commit: Callable[[list[SourceResult]], None] | None = None,
 ) -> list[SourceResult]:
     """Collect bounded public feeds. Never raises; failures are labelled.
 
@@ -2974,6 +2975,8 @@ def collect_public_feeds(
             continue
         results.append(_cached_result(rec, now, name,
                                       reason=f"cadence ({int(rec.get('cadence_minutes') or 1)}m)"))
+    if pre_commit is not None:
+        pre_commit(list(results))
     # Registered-feed cache is retained at most public_findings_retention_days.
     retention_minutes = int(policy.get("public_findings_retention_days", 30)) * 24 * 60
     for rec in registry["sources"].values():

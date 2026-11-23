@@ -38,7 +38,7 @@ class PackagingAndSchemaTests(unittest.TestCase):
         module_version = _version_from(ROOT / "src" / "proactive_pilot" / "__init__.py",
                                        r'__version__\s*=\s*"([^"]+)"')
         self.assertEqual(manifest_version, module_version)
-        self.assertEqual(manifest_version, "1.1.1")
+        self.assertEqual(manifest_version, "1.1.2")
         report = exporter.scan(ROOT)
         self.assertTrue(report["ok"], report["problems"])
         for name in ("desktop/plugin.js", "dashboard/plugin_api.py", "dashboard/manifest.json"):
@@ -70,7 +70,7 @@ class PackagingAndSchemaTests(unittest.TestCase):
         imported = exporter._import_registration(extracted)
         self.assertTrue(imported["ok"], imported)
         dashboard = json.loads((extracted / "dashboard" / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(dashboard["version"], "1.1.1")
+        self.assertEqual(dashboard["version"], "1.1.2")
         self.assertEqual(dashboard["api"], "plugin_api.py")
 
     def test_doctor_requires_the_real_custom_ui_and_api(self):
@@ -118,11 +118,14 @@ class PackagingAndSchemaTests(unittest.TestCase):
         self.assertTrue(schema_keys)
         allowed = set(userconfig.NATIVE_FLAT_FIELDS) | {
             "primary_provider", "primary_model", "fallback_provider", "fallback_model",
-            "portal_reasoning_effort"}
+            "portal_reasoning_effort", "portal_cadence"}
         self.assertLessEqual(schema_keys, allowed)
         import yaml
         spec = yaml.safe_load(text)["config_schema"]["portal_reasoning_effort"]
         self.assertEqual((spec["type"], spec["default"]), ("str", ""))
+        cadence = yaml.safe_load(text)["config_schema"]["portal_cadence"]
+        self.assertEqual((cadence["type"], cadence["default"]), ("str", "3h"))
+        self.assertEqual(cadence["choices"], ["3h", "6h"])
 
 
 class _ApiBase(unittest.TestCase):

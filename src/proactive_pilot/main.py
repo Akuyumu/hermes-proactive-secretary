@@ -62,6 +62,14 @@ DEFAULT_STATE_DIR = CANDIDATE_ROOT / "var"
 DEFAULT_POLICY = CANDIDATE_ROOT / "policy" / "policy.json"
 DEFAULT_PREFS = CANDIDATE_ROOT / "policy" / "preferences.json"
 
+# Trusted, owner-local journal scope. This is a fixed runtime label, never
+# derived from collected source content, and the journal itself is per-store.
+_OBSERVATION_SCOPE = "owner-local"
+
+
+class _JournalFailure(RuntimeError):
+    """The planner observation journal could not commit for this collection."""
+
 
 def _emit(text: str) -> None:
     """Write the native-scheduler stdout line.
@@ -209,6 +217,7 @@ def collect_public_and_adaptive(
     native_renderer=None,
     transport_gate=None,
     maintenance_decider=None,
+    pre_commit=None,
 ) -> list:
     """Collect the public category: ordinary feeds + (when enabled) adaptive.
 
@@ -358,6 +367,7 @@ def collect_public_and_adaptive(
                                         attempt_ledger=ledger, reddit_ledger=reddit_ledger,
                                         renderer=native_renderer, firecrawl=firecrawl,
                                         transport_gate=transport_gate,
+                                        pre_commit=pre_commit,
                                         search_bridge=search_bridge,
                                         search_budget=search_budget,
                                         overall_budget=overall_budget,
@@ -400,6 +410,7 @@ def run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) ->
 def _run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) -> int:
     if not getattr(args, "command", None):
         args.command = "run"
+    monitor_deterministic = bool(getattr(args, "monitor_deterministic", False))
     policy = load_policy(args.policy)
     # Optional validated per-user configuration lives beside the policy file.
     # A present-but-invalid configuration fails CLOSED (no collection, no
@@ -558,10 +569,42 @@ def _run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) -
 
         policy["_source_dispatch"] = _dispatch_source
         policy["_source_observe"] = observed_obligations.append
+
+        observation_pre_commit = None
+        if monitor_deterministic:
+            def _observation_pre_commit(source_results):
+                """Journal fresh, healthy collector evidence before its cursor save.
+
+                Owner-local producer half of the collector-to-Portal handoff: it
+                reuses the existing normalized packet conversion (no parallel
+                normalizer), journals only this run's fresh, healthy evidence with
+                stable identity, and raises on any journal failure so the
+                collector does NOT persist its cursor/registry and the run exits
+                non-success rather than pretending the check succeeded.
+                """
+                try:
+                    from .planner_observations import PlannerObservationJournal
+                    fresh = [
+                        result for result in source_results
+                        if getattr(result, "healthy", False)
+                        and not getattr(result, "truncated", False)
+                        and not getattr(result, "cached", False)
+                    ]
+                    if not fresh:
+                        return
+                    normalized = build_packet(
+                        fresh, clock=clock, policy=policy, baseline=state)
+                    PlannerObservationJournal(store, _OBSERVATION_SCOPE).record(
+                        normalized.get("candidates", []))
+                except Exception as exc:  # noqa: BLE001 - fail closed, never a fake success
+                    raise _JournalFailure(
+                        f"planner observation journal failed: {exc}") from exc
+            observation_pre_commit = _observation_pre_commit
         # Plain native plugin CLI commands do not run agent-worker MCP discovery.
         # Bootstrap after validated configuration, pause and lock gates, before
         # collection. Fixtures and no-model offline runs never start a transport.
-        if (not getattr(args, "fixture", None) and not getattr(args, "no_model", False)
+        if (not monitor_deterministic
+                and not getattr(args, "fixture", None) and not getattr(args, "no_model", False)
                 and policy.get("firecrawl_enabled") and policy.get("firecrawl_consent")
                 and policy.get("firecrawl_mcp_server")):
             from .native_bootstrap import NativeBootstrapError, require_native
@@ -652,13 +695,34 @@ def _run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) -
             # task slots so a full calendar can never starve accepted memory.
             from .interestproposal import merge_interest_context
             proposer_context = merge_interest_context(context, assistant_texts)
-            if policy.get("feeds_enabled", True) or _adaptive_work_enabled(policy):
+            collection_policy = policy
+            if monitor_deterministic:
+                # The deterministic monitor must still perform the ordinary
+                # AUTHORIZED collection/cache, but not any adaptive, discovery,
+                # render or auxiliary lane. A shallow copy keeps the effective
+                # policy (and every legacy/default run) byte-for-byte unchanged.
+                collection_policy = dict(policy)
+                collection_policy.update({
+                    "adaptive_mode": "disabled",
+                    "adaptive_evidence_enabled": False,
+                    "adaptive_inferred_goals_enabled": False,
+                    "adaptive_broad_discovery_enabled": False,
+                    "adaptive_privacy_review_enabled": False,
+                    "public_source_maintenance_enabled": False,
+                    "native_render_fallback_enabled": False,
+                    "native_render_consent": False,
+                    "firecrawl_enabled": False,
+                    "firecrawl_consent": False,
+                    "firecrawl_mcp_server": "",
+                })
+            if (collection_policy.get("feeds_enabled", True)
+                    or _adaptive_work_enabled(collection_policy)):
                 # ONE public HTTP/source budget shared by ordinary feeds and the
                 # optional adaptive evidence path: no second additive cap. The
                 # adaptive plan/cache refresh is prepared before the first public
                 # HTTP request and clamped to the remaining overall collector
                 # budget (see collect_public_and_adaptive / prepare_adaptive_plan).
-                public_budget = Budget(float(policy.get("public_budget_seconds", 10)),
+                public_budget = Budget(float(collection_policy.get("public_budget_seconds", 10)),
                                        parent=overall, label="public")
                 # Agentic LTA transport gate: the credentialed train-alert API is
                 # never polled unconditionally. Candidate facts are built from the
@@ -668,39 +732,52 @@ def _run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) -
                 # private state directory. Any failure here leaves the gate
                 # unconfigured, so the credentialed source is skipped (fail closed).
                 transport_gate = None
-                try:
-                    from .native_runtime import build_model_lane
-                    from .publicfeeds import load_registry
-                    from .transport import (LTA_GATE_STATE_NAME, LTA_MODEL_PATH,
-                                            LTA_MODEL_PURPOSE, TransportGate,
-                                            build_transport_facts)
-                    facts = build_transport_facts(
-                        now=clock.now(), results=results, location_state=state,
-                        registry=load_registry(store))
-                    lane = build_model_lane(getattr(args, "native_ctx", None), policy,
-                                            path=LTA_MODEL_PATH, purpose=LTA_MODEL_PURPOSE)
-                    transport_gate = TransportGate(
-                        facts=facts, model_lane=lane,
-                        state_path=Path(args.state_dir) / LTA_GATE_STATE_NAME)
-                except Exception:  # noqa: BLE001 - gate stays None: source skipped
-                    transport_gate = None
+                if not monitor_deterministic:
+                    try:
+                        from .native_runtime import build_model_lane
+                        from .publicfeeds import load_registry
+                        from .transport import (LTA_GATE_STATE_NAME, LTA_MODEL_PATH,
+                                                LTA_MODEL_PURPOSE, TransportGate,
+                                                build_transport_facts)
+                        facts = build_transport_facts(
+                            now=clock.now(), results=results, location_state=state,
+                            registry=load_registry(store))
+                        lane = build_model_lane(getattr(args, "native_ctx", None), policy,
+                                                path=LTA_MODEL_PATH, purpose=LTA_MODEL_PURPOSE)
+                        transport_gate = TransportGate(
+                            facts=facts, model_lane=lane,
+                            state_path=Path(args.state_dir) / LTA_GATE_STATE_NAME)
+                    except Exception:  # noqa: BLE001 - gate stays None: source skipped
+                        transport_gate = None
                 try:
                     results.extend(collect_public_and_adaptive(
-                        policy, clock, store=store, context=proposer_context,
+                        collection_policy, clock, store=store, context=proposer_context,
                         public_budget=public_budget, overall_budget=overall,
-                        planner=getattr(args, "adaptive_planner", None),
-                        fetcher=getattr(args, "adaptive_fetcher", None),
+                        planner=(None if monitor_deterministic
+                                 else getattr(args, "adaptive_planner", None)),
+                        fetcher=(None if monitor_deterministic
+                                 else getattr(args, "adaptive_fetcher", None)),
                         public_fetcher=getattr(args, "public_fetcher", None),
-                        search_bridge=getattr(args, "search_bridge", None),
-                        search_budget=getattr(args, "search_budget", None),
+                        search_bridge=(None if monitor_deterministic
+                                       else getattr(args, "search_bridge", None)),
+                        search_budget=(None if monitor_deterministic
+                                       else getattr(args, "search_budget", None)),
                         resolver=getattr(args, "dns_resolver", None),
-                        interest_proposer=getattr(args, "interest_proposer", None),
-                        privacy_verifier=getattr(args, "privacy_verifier", None),
-                        native_ctx=getattr(args, "native_ctx", None),
-                        native_renderer=getattr(args, "native_renderer", None),
+                        interest_proposer=(None if monitor_deterministic
+                                           else getattr(args, "interest_proposer", None)),
+                        privacy_verifier=(None if monitor_deterministic
+                                          else getattr(args, "privacy_verifier", None)),
+                        native_ctx=(None if monitor_deterministic
+                                    else getattr(args, "native_ctx", None)),
+                        native_renderer=(None if monitor_deterministic
+                                         else getattr(args, "native_renderer", None)),
                         transport_gate=transport_gate,
-                        maintenance_decider=getattr(args, "maintenance_decider", None),
+                        maintenance_decider=(None if monitor_deterministic
+                                             else getattr(args, "maintenance_decider", None)),
+                        pre_commit=observation_pre_commit,
                     ))
+                except _JournalFailure:
+                    raise
                 except Exception as exc:  # noqa: BLE001
                     results.append(SourceResult("feed:error", "error",
                                                 error=safe_source_error(exc, kind="feed"),
@@ -710,8 +787,11 @@ def _run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) -
                                            parent=overall, label="obligation")
                 try:
                     from .obligations import collect_obligations
-                    results.extend(collect_obligations(policy, clock, store=store,
-                                                       budget=obligation_budget))
+                    results.extend(collect_obligations(
+                        policy, clock, store=store, budget=obligation_budget,
+                        pre_commit=observation_pre_commit))
+                except _JournalFailure:
+                    raise
                 except Exception as exc:  # noqa: BLE001
                     results.append(SourceResult("obligation:error", "error",
                                                 error=safe_source_error(exc, kind="obligation"),
@@ -806,6 +886,15 @@ def _run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) -
             })
             _emit("")
             return 0
+
+        if monitor_deterministic:
+            # Explicit off-by-default monitor seam. Collection, caching,
+            # source-health observations and the portal notice dispatch above
+            # have already run; only deterministic notices may now be emitted.
+            # No adaptive/LLM/evaluator/discovery lane runs and last_inference is
+            # deliberately left untouched for the next ordinary evaluation.
+            return _run_deterministic_monitor(
+                args, store, state, policy, prefs, clock)
 
         _ready_rc = _maybe_emit_ready_notice(args, store, state, policy, prefs, clock)
         if _ready_rc is not None:
@@ -1061,6 +1150,80 @@ def _run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) -
             return 0
         _emit(decision.get("message", ""))
         return 0
+
+
+
+def _emit_deterministic_health_notice(args: Any, store: Any, state: dict[str, Any],
+                                      policy: dict[str, Any], prefs: dict[str, Any],
+                                      clock: Any) -> int | None:
+    """Emit one deterministic critical source-health notice through the guards.
+
+    This mirrors the ordinary health-emission path but there is no evaluator
+    proposal: a deterministic monitor cannot have a model-supplied business
+    message that a health notice might need to yield to. The same quiet/pause/
+    snooze/cooldown/cap guard (``notice_allowed``), durable outbox reservation
+    and once-per-incident accounting apply.
+    """
+    allowed, _guard_reason = notice_allowed(state, policy, prefs, clock.now())
+    notice = health_alert(state, clock.now(), policy, commit=False)
+    if not notice or not allowed:
+        return None
+    incidents = alerting_sources(state, clock.now(), policy)
+    signature = "source-health:" + hashlib.sha256(json.dumps(
+        [(i["source"], i["incident_id"]) for i in incidents],
+        separators=(",", ":")).encode()).hexdigest()[:32]
+    for item in incidents:
+        record = state["source_health"]["sources"][item["source"]]
+        record["delivery_state"] = "emitting"
+        record["delivery_incident"] = item["incident_id"]
+    # An interrupted emission is UNCERTAIN, never a blind retry. A save failure
+    # here occurs before stdout and leaves the incident eligible.
+    try:
+        store.save("notify_state.json", state)
+    except OSError as exc:
+        _diag({"diagnostic": "health-outbox-save-failed", "error": type(exc).__name__})
+        return 1
+    try:
+        _emit(notice)
+    except (OSError, RuntimeError) as exc:
+        _diag({"diagnostic": "health-emission-uncertain", "error": type(exc).__name__})
+        return 1
+    commit_alert(state, clock.now(), policy, incidents=incidents)
+    state["last_delivery_at"] = clock.now().isoformat()
+    state.setdefault("delivered", []).append(
+        {"at": clock.now().isoformat(), "signature": signature, "urgent": False})
+    store.prune_notify_state(state, int(policy.get("state_retention_days", 30)))
+    try:
+        store.save("notify_state.json", state)
+    except OSError as exc:
+        _diag({"diagnostic": "health-commit-uncertain", "error": type(exc).__name__})
+        return 1
+    return 0
+
+
+def _run_deterministic_monitor(args: Any, store: Any, state: dict[str, Any],
+                               policy: dict[str, Any], prefs: dict[str, Any],
+                               clock: Any) -> int:
+    """Deterministic monitored pass: ready/draft, then source health.
+
+    Called only when ``--monitor-deterministic`` is set. Authorized collection,
+    caching and source-health observation have already completed, and the
+    portal notice dispatch has already had first refusal. This helper never
+    selects or runs an evaluator, never performs adaptive/discovery work, and
+    never writes ``last_inference``.
+    """
+    ready_rc = _maybe_emit_ready_notice(args, store, state, policy, prefs, clock)
+    if ready_rc is not None:
+        return ready_rc
+    health_rc = _emit_deterministic_health_notice(
+        args, store, state, policy, prefs, clock)
+    if health_rc is not None:
+        return health_rc
+    # Persist deterministic observations (health/coverage/cache) without
+    # advancing the inference baseline.
+    store.save("notify_state.json", state)
+    _emit("")
+    return 0
 
 
 
@@ -1609,6 +1772,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fixture", default=None)
     parser.add_argument("--requested-reminder", action="store_true")
     parser.add_argument("--no-model", action="store_true", help="deterministic silence evaluator (tests)")
+    parser.add_argument("--monitor-deterministic", action="store_true",
+                        help="monitor pass: authorized collection/cache plus deterministic "
+                             "health and ready/draft notices only; no adaptive/LLM/evaluator")
     parser.add_argument("--feedback", choices=[
         "add-explicit", "add-inferred", "snooze", "pause", "resume", "forget", "list",
         "show", "noop",
@@ -1697,6 +1863,12 @@ def main(argv: list[str] | None = None) -> int:
         # real (non-zero) failure on stderr only; stdout stays empty so the
         # scheduler never emits a diagnostic as a user-facing alert.
         print("proactive-secretary: run exceeded wall-clock bound; aborted", file=sys.stderr)
+        _emit("")
+        return 1
+    except _JournalFailure as exc:
+        # Collection already refused to commit the affected source cursor/registry;
+        # report the failed check visibly (stderr only) with a non-zero result.
+        print(f"proactive-secretary: {exc}", file=sys.stderr)
         _emit("")
         return 1
     except Exception as exc:  # noqa: BLE001 - fail silent to stdout, log to stderr

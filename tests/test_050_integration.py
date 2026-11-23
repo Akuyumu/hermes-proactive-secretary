@@ -5,7 +5,9 @@ path is exercised through the real plugin modules and real registration helper.
 """
 from __future__ import annotations
 
+import argparse
 import atexit
+import copy
 import importlib
 import importlib.util
 import json
@@ -47,6 +49,7 @@ PKG = _load_package()
 onboarding = importlib.import_module(f"{PKG.__name__}.secretary.secretary_onboarding")
 models = importlib.import_module(f"{PKG.__name__}.secretary.secretary_models")
 conversation = importlib.import_module(f"{PKG.__name__}.secretary.secretary_conversation")
+portal = importlib.import_module(f"{PKG.__name__}.secretary.secretary_portal")
 
 
 class MemoryState:
@@ -178,18 +181,65 @@ class AllowanceAndSettingsTests(unittest.TestCase):
         import yaml
         schema = yaml.safe_load((ROOT / "plugin.yaml").read_text(encoding="utf-8"))["config_schema"]
         self.assertEqual(set(schema) - set(uc.NATIVE_FLAT_FIELDS),
-                         set(models.ROUTE_SETTING_KEYS) | {"portal_reasoning_effort"})
+                         set(models.ROUTE_SETTING_KEYS)
+                         | {"portal_reasoning_effort", "portal_cadence"})
         for key in models.ROUTE_SETTING_KEYS:
             self.assertEqual(schema[key]["default"], "")
         self.assertEqual(
             (schema["portal_reasoning_effort"]["type"],
              schema["portal_reasoning_effort"]["default"]), ("str", ""))
+        self.assertEqual(
+            (schema["portal_cadence"]["type"], schema["portal_cadence"]["default"],
+             set(schema["portal_cadence"]["choices"])),
+            ("str", "3h", {"3h", "6h"}))
         _clean, errors = models.validate_route_settings({"primary_provider": "p"})
         self.assertTrue(any("together" in error for error in errors))
         _clean, errors = models.validate_route_settings(
             {"primary_provider": "p", "primary_model": "m",
              "fallback_provider": "f", "fallback_model": "f"})
         self.assertEqual(errors, [])
+
+
+class PortalCadenceSettingTests(unittest.TestCase):
+    """The manifest cadence control is read through the real portal resolver."""
+
+    @staticmethod
+    def _args():
+        return argparse.Namespace(
+            schedule=None, model=None, provider=None,
+            reasoning_effort=None, reasoning=None)
+
+    def test_default_and_alternative_choices_reach_the_native_schedule(self):
+        for choice, schedule in (("3h", "0 */3 * * *"), ("6h", "0 */6 * * *")):
+            ctx = Ctx(settings={"portal_cadence": choice, "daily_normal_cap": 4,
+                                "timezone": "Europe/London"})
+            before = copy.deepcopy(ctx.settings)
+            controls = portal._resolve_controls(self._args(), ctx)
+            self.assertEqual(controls["schedule"], schedule)
+            # Reading a setting writes nothing and preserves the other settings.
+            self.assertEqual(ctx.settings, before)
+            self.assertEqual(ctx.get_config("portal_cadence"), choice)
+
+    def test_accepted_value_written_then_read_back(self):
+        ctx = Ctx(settings={"daily_normal_cap": 4})
+        ctx.set_config("portal_cadence", "6h")
+        self.assertEqual(ctx.get_config("portal_cadence"), "6h")
+        controls = portal._resolve_controls(self._args(), ctx)
+        self.assertEqual(controls["schedule"], "0 */6 * * *")
+        self.assertEqual(ctx.settings["daily_normal_cap"], 4)
+
+    def test_invalid_or_untyped_choice_fails_closed_without_writes(self):
+        for bad in ("4h", "3", "  ", 3, True):
+            ctx = Ctx(settings={"portal_cadence": bad, "daily_normal_cap": 4})
+            before = copy.deepcopy(ctx.settings)
+            if isinstance(bad, str) and not bad.strip():
+                # Blank means "no default schedule", never a guessed cadence.
+                controls = portal._resolve_controls(self._args(), ctx)
+                self.assertEqual(controls["schedule"], "")
+            else:
+                with self.assertRaises(ValueError, msg=repr(bad)):
+                    portal._resolve_controls(self._args(), ctx)
+            self.assertEqual(ctx.settings, before)
 
 
 class ModelRouteGuardTests(unittest.TestCase):

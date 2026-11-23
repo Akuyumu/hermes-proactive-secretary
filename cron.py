@@ -164,6 +164,9 @@ class CronBackend(Protocol):
     def add_job(self, spec: CronJobSpec) -> dict[str, Any]: ...
     def remove_job(self, job_id: str) -> dict[str, Any]: ...
     def rename_job(self, job_id: str, name: str) -> dict[str, Any]: ...
+    def update_schedule(self, job_id: str, schedule: str) -> dict[str, Any]: ...
+    def update_route(self, job_id: str, provider: str, model: str,
+                     reasoning: str | None = None) -> dict[str, Any]: ...
     def pause_job(self, job_id: str) -> dict[str, Any]: ...
     def resume_job(self, job_id: str) -> dict[str, Any]: ...
 
@@ -266,6 +269,21 @@ def _normalize_context_from(value: Any) -> list[str]:
     if isinstance(value, (list, tuple)):
         return [str(part).strip() for part in value if str(part).strip()]
     return [str(value)]
+
+
+def _reasoning_field(job: dict[str, Any], *, default: str = "reasoning") -> str:
+    """Return the persisted key for reasoning effort on this row.
+
+    The installed host stores the scheduler's effort under ``reasoning_effort``;
+    older/in-memory rows use ``reasoning``. Prefer the exact key the row already
+    exposes so the write lands where the scheduler reads it rather than creating
+    a second, inert field.
+    """
+    if "reasoning_effort" in job:
+        return "reasoning_effort"
+    if "reasoning" in job:
+        return "reasoning"
+    return default
 
 
 def _same_agent_field(job: dict[str, Any], field_name: str, expected: Any,
@@ -681,6 +699,195 @@ class HermesCronBackend:
                 "native rename changed fields beyond name ("
                 + ", ".join(changed) + "); refusing to claim preservation"
             )
+        return dict(after)
+
+    def update_schedule(self, job_id: str, schedule: str) -> dict[str, Any]:
+        """Change only the schedule of one job through the native update API.
+
+        ``cron.jobs.update_job(id, {"schedule": expression})`` updates by the
+        immutable job id and lets the host recalculate ``next_run_at`` for the
+        new cadence. Every other stored field must read back unchanged. A
+        missing seam, an ambiguous response, or any extra field change is
+        refused; this method never removes or recreates a job.
+        """
+        try:
+            from cron import jobs as native_jobs
+        except Exception as exc:  # noqa: BLE001 - absent/shadowed SDK is a blocker
+            raise CronError(
+                "native cron update API is unavailable; no safe in-place schedule "
+                f"update: {exc}"
+            ) from exc
+        updater = getattr(native_jobs, "update_job", None)
+        if not callable(updater):
+            raise CronError(
+                "native cron.jobs.update_job is unavailable; no safe in-place "
+                "schedule update"
+            )
+        getter = getattr(native_jobs, "get_job", None)
+        if not callable(getter):
+            raise CronError(
+                "native cron.jobs.get_job is unavailable; cannot verify a "
+                "schedule update"
+            )
+        try:
+            before = getter(str(job_id))
+        except Exception as exc:  # noqa: BLE001 - cannot prove the row
+            raise CronError(
+                f"cannot read cron job {job_id!r} before schedule update: {exc}"
+            ) from exc
+        if not isinstance(before, dict) or _job_id(before) != str(job_id):
+            raise CronError(f"cron job {job_id!r} is not present")
+        target = str(schedule)
+        if str(before.get("schedule") or "") == target:
+            return dict(before)
+
+        error: Exception | None = None
+        response = None
+        try:
+            response = updater(str(job_id), {"schedule": target})
+        except Exception as exc:  # noqa: BLE001 - the write may still have landed
+            error = exc
+
+        try:
+            after = getter(str(job_id))
+        except Exception as exc:  # noqa: BLE001 - cannot prove the committed row
+            raise CronError(
+                f"schedule update of {job_id!r} could not be read back: {exc}; "
+                "refusing to retry"
+            ) from exc
+        if not isinstance(after, dict) or _job_id(after) != str(job_id):
+            suffix = f" after ambiguous response: {error}" if error else ""
+            raise CronError(
+                f"schedule update of {job_id!r} was not confirmed from the "
+                f"source of truth{suffix}"
+            )
+        if str(after.get("schedule") or "") != target:
+            suffix = f" after ambiguous response: {error}" if error else ""
+            raise CronError(
+                f"schedule update of {job_id!r} was not applied{suffix}; "
+                "refusing to retry or recreate"
+            )
+        allowed = {"schedule", "next_run_at", "next_run", "next"}
+        changed = sorted(
+            key for key in set(before) | set(after)
+            if before.get(key) != after.get(key) and key not in allowed
+        )
+        if changed:
+            raise CronError(
+                "native schedule update changed fields beyond schedule/next run ("
+                + ", ".join(changed) + "); refusing to claim preservation"
+            )
+        if isinstance(response, dict):
+            response_id = _job_id(response)
+            if response_id and response_id != str(job_id):
+                raise CronError(
+                    f"native schedule update returned a different job id "
+                    f"{response_id!r}; refusing to claim preservation"
+                )
+        return dict(after)
+
+    def update_route(self, job_id: str, provider: str, model: str,
+                     reasoning: str | None = None) -> dict[str, Any]:
+        """Change only the model route of one job through the native update API.
+
+        ``cron.jobs.update_job(id, {"provider": ..., "model": [,
+        "reasoning": ...]})`` updates by the immutable job id. When a non-empty
+        effort is supplied it is written under the single effort key the row
+        already persists (``reasoning_effort`` on the real host, ``reasoning`` on
+        older/in-memory rows), so the stored effort and the value actually used
+        agree without creating a second, inert field. Every other stored field must
+        read back unchanged, including
+        schedule, next regular run, paused/enabled state, self context, local
+        output, ids and history. A missing seam, an ambiguous reply that the
+        source of truth does not confirm, or any extra field change is refused;
+        this method never removes or recreates a job and never blindly retries.
+        An omitted ``reasoning`` leaves that field untouched.
+        """
+        provider = _validate_text("provider", provider, required=True)
+        model = _validate_text("model", model, required=True)
+        if reasoning is not None:
+            reasoning = _validate_text("reasoning", reasoning, required=False)
+        try:
+            from cron import jobs as native_jobs
+        except Exception as exc:  # noqa: BLE001 - absent/shadowed SDK is a blocker
+            raise CronError(
+                "native cron update API is unavailable; no safe in-place route "
+                f"update: {exc}"
+            ) from exc
+        updater = getattr(native_jobs, "update_job", None)
+        if not callable(updater):
+            raise CronError(
+                "native cron.jobs.update_job is unavailable; no safe in-place "
+                "route update"
+            )
+        getter = getattr(native_jobs, "get_job", None)
+        if not callable(getter):
+            raise CronError(
+                "native cron.jobs.get_job is unavailable; cannot verify a "
+                "route update"
+            )
+        try:
+            before = getter(str(job_id))
+        except Exception as exc:  # noqa: BLE001 - cannot prove the row
+            raise CronError(
+                f"cannot read cron job {job_id!r} before route update: {exc}"
+            ) from exc
+        if not isinstance(before, dict) or _job_id(before) != str(job_id):
+            raise CronError(f"cron job {job_id!r} is not present")
+
+        effort_field = _reasoning_field(before, default="reasoning")
+        updates: dict[str, Any] = {"provider": provider, "model": model}
+        if reasoning:
+            updates[effort_field] = reasoning
+        if all(str(before.get(key) or "") == str(value)
+               for key, value in updates.items()):
+            return dict(before)
+
+        error: Exception | None = None
+        response = None
+        try:
+            response = updater(str(job_id), updates)
+        except Exception as exc:  # noqa: BLE001 - the write may still have landed
+            error = exc
+
+        try:
+            after = getter(str(job_id))
+        except Exception as exc:  # noqa: BLE001 - cannot prove the committed row
+            raise CronError(
+                f"route update of {job_id!r} could not be read back: {exc}; "
+                "refusing to retry"
+            ) from exc
+        if not isinstance(after, dict) or _job_id(after) != str(job_id):
+            suffix = f" after ambiguous response: {error}" if error else ""
+            raise CronError(
+                f"route update of {job_id!r} was not confirmed from the "
+                f"source of truth{suffix}"
+            )
+        for key, value in updates.items():
+            if str(after.get(key) or "") != str(value):
+                suffix = f" after ambiguous response: {error}" if error else ""
+                raise CronError(
+                    f"route update of {job_id!r} was not applied{suffix}; "
+                    "refusing to retry or recreate"
+                )
+        allowed = set(updates)
+        changed = sorted(
+            key for key in set(before) | set(after)
+            if before.get(key) != after.get(key) and key not in allowed
+        )
+        if changed:
+            raise CronError(
+                "native route update changed fields beyond provider/model/"
+                "reasoning (" + ", ".join(changed)
+                + "); refusing to claim preservation"
+            )
+        if isinstance(response, dict):
+            response_id = _job_id(response)
+            if response_id and response_id != str(job_id):
+                raise CronError(
+                    f"native route update returned a different job id "
+                    f"{response_id!r}; refusing to claim preservation"
+                )
         return dict(after)
 
     def add_job(self, spec: CronJobSpec) -> dict[str, Any]:
@@ -1329,6 +1536,353 @@ def migrate_legacy_monitoring_job(
     )
 
 
+def migrate_portal_schedule(
+    backend: CronBackend,
+    schedule: str | None = None,
+    *,
+    expression: str | None = None,
+    ownership: dict[str, Any] | None = None,
+    ownership_path: str | os.PathLike[str] | None = None,
+    apply: bool = True,
+) -> CronJobResult:
+    """Move only the existing plugin-owned portal job to a new native schedule.
+
+    The job id is immutable and every field other than ``schedule`` (and the
+    host-recalculated next-run value) must read back unchanged: name, delivery,
+    self context, model/provider/reasoning/skill/workdir pins, enabled or paused
+    state, ownership metadata and history. A missing ownership record, a
+    foreign/built-in same-named row, an ownership mismatch, an unavailable
+    update seam or an unverified readback is refused. This path never removes
+    or recreates a job, and ``apply=False`` is a read-only plan.
+    """
+    if schedule is None:
+        schedule = expression
+    elif expression is not None and str(expression) != str(schedule):
+        raise CronError("conflicting schedule and expression values")
+    if schedule is None:
+        raise CronError("a schedule expression is required")
+    schedule = _validate_text("schedule", str(schedule), required=True)
+    if ownership is None:
+        ownership = load_job_ownership(ownership_path)
+    jobs = backend.list_jobs()
+    record = owned_job_record(ownership, PORTAL_JOB_NAME)
+    portal_rows = [j for j in jobs if str(j.get("name") or "") == PORTAL_JOB_NAME]
+    owned = _owned_row(jobs, record, PORTAL_JOB_NAME)
+
+    if record is None:
+        if portal_rows:
+            raise CronError(
+                f"refusing to adopt foreign portal job {PORTAL_JOB_NAME!r} "
+                f"(id={_job_id(portal_rows[0]) or '?'}): no exact ownership record"
+            )
+        return CronJobResult(
+            PORTAL_JOB_NAME, "missing",
+            "no owned portal job recorded and none present",
+        )
+
+    recorded_id = str(record.get("id") or "")
+    if not recorded_id:
+        raise CronError("the portal ownership record has no job id; refusing to update")
+
+    if owned is None:
+        if portal_rows:
+            raise CronError(
+                f"ownership mismatch for {PORTAL_JOB_NAME!r}: recorded id "
+                f"{recorded_id!r} does not match live id "
+                f"{_job_id(portal_rows[0])!r}; refusing to adopt"
+            )
+        same_id = next((j for j in jobs if _job_id(j) == recorded_id), None)
+        if same_id is not None:
+            raise CronError(
+                f"recorded portal job id {recorded_id!r} now has unexpected name "
+                f"{same_id.get('name')!r}; refusing to update"
+            )
+        return CronJobResult(
+            PORTAL_JOB_NAME, "missing",
+            f"recorded portal job id={recorded_id} is no longer present",
+        )
+
+    if len(portal_rows) != 1:
+        raise CronError(
+            "multiple portal-named rows are present; refusing to guess which "
+            "one to update"
+        )
+
+    job_id = _job_id(owned)
+    if not job_id:
+        raise CronError(f"cron job {PORTAL_JOB_NAME!r} has no id to update")
+    if job_id != recorded_id:
+        raise CronError(
+            f"ownership mismatch for {PORTAL_JOB_NAME!r}: live id {job_id!r} is "
+            f"not the recorded id {recorded_id!r}; refusing to update"
+        )
+    current = str(owned.get("schedule") or "")
+    if current == schedule:
+        return CronJobResult(
+            PORTAL_JOB_NAME, "already-current",
+            f"id={job_id}; schedule already {schedule!r}",
+        )
+    if not apply:
+        return CronJobResult(
+            PORTAL_JOB_NAME, "would-migrate",
+            f"id={job_id}; schedule {current!r} -> {schedule!r}",
+        )
+
+    update = getattr(backend, "update_schedule", None)
+    if not callable(update):
+        raise CronError(
+            "this host cron backend has no safe in-place schedule update (native "
+            "cron.jobs.update_job); refusing to recreate or remove the job"
+        )
+
+    before_ids = sorted(_job_id(j) for j in jobs if _job_id(j))
+    error: Exception | None = None
+    response = None
+    try:
+        response = update(job_id, schedule)
+    except CronError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - readback decides whether it landed
+        error = exc
+
+    after_jobs = backend.list_jobs()
+    after = next(
+        (j for j in after_jobs
+         if _job_id(j) == job_id
+         and str(j.get("name") or "") == PORTAL_JOB_NAME),
+        None,
+    )
+    if after is None:
+        suffix = f" after ambiguous response: {error}" if error else ""
+        raise CronError(
+            f"schedule update of {PORTAL_JOB_NAME!r} was not confirmed{suffix}; "
+            "nothing was recreated"
+        )
+    if sorted(_job_id(j) for j in after_jobs if _job_id(j)) != before_ids:
+        raise CronError("schedule update changed the set of job ids; refusing to continue")
+    if str(after.get("schedule") or "") != schedule:
+        suffix = f" after ambiguous response: {error}" if error else ""
+        raise CronError(
+            f"schedule update of {PORTAL_JOB_NAME!r} was not applied{suffix}; "
+            "refusing to retry or recreate"
+        )
+    allowed = {"schedule", "next_run", "next_run_at", "next"}
+    changed = sorted(
+        key for key in set(owned) | set(after)
+        if owned.get(key) != after.get(key) and key not in allowed
+    )
+    if changed:
+        raise CronError(
+            "native schedule update changed fields beyond schedule/next run ("
+            + ", ".join(changed) + "); refusing to claim preservation"
+        )
+    if isinstance(response, dict):
+        response_id = _job_id(response)
+        if response_id and response_id != job_id:
+            raise CronError(
+                f"native schedule update returned a different job id "
+                f"{response_id!r}; refusing to claim preservation"
+            )
+    detail = (
+        f"id={job_id}; schedule {current!r} -> {schedule!r} in place via the "
+        "native update API; no job was recreated or removed"
+    )
+    if error is not None:
+        detail += "; ambiguous response confirmed from the source of truth"
+    return CronJobResult(PORTAL_JOB_NAME, "migrated", detail)
+
+
+update_portal_schedule = migrate_portal_schedule
+
+
+def update_portal_route(
+    backend: CronBackend,
+    provider: str,
+    model: str,
+    reasoning: str | None = None,
+    *,
+    reasoning_effort: str | None = None,
+    ownership: dict[str, Any] | None = None,
+    ownership_path: str | os.PathLike[str] | None = None,
+    apply: bool = True,
+    **unsupported: Any,
+) -> CronJobResult:
+    """Route only the existing plugin-owned portal job to a new model pair.
+
+    The job id is immutable and every field other than ``provider``, ``model``
+    and an explicitly supplied ``reasoning`` must read back unchanged: schedule,
+    next regular run, paused/enabled state, self context, local delivery,
+    ownership metadata, ids and history. Any complete provider/model pair is
+    accepted; no vendor or model name is assumed. The native cron surface has no
+    fallback field, so neither is accepted. A missing ownership record, a
+    foreign same-named row, an ownership mismatch, an unavailable or ambiguous
+    native update is refused. This path never removes or recreates a job, and
+    ``apply=False`` is a read-only plan.
+    """
+    if unsupported:
+        raise CronError(
+            "unsupported native route update field(s): "
+            + ", ".join(sorted(unsupported))
+        )
+    if reasoning is not None and reasoning_effort is not None and (
+            str(reasoning) != str(reasoning_effort)):
+        raise CronError("conflicting reasoning and reasoning_effort values")
+    if reasoning is None:
+        reasoning = reasoning_effort
+    provider = _validate_text("provider", provider, required=True)
+    model = _validate_text("model", model, required=True)
+    if reasoning is not None:
+        reasoning = _validate_text("reasoning", reasoning, required=False)
+    if ownership is None:
+        ownership = load_job_ownership(ownership_path)
+    jobs = backend.list_jobs()
+    record = owned_job_record(ownership, PORTAL_JOB_NAME)
+    portal_rows = [j for j in jobs if str(j.get("name") or "") == PORTAL_JOB_NAME]
+    owned = _owned_row(jobs, record, PORTAL_JOB_NAME)
+
+    if record is None:
+        if portal_rows:
+            raise CronError(
+                f"refusing to adopt foreign portal job {PORTAL_JOB_NAME!r} "
+                f"(id={_job_id(portal_rows[0]) or '?'}): no exact ownership record"
+            )
+        return CronJobResult(
+            PORTAL_JOB_NAME, "missing",
+            "no owned portal job recorded and none present",
+        )
+
+    recorded_id = str(record.get("id") or "")
+    if not recorded_id:
+        raise CronError("the portal ownership record has no job id; refusing to update")
+
+    if owned is None:
+        if portal_rows:
+            raise CronError(
+                f"ownership mismatch for {PORTAL_JOB_NAME!r}: recorded id "
+                f"{recorded_id!r} does not match live id "
+                f"{_job_id(portal_rows[0])!r}; refusing to adopt"
+            )
+        same_id = next((j for j in jobs if _job_id(j) == recorded_id), None)
+        if same_id is not None:
+            raise CronError(
+                f"recorded portal job id {recorded_id!r} now has unexpected name "
+                f"{same_id.get('name')!r}; refusing to update"
+            )
+        return CronJobResult(
+            PORTAL_JOB_NAME, "missing",
+            f"recorded portal job id={recorded_id} is no longer present",
+        )
+
+    if len(portal_rows) != 1:
+        raise CronError(
+            "multiple portal-named rows are present; refusing to guess which "
+            "one to update"
+        )
+
+    job_id = _job_id(owned)
+    if not job_id:
+        raise CronError(f"cron job {PORTAL_JOB_NAME!r} has no id to update")
+    if job_id != recorded_id:
+        raise CronError(
+            f"ownership mismatch for {PORTAL_JOB_NAME!r}: live id {job_id!r} is "
+            f"not the recorded id {recorded_id!r}; refusing to update"
+        )
+
+    target: dict[str, str] = {"provider": provider, "model": model}
+    if reasoning is not None:
+        native_lane = isinstance(backend, HermesCronBackend)
+        target[_reasoning_field(
+            owned, default="reasoning_effort" if native_lane else "reasoning"
+        )] = reasoning
+    if all(str(owned.get(key) or "") == str(value)
+           for key, value in target.items()):
+        return CronJobResult(
+            PORTAL_JOB_NAME, "already-current",
+            f"id={job_id}; route already provider={provider!r} model={model!r}",
+        )
+    if not apply:
+        detail = f"id={job_id}; route -> provider={provider!r} model={model!r}"
+        if reasoning is not None:
+            detail += f" reasoning={reasoning!r}"
+        return CronJobResult(PORTAL_JOB_NAME, "would-update", detail)
+
+    update = getattr(backend, "update_route", None)
+    if not callable(update):
+        raise CronError(
+            "this host cron backend has no safe in-place route update (native "
+            "cron.jobs.update_job); refusing to recreate or remove the job"
+        )
+
+    before_ids = sorted(_job_id(j) for j in jobs if _job_id(j))
+    error: Exception | None = None
+    response = None
+    try:
+        response = update(job_id, provider, model, reasoning)
+    except CronError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - readback decides whether it landed
+        error = exc
+
+    after_jobs = backend.list_jobs()
+    after = next(
+        (j for j in after_jobs
+         if _job_id(j) == job_id
+         and str(j.get("name") or "") == PORTAL_JOB_NAME),
+        None,
+    )
+    if after is None:
+        suffix = f" after ambiguous response: {error}" if error else ""
+        raise CronError(
+            f"route update of {PORTAL_JOB_NAME!r} was not confirmed{suffix}; "
+            "nothing was recreated"
+        )
+    if sorted(_job_id(j) for j in after_jobs if _job_id(j)) != before_ids:
+        raise CronError("route update changed the set of job ids; refusing to continue")
+    for key, value in target.items():
+        if str(after.get(key) or "") != str(value):
+            suffix = f" after ambiguous response: {error}" if error else ""
+            raise CronError(
+                f"route update of {PORTAL_JOB_NAME!r} was not applied{suffix}; "
+                "refusing to retry or recreate"
+            )
+    allowed = set(target)
+    if reasoning is not None:
+        used_effort = next(
+            (key for key in ("reasoning", "reasoning_effort")
+             if str(after.get(key) or "") == str(reasoning)
+             and owned.get(key) != after.get(key)),
+            None,
+        )
+        if used_effort:
+            allowed.add(used_effort)
+    changed = sorted(
+        key for key in set(owned) | set(after)
+        if owned.get(key) != after.get(key) and key not in allowed
+    )
+    if changed:
+        raise CronError(
+            "native route update changed fields beyond provider/model/reasoning ("
+            + ", ".join(changed) + "); refusing to claim preservation"
+        )
+    if isinstance(response, dict):
+        response_id = _job_id(response)
+        if response_id and response_id != job_id:
+            raise CronError(
+                f"native route update returned a different job id "
+                f"{response_id!r}; refusing to claim preservation"
+            )
+    detail = (
+        f"id={job_id}; route provider={provider!r} model={model!r}"
+        + (f" reasoning={reasoning!r}" if reasoning is not None else "")
+        + " in place via the native update API; no job was recreated or removed"
+    )
+    if error is not None:
+        detail += "; ambiguous response confirmed from the source of truth"
+    return CronJobResult(PORTAL_JOB_NAME, "updated", detail)
+
+
+migrate_portal_route = update_portal_route
+
 
 class InMemoryCronBackend:
     """Deterministic backend for tests (and a safe ``--no-cron`` dry inspection)."""
@@ -1384,6 +1938,24 @@ class InMemoryCronBackend:
                 job["name"] = str(name)
                 return dict(job)
         raise CronError(f"cron job {job_id!r} is not present to rename")
+
+    def update_schedule(self, job_id: str, schedule: str) -> dict[str, Any]:
+        for job in self.jobs:
+            if _job_id(job) == str(job_id):
+                job["schedule"] = str(schedule)
+                return dict(job)
+        raise CronError(f"cron job {job_id!r} is not present to reschedule")
+
+    def update_route(self, job_id: str, provider: str, model: str,
+                     reasoning: str | None = None) -> dict[str, Any]:
+        for job in self.jobs:
+            if _job_id(job) == str(job_id):
+                job["provider"] = str(provider)
+                job["model"] = str(model)
+                if reasoning is not None:
+                    job["reasoning"] = str(reasoning)
+                return dict(job)
+        raise CronError(f"cron job {job_id!r} is not present to update route")
 
     def _set_job_state(self, job_id: str, state: str, flag: str) -> dict[str, Any]:
         for job in self.jobs:

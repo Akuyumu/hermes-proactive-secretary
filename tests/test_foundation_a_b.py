@@ -252,10 +252,12 @@ class NativeSettingsTests(unittest.TestCase):
         route_fields = {"primary_provider", "primary_model",
                         "fallback_provider", "fallback_model"}
         self.assertEqual(set(props), set(uc.NATIVE_FLAT_FIELDS) | route_fields
-                         | {"portal_reasoning_effort"})
+                         | {"portal_reasoning_effort", "portal_cadence"})
         self.assertEqual(
             (props["portal_reasoning_effort"]["type"],
              props["portal_reasoning_effort"]["default"]), ("str", ""))
+        self.assertEqual(props["portal_cadence"]["default"], "3h")
+        self.assertEqual(props["portal_cadence"]["choices"], ["3h", "6h"])
         self.assertEqual(props["collector_budget_seconds"]["minimum"], 5)
         self.assertEqual(props["max_candidates_per_kind"]["maximum"], 500)
 

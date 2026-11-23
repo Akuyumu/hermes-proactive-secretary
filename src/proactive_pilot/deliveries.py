@@ -44,6 +44,7 @@ MAX_JOB_ID_CHARS = 128
 MAX_JOB_NAME_CHARS = 160
 MAX_DESTINATION_CHARS = 160
 MAX_STATUS_CHARS = 64
+MAX_TOPIC_CHARS = 160
 
 
 class DeliveryLedgerError(ValueError):
@@ -81,6 +82,14 @@ def _text(value: Any, limit: int) -> str:
     if value is None:
         return ""
     return str(value)[:limit]
+
+
+def _topic(value: Any) -> str:
+    """Sanitize an optional pre-vetted topic: printable, collapsed, bounded."""
+    if value is None:
+        return ""
+    text = "".join(ch if ch.isprintable() else " " for ch in str(value))
+    return " ".join(text.split())[:MAX_TOPIC_CHARS]
 
 
 def _evidence(values: Any) -> list[str]:
@@ -127,6 +136,7 @@ def _validate_row(row: Any) -> None:
         ("job_name", MAX_JOB_NAME_CHARS),
         ("destination", MAX_DESTINATION_CHARS),
         ("status", MAX_STATUS_CHARS),
+        ("topic", MAX_TOPIC_CHARS),
     )
     for key, limit in checks:
         value = row.get(key, "")
@@ -209,6 +219,7 @@ def record_emission(
     job_id: Any = "",
     job_name: Any = "",
     destination: Any = "",
+    topic: Any = "",
     now: datetime | None = None,
     status: Any = "emitted-unconfirmed",
 ) -> None:
@@ -234,6 +245,7 @@ def record_emission(
             "job_name": _text(job_name, MAX_JOB_NAME_CHARS),
             "destination": _text(destination, MAX_DESTINATION_CHARS),
             "status": _text(status, MAX_STATUS_CHARS) or "emitted-unconfirmed",
+            "topic": _topic(topic),
         }
         root = _root(store)
         _refuse_symlinks(root)

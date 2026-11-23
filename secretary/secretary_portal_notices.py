@@ -24,14 +24,34 @@ except ImportError:  # direct/standalone import
     from cron import PORTAL_JOB_NAME, load_job_ownership  # type: ignore
 
 PROPOSAL_KEYS = ("event_key", "topic", "message", "evidence_refs", "expiry")
-ACTIONS = ("submit", "budget")
+ACTIONS = ("submit", "budget", "observations", "observations_ack")
 MAX_MESSAGE = 350
 MAX_EVENT_KEY = 160
 MAX_TOPIC = 80
 MAX_EVIDENCE = 8
 MAX_EVIDENCE_LEN = 240
 MAX_EXPIRY_TEXT = 64
+MAX_OBSERVATION_ID = 64
+OBSERVATION_BATCH_LIMIT = 5
+# The producer fixes the journal scope in ``proactive_pilot.main`` via the
+# private ``_OBSERVATION_SCOPE``.  Importing that runner module here would pull
+# the whole run loop into the tool surface, so this consumer keeps one local
+# constant with the producer's exact value instead of a second hand-typed
+# literal at each call site.
+OBSERVATION_SCOPE = "owner-local"
+_OBSERVATION_FIELDS = (
+    "kind",
+    "source",
+    "ref",
+    "phase",
+    "observed_at",
+    "observation_id",
+    "version_id",
+)
+_OBSERVATION_ACK_KEYS = ("observation_id", "version_id")
 _PROFILE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_NON_PRIVATE_DESTINATIONS = frozenset({"local", "origin"})
+_EMISSION_STATUSES = frozenset({"emitted-unconfirmed"})
 
 TOOL_DESCRIPTION = (
     "Queue one bounded user-facing notice through the existing "
@@ -47,7 +67,9 @@ TOOL_SCHEMA: dict[str, Any] = {
             "enum": list(ACTIONS),
             "description": (
                 "submit queues one bounded proposal; budget returns the "
-                "current read-only delivery budget."
+                "current read-only delivery budget; observations lists a "
+                "bounded batch of pending owner-local journal entries; "
+                "observations_ack acknowledges one exact observation revision."
             ),
         },
         "event_key": {
@@ -78,12 +100,34 @@ TOOL_SCHEMA: dict[str, Any] = {
             "maxLength": MAX_EXPIRY_TEXT,
             "description": "Timezone-aware ISO 8601 expiry within 24 hours.",
         },
+        "observation_id": {
+            "type": "string",
+            "maxLength": MAX_OBSERVATION_ID,
+            "description": (
+                "Exact observation id returned by the observations action."
+            ),
+        },
+        "version_id": {
+            "type": "string",
+            "maxLength": MAX_OBSERVATION_ID,
+            "description": (
+                "Exact observation revision returned by the observations action."
+            ),
+        },
     },
     "required": [],
     "anyOf": [
         {
             "required": ["action"],
             "properties": {"action": {"const": "budget"}},
+        },
+        {
+            "required": ["action"],
+            "properties": {"action": {"const": "observations"}},
+        },
+        {
+            "required": ["action", "observation_id", "version_id"],
+            "properties": {"action": {"const": "observations_ack"}},
         },
         {"required": list(PROPOSAL_KEYS)},
     ],
@@ -249,10 +293,12 @@ def _budget_receipt(ctx: Any) -> dict[str, Any]:
 
     delivered = gates.delivered_today(state, policy, now)
     remaining = max(0, cap - delivered) if cap is not None else None
+    today = gates.local_day(now, policy)
+
     return {
         "ok": True,
         "status": "ok",
-        "day": gates.local_day(now, policy),
+        "day": today,
         "cap": cap,
         "delivered_today": delivered,
         "remaining": remaining,
@@ -261,6 +307,107 @@ def _budget_receipt(ctx: Any) -> dict[str, Any]:
         "cooldown_active": gates.cooldown_active(
             state, now, int(policy.get("cooldown_minutes", 30))
         ),
+        "recent_emissions_available": False,
+        "recent_emissions_note": (
+            "emission history is unavailable: this path has no trusted proof "
+            "that the configured destination is the owner-private DM, so the "
+            "delivery ledger is not read and no history is exposed."
+        ),
+    }
+
+
+def _observations_receipt() -> dict[str, Any]:
+    """Read a bounded batch of pending journal entries; never mutates state."""
+    from proactive_pilot.clock import Clock
+    from proactive_pilot.planner_observations import (
+        JournalLockError,
+        JournalOverflowError,
+        PlannerObservationJournal,
+    )
+    from proactive_pilot.state import CorruptStateError, StateStore
+
+    try:
+        store = StateStore(paths.state_dir(), Clock())
+    except Exception as exc:  # noqa: BLE001 - bounded denial, no writes
+        return _refusal(
+            "store_unavailable", f"cannot open state store: {type(exc).__name__}"
+        )
+
+    try:
+        journal = PlannerObservationJournal(store, OBSERVATION_SCOPE)
+        pending = journal.pending()
+    except JournalLockError as exc:
+        return _refusal("journal_locked", str(exc))
+    except JournalOverflowError as exc:
+        return _refusal("journal_overflow", str(exc))
+    except CorruptStateError as exc:
+        return _refusal("corrupt_state", str(exc))
+    except Exception as exc:  # noqa: BLE001 - read failure, never a mutation
+        return _refusal(
+            "store_unavailable",
+            f"cannot read observation journal: {type(exc).__name__}",
+        )
+
+    observations = []
+    for index, record in enumerate(pending[:OBSERVATION_BATCH_LIMIT]):
+        item = {"index": index}
+        for field in _OBSERVATION_FIELDS:
+            item[field] = record.get(field)
+        observations.append(item)
+    return {
+        "ok": True,
+        "status": "ok",
+        "observations": observations,
+    }
+
+
+def _observation_ack_receipt(
+    observation_id: str, version_id: str
+) -> dict[str, Any]:
+    """Acknowledge one exact observation revision; never by index alone."""
+    from proactive_pilot.clock import Clock
+    from proactive_pilot.planner_observations import (
+        JournalLockError,
+        JournalOverflowError,
+        ObservationNotFoundError,
+        PlannerObservationJournal,
+        StaleObservationError,
+    )
+    from proactive_pilot.state import CorruptStateError, StateStore
+
+    try:
+        store = StateStore(paths.state_dir(), Clock())
+    except Exception as exc:  # noqa: BLE001 - bounded denial, no writes
+        return _refusal(
+            "store_unavailable", f"cannot open state store: {type(exc).__name__}"
+        )
+
+    try:
+        journal = PlannerObservationJournal(store, OBSERVATION_SCOPE)
+        record = journal.acknowledge(observation_id, version_id)
+    except JournalLockError as exc:
+        return _refusal("journal_locked", str(exc))
+    except JournalOverflowError as exc:
+        return _refusal("journal_overflow", str(exc))
+    except ObservationNotFoundError as exc:
+        return _refusal("observation_not_found", str(exc))
+    except StaleObservationError as exc:
+        return _refusal("stale_observation", str(exc))
+    except CorruptStateError as exc:
+        return _refusal("corrupt_state", str(exc))
+    except Exception as exc:  # noqa: BLE001 - bounded refusal, no sends
+        return _refusal(
+            "ack_failed",
+            f"observation was not acknowledged: {type(exc).__name__}",
+        )
+
+    return {
+        "ok": True,
+        "status": "ok",
+        "observation_id": record.get("observation_id"),
+        "version_id": record.get("version_id"),
+        "acknowledged": record.get("acknowledged"),
+        "acknowledged_at": record.get("acknowledged_at"),
     }
 
 
@@ -279,6 +426,37 @@ def _dispatch(args: Mapping[str, Any], ctx: Any) -> dict[str, Any]:
         if refusal is not None:
             return refusal
         return _budget_receipt(ctx)
+
+    if action == "observations":
+        extra = set(args.keys()) - {"action"}
+        if extra:
+            return _refusal("invalid_args", "observations takes no extra fields")
+        _identity, refusal = _host_identity(ctx)
+        if refusal is not None:
+            return refusal
+        return _observations_receipt()
+
+    if action == "observations_ack":
+        extra = set(args.keys()) - {"action"} - set(_OBSERVATION_ACK_KEYS)
+        if extra:
+            return _refusal(
+                "invalid_args", "unexpected observation acknowledgement fields"
+            )
+        observation_id = args.get("observation_id")
+        version_id = args.get("version_id")
+        if not _bounded_text(observation_id, MAX_OBSERVATION_ID):
+            return _refusal(
+                "invalid_args",
+                "observation_id must be a bounded non-empty string",
+            )
+        if not _bounded_text(version_id, MAX_OBSERVATION_ID):
+            return _refusal(
+                "invalid_args", "version_id must be a bounded non-empty string"
+            )
+        _identity, refusal = _host_identity(ctx)
+        if refusal is not None:
+            return refusal
+        return _observation_ack_receipt(observation_id, version_id)
 
     extra = set(args.keys()) - set(PROPOSAL_KEYS) - {"action"}
     if extra:

@@ -1,5 +1,5 @@
 name: hermes-proactive-secretary
-version: 1.1.1
+version: 1.1.2
 kind: standalone
 platforms:
   - linux
@@ -281,6 +281,17 @@ config_schema:
       levels: none, minimal, low, medium, high, xhigh, max, ultra. This does not
       change the monitoring auxiliary route.
     default: ""
+  portal_cadence:
+    type: str
+    title: How often the portal runs
+    description: >-
+      The default cadence for the native portal job when preview or enable is
+      run without an explicit schedule. Existing explicit schedules are
+      honoured. This setting alone never creates, updates or arms a job.
+    choices:
+      - 3h
+      - 6h
+    default: 3h
   fallback_provider:
     type: str
     title: Backup model provider (optional)

@@ -21,7 +21,7 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 
 from .collectors import (
     ALLOWED_MAIL_ACCOUNTS,
@@ -529,6 +529,7 @@ def collect_obligations(
     runner: Any | None = None,
     now: datetime | None = None,
     budget: Any | None = None,
+    pre_commit: Callable[[list[SourceResult]], None] | None = None,
 ) -> list[SourceResult]:
     """Collect and fold obligation signals across both authorised accounts.
 
@@ -807,6 +808,8 @@ def collect_obligations(
             scanned=meta_scanned, ids_listed=meta_listed,
         ))
 
+    if pre_commit is not None:
+        pre_commit(list(results))
     prune(data["records"], now, retention_days=int(policy.get("obligation_retention_days", 30)))
     data["last_scan_at"] = now.isoformat()
     data["updated_at"] = now.isoformat()

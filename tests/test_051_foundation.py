@@ -469,11 +469,16 @@ class HostFormSchemaTests(unittest.TestCase):
         by_key = {field["key"]: field for field in fields}
         self.assertEqual(set(by_key), set(uc.NATIVE_FLAT_FIELDS) | {
             "primary_provider", "primary_model", "fallback_provider", "fallback_model",
-            "portal_reasoning_effort"})
+            "portal_reasoning_effort", "portal_cadence"})
         import yaml
         spec = yaml.safe_load((ROOT / "plugin.yaml").read_text(
             encoding="utf-8"))["config_schema"]["portal_reasoning_effort"]
         self.assertEqual((spec["type"], spec["default"]), ("str", ""))
+        cadence = yaml.safe_load((ROOT / "plugin.yaml").read_text(
+            encoding="utf-8"))["config_schema"]["portal_cadence"]
+        self.assertEqual((cadence["type"], cadence["default"]), ("str", "3h"))
+        self.assertEqual(cadence["choices"], ["3h", "6h"])
+        self.assertEqual(by_key["portal_cadence"]["default"], "3h")
         for field in fields:
             self.assertTrue(field["label"], field["key"])
             self.assertTrue(field["description"], field["key"])

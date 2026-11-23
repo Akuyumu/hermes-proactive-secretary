@@ -39,6 +39,8 @@ notices = importlib.import_module(
 )
 
 ALLOWED = {"event_key", "topic", "message", "evidence_refs", "expiry"}
+# Observation-action surface, not a proposal field.
+OBSERVATION_FIELDS = {"observation_id", "version_id"}
 FORBIDDEN = (
     "job",
     "job_id",
@@ -105,9 +107,9 @@ class PortalToolSchemaTests(unittest.TestCase):
         properties = parameters["properties"]
 
         self.assertEqual(parameters["type"], "object")
-        self.assertEqual(set(properties), ALLOWED | {"action"})
+        self.assertEqual(set(properties), ALLOWED | {"action"} | OBSERVATION_FIELDS)
         self.assertEqual(parameters["required"], [])
-        self.assertEqual(properties["action"]["enum"], ["submit", "budget"])
+        self.assertEqual(properties["action"]["enum"], ["submit", "budget", "observations", "observations_ack"])
         self.assertIs(parameters["additionalProperties"], False)
 
         self.assertEqual(properties["event_key"]["type"], "string")
@@ -161,7 +163,9 @@ class PortalToolSchemaTests(unittest.TestCase):
             {"type", "properties", "required", "anyOf", "additionalProperties"},
         )
         self.assertEqual(schema["type"], "object")
-        self.assertEqual(set(schema["properties"]), ALLOWED | {"action"})
+        self.assertEqual(
+            set(schema["properties"]), ALLOWED | {"action"} | OBSERVATION_FIELDS
+        )
         self.assertEqual(schema["required"], [])
         self.assertIs(schema["additionalProperties"], False)
         self.assertEqual(set(notices.PROPOSAL_KEYS), ALLOWED)

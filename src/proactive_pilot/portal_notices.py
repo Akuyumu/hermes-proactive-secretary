@@ -895,6 +895,7 @@ def dispatch_notice(
                     store,
                     message=item["message"],
                     kind="portal-notice",
+                    topic=item.get("topic") or "",
                     event_key=event_key,
                     notice_id=str(item["id"]),
                     evidence_refs=item.get("evidence_refs") or (),
