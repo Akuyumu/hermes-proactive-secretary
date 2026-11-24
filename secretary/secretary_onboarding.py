@@ -86,6 +86,7 @@ def default_state() -> dict[str, Any]:
             "autonomy_mode": "",
             "preparation_scopes": [],
             "preparation_source_consent": False,
+            "portal_enabled": False,
         },
         "grants": {key: False for key in GRANT_KEYS},
         "source_scope": {
@@ -200,7 +201,7 @@ def validate_settings(patch: Any) -> dict[str, Any]:
         raise OnboardingError(f"credential-shaped field {found!r} is not accepted")
     allowed = {"timezone", "persona", "daily_allowance", "quiet_start_hour",
                "quiet_end_hour", "autonomy_mode", "preparation_scopes",
-               "preparation_source_consent", *ROUTE_SETTING_KEYS}
+               "preparation_source_consent", "portal_enabled", *ROUTE_SETTING_KEYS}
     unknown = set(patch) - allowed
     if unknown:
         raise OnboardingError(f"unknown setting keys: {', '.join(sorted(map(str, unknown)))}")
@@ -234,6 +235,10 @@ def validate_settings(patch: Any) -> dict[str, Any]:
         if not isinstance(patch["preparation_source_consent"], bool):
             raise OnboardingError("preparation_source_consent must be true or false")
         out["preparation_source_consent"] = patch["preparation_source_consent"]
+    if "portal_enabled" in patch:
+        if not isinstance(patch["portal_enabled"], bool):
+            raise OnboardingError("portal_enabled must be true or false")
+        out["portal_enabled"] = patch["portal_enabled"]
     route_patch = {key: patch[key] for key in ROUTE_SETTING_KEYS if key in patch}
     if route_patch:
         clean, errors = validate_route_settings(route_patch)
@@ -867,6 +872,56 @@ class OnboardingService:
                 "note": "Not a live delivery verification.",
                 "readback": {"record": STATE_KEY, "destination": copy.deepcopy(state["destination"])}}
 
+    def _portal_plan(self, state: Mapping[str, Any]) -> tuple[dict[str, Any] | None, str]:
+        """Resolve the public Portal plan through the canonical route owner.
+
+        Only the already-decided ``portal_enabled`` flag selects Portal; no
+        dialog or argument value is used to invent or enable a route. The
+        resolver owns the saved cadence and falls back to the canonical
+        ``CADENCES[DEFAULT_CADENCE]`` only when it is blank.
+        """
+        settings = state.get("settings") or {}
+        if settings.get("portal_enabled") is not True:
+            return None, ""
+        from . import secretary_portal
+        args = _ArmArgs(
+            portal_action="enable",
+            provider=settings.get("primary_provider"),
+            model=settings.get("primary_model"),
+        )
+        try:
+            resolved = secretary_portal._resolve_controls(args, self.ctx)
+        except ValueError as exc:
+            return None, f"portal: route resolution failed ({exc})"
+        if not resolved.get("provider") or not resolved.get("model"):
+            return None, "portal: provider and model are required"
+        return {
+            "enabled": True,
+            "schedule": (resolved["schedule"] or secretary_portal.CADENCES[secretary_portal.DEFAULT_CADENCE]),
+            "provider": resolved["provider"],
+            "model": resolved["model"],
+            "reasoning_effort": resolved["reasoning_effort"],
+            "delivery": "local",
+        }, ""
+
+    @staticmethod
+    def _portal_armed(result: Any) -> dict[str, Any]:
+        """Require a real, active Portal job before onboarding is ready."""
+        portal = result.get("portal") if isinstance(result, Mapping) else None
+        if not isinstance(portal, Mapping):
+            return {"ok": False, "active": False, "job_id": "", "status": "missing"}
+        status = portal.get("state")
+        raw_job_id = portal.get("job_id")
+        job_id = raw_job_id.strip() if isinstance(raw_job_id, str) else ""
+        active = status == "active"
+        ok = portal.get("ok") is True
+        return {
+            "ok": bool(ok and active and job_id),
+            "active": active,
+            "job_id": job_id,
+            "status": status if isinstance(status, str) else "",
+        }
+
     def preview(self) -> dict[str, Any]:
         state = self._read()
         planned = {
@@ -918,6 +973,15 @@ class OnboardingService:
             verification.append("destination_verification_pending")
         _clean, route_errors = validate_route_settings(state["settings"])
         blockers.extend(f"model_route: {error}" for error in route_errors)
+        if state["settings"].get("portal_enabled"):
+            portal_plan, portal_error = self._portal_plan(state)
+            if portal_plan:
+                planned["portal"] = dict(portal_plan)
+            else:
+                planned["portal"] = {"enabled": True}
+                blockers.append(portal_error or "portal: incomplete route")
+        else:
+            planned["portal"] = {"enabled": False}
         return {"ok": True, "status": state["status"], "planned_effective_settings": planned,
                 "blockers": blockers, "would_apply": not blockers,
                 "pending_verification": verification,
@@ -960,6 +1024,10 @@ class OnboardingService:
                 key for key, value in (state.get("grants") or {}).items() if value),
             "session_id": "",
         }
+        portal_plan, portal_error = self._portal_plan(state)
+        review["portal_plan"] = portal_plan
+        if portal_error:
+            review["portal_blocker"] = portal_error
         state["consent_review"] = review
         return review
 
@@ -1318,7 +1386,22 @@ class OnboardingService:
         if not target or (state.get("destination") or {}).get("status") == "unconfigured":
             raise OnboardingError("a delivery destination is required before arming")
         preparation = state.get("settings") or {}
-        args = _ArmArgs(
+        portal_enabled = bool(preparation.get("portal_enabled"))
+        portal_plan: dict[str, Any] | None = None
+        if portal_enabled:
+            review = state.get("consent_review") if isinstance(
+                state.get("consent_review"), dict) else {}
+            reviewed_plan = review.get("portal_plan")
+            portal_plan, portal_error = self._portal_plan(state)
+            if portal_error or not portal_plan:
+                raise OnboardingError(
+                    portal_error or
+                    "the Portal route is unavailable; preview and confirm again")
+            if not isinstance(reviewed_plan, dict) or reviewed_plan != portal_plan:
+                raise OnboardingError(
+                    "the resolved Portal plan changed after review; "
+                    "preview and confirm again")
+        arm_kwargs: dict[str, Any] = dict(
             deliver=target,
             no_cron=False,
             force=False,
@@ -1328,7 +1411,12 @@ class OnboardingService:
             with_preparation=bool(preparation.get("autonomy_mode") in
                                   ("prepare_private", "prepare_and_approve")),
             json=True,
+            with_portal=portal_enabled,
         )
+        if portal_plan is not None:
+            arm_kwargs["portal_schedule"] = portal_plan["schedule"]
+            arm_kwargs["portal_review"] = copy.deepcopy(portal_plan)
+        args = _ArmArgs(**arm_kwargs)
         from . import secretary_cli
         buffer = io.StringIO()
         try:
@@ -1347,14 +1435,18 @@ class OnboardingService:
             except Exception:  # noqa: BLE001
                 result = {}
         jobs = result.get("jobs") if isinstance(result, dict) else None
-        armed = bool(rc == 0 and isinstance(jobs, list) and jobs)
+        jobs_armed = bool(rc == 0 and isinstance(jobs, list) and jobs)
+        portal_result = self._portal_armed(result) if portal_enabled else None
+        armed = jobs_armed and (portal_result is None or bool(portal_result["ok"]))
         if armed:
             state["status"] = "ready"
             state["history"].append({"at": _now(), "changed": ["armed"]})
             state["history"] = state["history"][-50:]
             self._write(state)
         return {"ok": armed, "status": state.get("status"),
-                "schedule_armed": armed,
+                "schedule_armed": jobs_armed,
+                "portal_armed": bool(portal_result and portal_result["ok"]),
+                "portal": portal_result or {},
                 "jobs": jobs if isinstance(jobs, list) else [],
                 "setup_rc": rc,
                 "error": ("" if armed else str(result.get("error") or "")
@@ -1362,7 +1454,10 @@ class OnboardingService:
                 "note": ("Confirmed setup ran through the existing setup engine; only "
                          "plugin-owned jobs were ensured. No new grants or targets."
                          if armed else
-                         "Arming did not complete; status remains pending verification."),
+                         ("Plugin jobs were armed, but the Portal route was not active "
+                          "with a real job id; status remains pending verification."
+                          if jobs_armed and portal_enabled else
+                          "Arming did not complete; status remains pending verification.")),
                 "readback": {"record": STATE_KEY, "status": state.get("status"),
                              "destination": copy.deepcopy(state.get("destination") or {})}}
 
@@ -1462,6 +1557,19 @@ class OnboardingService:
                                   apply_settings=bool(payload.get("apply_settings")))
             if result.get("status") == "pending_verification":
                 state = self._read()
+                if state["settings"].get("portal_enabled"):
+                    review = state.get("consent_review") if isinstance(
+                        state.get("consent_review"), dict) else {}
+                    reviewed_plan = review.get("portal_plan")
+                    portal_plan, portal_error = self._portal_plan(state)
+                    if portal_error or not portal_plan:
+                        raise OnboardingError(
+                            portal_error or
+                            "the Portal route is unavailable; preview and confirm again")
+                    if not isinstance(reviewed_plan, dict) or reviewed_plan != portal_plan:
+                        raise OnboardingError(
+                            "the resolved Portal plan changed after review; "
+                            "preview and confirm again")
                 result["review_ref"] = self._issue_review(state, kind="arm")["ref"]
                 self._write(state)
             return result

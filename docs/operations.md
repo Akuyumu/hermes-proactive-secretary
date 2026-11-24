@@ -109,7 +109,7 @@ The migration refuses a name-only/foreign row, a mismatched ownership id, or an 
 
 `telegram` is the native Telegram delivery target. Use `telegram:<chat_id>` only when you already know the exact native chat id and your host's `hermes cron create --help` shows that form. Never guess a chat id. Use `origin` only when the command truly runs with chat context; a terminal command does not.
 
-A successful `setup` creates and records ownership of two native `--no-agent` script jobs: `hermes-proactive-secretary-monitoring` (every 15 minutes; may use a host-owned model lane for judgment) and `hermes-proactive-secretary-reminders` (every minute; deterministic, zero model calls). An explicit `--with-preparation` adds the optional `hermes-proactive-secretary-preparation` job; it is never hidden from status or setup summaries once recorded.
+A successful `setup` creates and records ownership of two native `--no-agent` script jobs: `hermes-proactive-secretary-monitoring` (every 15 minutes; may use a host-owned model lane for judgment) and `hermes-proactive-secretary-reminders` (every minute; deterministic, zero model calls). An explicit `--with-preparation` adds the optional `hermes-proactive-secretary-preparation` job; it is never hidden from status or setup summaries once recorded. An explicit `--with-portal` additionally arms the owned native Portal agent in the same invocation, at the cadence the Plugin settings resolve (default 3h); `--portal-schedule` may pin a different expression for that first creation only. This path is create-only: an existing Portal is verified and left untouched, never migrated, recreated, unpaused or retired, and any ambiguity refuses the whole opt-in instead of guessing.
 
 Keep these states distinct: **installed** (plugin present), **configured** (settings validate), **scheduled** (owned jobs recorded), **delivery-confirmed** (a real receipt from an explicit native canary; not a state this plugin can set). This plugin has no send or canary command; a canary is your own foreground action through your existing native channel. If you cannot verify a destination, keep `--deliver local`; the honest state is `unverified`.
 
@@ -275,7 +275,7 @@ Maintainer commands from the source tree, using a Python environment with the He
 PYTHONPATH=src python3 -m unittest discover -s tests
 PYTHONPATH=src python3 -m proactive_pilot.selftest
 python3 scripts/release_export.py scan
-python3 scripts/release_export.py build --output ./dist/hermes-proactive-secretary-1.1.3.tar.gz
+python3 scripts/release_export.py build --output ./dist/hermes-proactive-secretary-1.1.4.tar.gz
 python3 scripts/release_export.py doctor --installed /path/to/extracted-package
 ```
 

@@ -1080,20 +1080,23 @@ def _verify_normal_agent_row(row: dict[str, Any], spec: CronJobSpec) -> list[str
 def ensure_normal_agent_job(backend: CronBackend, spec: CronJobSpec, *,
                             ownership: dict[str, Any] | None = None,
                             ownership_path: str | os.PathLike[str] | None = None,
-                            now: str | None = None) -> CronJobResult:
+                            now: str | None = None,
+                            create_only: bool = False) -> CronJobResult:
     """Explicit normal-agent creation path (never the script/--no-agent lane)."""
     if not _is_agent_spec(spec):
         raise CronError("ensure_normal_agent_job requires a non-empty prompt")
     if str(getattr(spec, "script", "") or ""):
         raise CronError("normal-agent jobs must not set a script")
     return ensure_job(backend, spec, ownership=ownership,
-                      ownership_path=ownership_path, now=now)
+                      ownership_path=ownership_path, now=now,
+                      create_only=create_only)
 
 
 def ensure_job(backend: CronBackend, spec: CronJobSpec, *,
                ownership: dict[str, Any] | None = None,
                ownership_path: str | os.PathLike[str] | None = None,
-               now: str | None = None) -> CronJobResult:
+               now: str | None = None,
+               create_only: bool = False) -> CronJobResult:
     """Idempotently create ``spec``; re-create it if its shape changed.
 
     When ``ownership`` is supplied, ownership is enforced: a same-named job that
@@ -1108,6 +1111,33 @@ def ensure_job(backend: CronBackend, spec: CronJobSpec, *,
     jobs = backend.list_jobs()
     existing = _find_job(jobs, spec.name)
     record = owned_job_record(ownership, spec.name) if ownership is not None else None
+
+    if create_only:
+        ledger_jobs = ownership.get("jobs") if isinstance(ownership, dict) else None
+        if not isinstance(ledger_jobs, dict):
+            raise CronError(
+                f"create-only mode refuses {spec.name!r}: ownership ledger missing jobs dictionary"
+            )
+        same_named = [
+            j for j in jobs
+            if (j.get("name") if isinstance(j, dict) else getattr(j, "name", None)) == spec.name
+        ]
+        if len(same_named) > 1:
+            raise CronError(
+                f"create-only mode refuses {spec.name!r}: duplicate job rows found"
+            )
+        if existing is None:
+            if spec.name in ledger_jobs:
+                raise CronError(
+                    f"create-only mode refuses {spec.name!r}: ownership ledger is stale or malformed"
+                )
+        else:
+            job_id = _job_id(existing)
+            led = ledger_jobs.get(spec.name)
+            if not job_id or not isinstance(led, dict) or str(led.get("id") or "") != job_id:
+                raise CronError(
+                    f"create-only mode refuses {spec.name!r}: ownership ledger is stale or malformed"
+                )
 
     if existing is not None:
         job_id = _job_id(existing)
@@ -1130,6 +1160,11 @@ def ensure_job(backend: CronBackend, spec: CronJobSpec, *,
                     "verification=partial (readback does not expose: "
                     + ", ".join(gaps) + ")" if gaps else "verification=full"))
             return CronJobResult(spec.name, "already-present", detail)
+        if create_only:
+            raise CronError(
+                f"create-only mode reports drift for cron job {spec.name!r} "
+                f"(id={job_id or '?'}): existing owned job differs from requested shape"
+            )
         if not job_id:
             raise CronError(f"cron job {spec.name!r} has no id to remove")
         backend.remove_job(job_id)

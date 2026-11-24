@@ -442,6 +442,92 @@ class FinalIntegrationBoundaryTests(unittest.TestCase):
         self.assertFalse(kwargs.no_cron)
         self.assertTrue(kwargs.with_preparation)
 
+    @staticmethod
+    def _sent_values(args):
+        if hasattr(args, "__dict__"):
+            return list(vars(args).values())
+        return list(args.values())
+
+    def _portal_onboarding(self, portal):
+        ctx, tools = _registered()
+        ctx.settings.update(primary_provider="custom-provider",
+                            primary_model="custom-model",
+                            portal_cadence="6h")
+        _tool(tools, "secretary_onboarding", {
+            "action": "update", "settings": {"timezone": "UTC"},
+            "explicit_consent": False})
+        _tool(tools, "secretary_onboarding", {
+            "action": "update", "destination": "telegram",
+            "explicit_consent": False})
+        portal_text = "Yes, enable private preparation and Portal for this profile."
+        hook = ctx.hooks["pre_llm_call"]
+        hook(platform="telegram", user_message=portal_text, session_id="s-portal",
+             chat_type="dm")
+        _tool(tools, "secretary_onboarding", {
+            "action": "update", "session_id": "s-portal",
+            "evidence_quote": portal_text,
+            "settings": {"daily_allowance": 3, "quiet_start_hour": 22,
+                         "quiet_end_hour": 7, "autonomy_mode": "prepare_private",
+                         "preparation_scopes": ["conversation"],
+                         "preparation_source_consent": False,
+                         "portal_enabled": True,
+                         "primary_provider": "custom-provider",
+                         "primary_model": "custom-model"},
+            "explicit_consent": True})
+        preview = _tool(tools, "secretary_onboarding", {
+            "action": "preview", "session_id": "s-portal"})
+        self.assertTrue(preview.get("accepted", preview.get("ok")), preview)
+        review = preview.get("review") or {}
+        review_ref = (preview.get("review_ref") or review.get("review_ref")
+                      or review.get("ref") or preview.get("ref"))
+        self.assertTrue(review_ref, preview)
+        confirm_text = "Yes, confirm and save the portal onboarding settings."
+        hook(platform="telegram", user_message=confirm_text,
+             session_id="s-portal", chat_type="dm")
+        confirmed = _tool(tools, "secretary_onboarding", {
+            "action": "confirm", "session_id": "s-portal",
+            "evidence_quote": confirm_text, "user_confirmed": True,
+            "apply_settings": True, "review_ref": review_ref})
+        self.assertTrue(confirmed.get("ok", True), confirmed)
+        arm_text = "Yes, arm the schedule and portal now."
+        hook(platform="telegram", user_message=arm_text,
+             session_id="s-portal", chat_type="dm")
+        cli = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
+
+        def fake_setup(args):
+            print(json.dumps({
+                "ok": True,
+                "jobs": [
+                    {"name": "proactive-secretary-monitoring", "action": "kept"},
+                    {"name": "proactive-secretary-reminders", "action": "kept"}],
+                "portal": portal}))
+            return 0
+        with mock.patch.object(cli, "setup_command", side_effect=fake_setup) as setup:
+            armed = _tool(tools, "secretary_onboarding", {
+                "action": "arm", "session_id": "s-portal",
+                "evidence_quote": arm_text, "user_confirmed": True})
+        self.assertIsNotNone(setup.call_args, armed)
+        return preview, armed, setup.call_args.args[0]
+
+    def test_portal_endpoint_reviews_owner_model_and_marks_ready(self):
+        preview, armed, sent = self._portal_onboarding(
+            {"ok": True, "state": "active", "job_id": "abc"})
+        portal = preview["planned_effective_settings"]["portal"]
+        self.assertEqual((portal["provider"], portal["model"]),
+                         ("custom-provider", "custom-model"))
+        self.assertEqual(portal["schedule"], "0 */6 * * *")
+        self.assertEqual(sent.portal_review, portal)
+        self.assertIs(sent.with_portal, True)
+        self.assertTrue(armed["portal_armed"], armed)
+        self.assertEqual(armed["status"], "ready")
+        self.assertEqual(armed["portal"]["status"], "active")
+
+    def test_portal_not_ok_does_not_mark_ready_even_when_active(self):
+        _preview, armed, _sent = self._portal_onboarding(
+            {"ok": False, "state": "active", "job_id": "abc"})
+        self.assertFalse(armed["portal_armed"], armed)
+        self.assertNotEqual(armed["status"], "ready")
+
 
 class ExactApprovalTests(unittest.TestCase):
     def setUp(self):

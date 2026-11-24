@@ -110,6 +110,7 @@ ACTIONS = {"preview", "enable", "status", "pause", "resume", "remove"}
 PINS = ("schedule", "model", "provider", "reasoning_effort", "skill", "deliver", "workdir")
 REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 CADENCES = {"3h": "0 */3 * * *", "6h": "0 */6 * * *"}
+DEFAULT_CADENCE = "3h"
 _LIVE_KEYS = {
     "schedule": ("schedule",),
     "model": ("model",),
@@ -291,6 +292,9 @@ def _recorded(record: dict[str, Any] | None, key: str) -> Any:
 
 
 def _state(job: dict[str, Any]) -> str:
+    enabled = job.get("enabled")
+    if enabled is False:
+        return "paused"
     for key in ("state", "status"):
         value = _text(job.get(key)).lower()
         if value in {"paused", "disabled", "stopped"}:
@@ -474,12 +478,17 @@ def _failure(action: str, status: str, detail: str, as_json: bool,
     return _emit(payload, as_json)
 
 
-def portal_command(args: Any, *, backend: Any = None, native_ctx: Any = None) -> int:
+def portal_command(args: Any, *, backend: Any = None, native_ctx: Any = None,
+                   create_only: bool = False) -> int:
     """Run one portal lifecycle action and print a JSON or short human receipt.
 
     Preview and enable may read the plugin settings once through
     ``native_ctx.get_config`` to freeze that operation's model controls. Other
     lifecycle actions never read or change native configuration.
+
+    ``create_only`` is an internal setup mode: it uses a strict ownership load,
+    skips retired-name reconciliation, and only succeeds for an already-active
+    exact owned job or a fresh create that reads back active.
     """
     as_json = bool(_arg(args, "json", False) or _arg(args, "as_json", False))
     action = _text(_arg(args, "portal_action")).lower()
@@ -498,6 +507,8 @@ def portal_command(args: Any, *, backend: Any = None, native_ctx: Any = None) ->
             controls = _resolve_controls(args, native_ctx)
         except Exception as exc:
             return _failure(action, "error", f"invalid portal controls: {exc}", as_json)
+        if create_only and not _text(_control(args, controls, "schedule")):
+            controls["schedule"] = CADENCES[DEFAULT_CADENCE]
         if not _text(_control(args, controls, "schedule")):
             return _failure(action, "error", "a schedule is required for preview/enable",
                             as_json)
@@ -512,13 +523,16 @@ def portal_command(args: Any, *, backend: Any = None, native_ctx: Any = None) ->
         if backend is None:
             backend = cron.HermesCronBackend()
         ownership_path = paths.job_ownership_path()
-        ownership = cron.load_job_ownership(ownership_path)
+        if create_only:
+            ownership = portal_controls.load_ownership_strict(ownership_path)
+        else:
+            ownership = cron.load_job_ownership(ownership_path)
     except Exception as exc:  # backend/config construction is outside our control
         return _failure(action, "error", f"could not prepare portal backend: {exc}", as_json)
 
     name = cron.PORTAL_JOB_NAME
     retired_removed: list[dict[str, Any]] = []
-    if action == "enable":
+    if action == "enable" and not create_only:
         # Cut over only the retired portal row recorded as ours; the new name is
         # then reconciled normally below. A failed removal aborts before any
         # mutation rather than leaving two portal jobs armed.
@@ -557,6 +571,71 @@ def portal_command(args: Any, *, backend: Any = None, native_ctx: Any = None) ->
     kind, job, record, why = _locate(cron, jobs, ownership, name)
     job_id = _job_id(job) if job is not None else _text((record or {}).get("id"))
     desired = _desired(args, controls) if spec is not None else {}
+
+    if action == "enable" and create_only:
+        retired = getattr(cron, "RETIRED_PORTAL_JOB_NAME", "")
+        ledger = ownership.get("jobs") if isinstance(ownership, dict) else None
+        if retired and (name == retired
+                        or _find_name(jobs, retired) is not None
+                        or (isinstance(ledger, dict) and retired in ledger)):
+            return _failure(
+                action, "retired",
+                "a retired portal job or ledger entry is present; refusing create-only",
+                as_json, name=name, job_id=job_id)
+        if isinstance(ledger, dict):
+            for entry_name, entry in ledger.items():
+                if not isinstance(entry, dict) or not _text(entry.get("id")):
+                    return _failure(
+                        action, "malformed-ledger",
+                        (f"portal ledger record {entry_name!r} is malformed or "
+                         "has no id; refusing create-only"),
+                        as_json, name=name, job_id=job_id)
+        same_name = [j for j in jobs if _text(j.get("name")) == name]
+        if len(same_name) > 1:
+            return _failure(
+                action, "collision",
+                "duplicate live jobs share the portal name; refusing create-only",
+                as_json, name=name, job_id=job_id)
+        if kind in {"foreign", "mismatch"}:
+            return _failure(
+                action, kind,
+                why or "same-named job is not owned; refusing create-only",
+                as_json, name=name, job_id=job_id)
+        if kind == "missing" and record is not None:
+            return _failure(
+                action, "stale-record",
+                (why or "recorded portal job is no longer present")
+                + "; refusing create-only",
+                as_json, name=name, job_id=job_id)
+        if kind == "owned":
+            state = _state(job or {})
+            if state != "active":
+                return _failure(
+                    action, "paused" if state == "paused" else "unverified",
+                    f"owned portal job state={state!r}; create-only requires an active owned job",
+                    as_json, name=name, job_id=job_id,
+                    effective_pins=_effective(job, record, desired))
+            changed, unknown = _assess(job or {}, record, desired)
+            effective_pins = _effective(job, record, desired)
+            payload = {
+                "action": action, "name": name, "job_id": job_id, "ok": True,
+                "status": "already-present", "state": state,
+                "effective_pins": effective_pins,
+            }
+            reviewed = [key for key in changed if key in PINS]
+            if reviewed:
+                payload["detail"] = (
+                    "existing active owned job left unchanged; reviewed pins differ: "
+                    + ", ".join(reviewed))
+            if "schedule" in changed:
+                actual = _text(effective_pins.get("schedule"))
+                payload["detail"] = (
+                    (payload.get("detail", "") + "; " if payload.get("detail") else "")
+                    + "effective schedule is " + (actual or "unverified")
+                    + "; requested schedule not applied")
+            if unknown:
+                payload["unverified_pins"] = unknown
+            return _emit(payload, as_json)
 
     if action in {"preview", "status"}:
         payload: dict[str, Any] = {
@@ -631,17 +710,27 @@ def portal_command(args: Any, *, backend: Any = None, native_ctx: Any = None) ->
                         as_json, name=name, job_id=job_id)
         try:
             result = cron.ensure_normal_agent_job(
-                backend, spec, ownership=ownership, ownership_path=ownership_path)
+                backend, spec, ownership=ownership, ownership_path=ownership_path,
+                create_only=create_only)
             status, detail = _result_status(result)
             jobs_after = list(backend.list_jobs())
             kind2, job2, record2, why2 = _locate(cron, jobs_after, ownership, name)
+            state2 = _state(job2 or {}) if job2 is not None else "unknown"
+            partial = "partial" in detail.lower()
+            create_ok = (not create_only) or (state2 == "active" and not partial)
+            payload_status = "partial" if partial else status or "enabled"
+            if not create_ok and not partial:
+                payload_status = "paused" if state2 == "paused" else "unverified"
+                detail = (detail + "; " if detail else "") + (
+                    f"created job readback state={state2!r}; create-only requires active")
             payload = {
-                "action": action, "name": name, "ok": kind2 == "owned",
-                "status": "partial" if "partial" in detail.lower() else status or "enabled",
+                "action": action, "name": name,
+                "ok": kind2 == "owned" and create_ok,
+                "status": payload_status,
                 "detail": detail or why2,
                 "job_id": _job_id(job2) if job2 is not None else job_id,
                 "effective_pins": _effective(job2, record2, desired),
-                "state": _state(job2 or {}) if job2 is not None else "unknown",
+                "state": state2,
             }
             if retired_removed:
                 payload["retired"] = retired_removed

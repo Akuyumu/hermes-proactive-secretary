@@ -146,6 +146,12 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
                             help="explicit opt-in: install the owned preparation runner and one "
                                  "native --no-agent script job. Setting preparation_enabled "
                                  "alone never arms anything.")
+    p["setup"].add_argument("--with-portal", action="store_true", dest="with_portal",
+                            help="explicit opt-in: create the owned portal job with this setup "
+                                 "invocation. Existing portal jobs are verified, never migrated.")
+    p["setup"].add_argument("--portal-schedule", default=None, metavar="CRON",
+                            help="native schedule for --with-portal (default: canonical "
+                                 "Portal configuration resolver)")
     p["run-once"].add_argument("--fixture", default=None,
                                help="run against a synthetic fixture instead of live sources")
     p["run-once"].add_argument("--check", action="store_true",
@@ -780,10 +786,34 @@ def setup_command(args: argparse.Namespace, *, backend: cron_mod.CronBackend | N
                     "the Hermes cron surface is unavailable; cannot create the two native jobs. "
                     "Re-run with a working `hermes cron` (or `--no-cron` for an offline check)."
                 )
+            with_portal = bool(getattr(args, "with_portal", False))
             specs = _job_specs(deliver, include_preparation=want_preparation)
             ownership = cron_mod.load_job_ownership(paths.job_ownership_path())
-            legacy_live = cron_mod.legacy_monitoring_job(
-                cron_backend.list_jobs(), ownership)
+            live_jobs = cron_backend.list_jobs()
+            if with_portal:
+                ownership_path = paths.job_ownership_path()
+                ownership = portal_controls.load_ownership_strict(ownership_path)
+                pause_outstanding, _pause_reason = portal_controls.global_pause_outstanding(
+                    ownership_path, paths.preferences_path())
+                if pause_outstanding:
+                    raise cron_mod.CronError(
+                        "a global pause is outstanding; run `hermes secretary resume` "
+                        "before --with-portal"
+                    )
+                live_names = {
+                    str(job.get("name") or "")
+                    for job in live_jobs if isinstance(job, dict)
+                }
+                ledger_names = set()
+                if isinstance(ownership, dict):
+                    ledger_names = {str(name) for name in
+                                    (ownership.get("jobs") or {})}
+                if cron_mod.RETIRED_PORTAL_JOB_NAME in (live_names | ledger_names):
+                    raise cron_mod.CronError(
+                        "the retired portal job is still present in the live inventory "
+                        "or ownership ledger; refusing --with-portal"
+                    )
+            legacy_live = cron_mod.legacy_monitoring_job(live_jobs, ownership)
             if legacy_live is not None:
                 raise cron_mod.CronError(
                     "the recorded legacy monitoring job is still present "
@@ -791,13 +821,42 @@ def setup_command(args: argparse.Namespace, *, backend: cron_mod.CronBackend | N
                     "migrate-jobs --apply` first. Setup refuses to create a duplicate "
                     "or recreate the existing schedule."
                 )
-            result["retired"] = cron_mod.reconcile_retired_jobs(
-                cron_backend, {spec.name for spec in specs},
-                ownership=ownership, ownership_path=paths.job_ownership_path())
+            if not with_portal:
+                result["retired"] = cron_mod.reconcile_retired_jobs(
+                    cron_backend, {spec.name for spec in specs},
+                    ownership=ownership, ownership_path=paths.job_ownership_path())
+            if with_portal:
+                from . import secretary_portal as portal
+                reviewed = getattr(args, "portal_review", None)
+                portal_args = argparse.Namespace(
+                    portal_action="enable",
+                    schedule=getattr(args, "portal_schedule", None),
+                    deliver="local",
+                    model="",
+                    provider="",
+                    reasoning_effort="",
+                    skill=[],
+                    workdir="",
+                    json=True,
+                    as_json=True,
+                )
+                if reviewed is not None:
+                    portal_args.provider = reviewed["provider"]
+                    portal_args.model = reviewed["model"]
+                    portal_args.reasoning_effort = reviewed["reasoning_effort"]
+                    portal_args.schedule = reviewed["schedule"]
+                controls = portal._resolve_controls(
+                    portal_args, None if reviewed is not None else get_native_context())
+                controls["schedule"] = controls["schedule"] or portal.CADENCES[portal.DEFAULT_CADENCE]
+                portal_args.schedule = controls["schedule"]
+                cron_mod.validate_job_spec(
+                    portal._build_spec(cron_mod, portal_args, controls))
             for spec in specs:
+                ensure_kwargs = {"create_only": True} if with_portal else {}
                 res = cron_mod.ensure_job(
                     cron_backend, spec,
                     ownership=ownership, ownership_path=paths.job_ownership_path(),
+                    **ensure_kwargs,
                 )
                 result["jobs"].append({**res.to_dict(), "schedule": spec.schedule,
                                        "deliver": spec.deliver, "script": spec.script})
@@ -807,10 +866,40 @@ def setup_command(args: argparse.Namespace, *, backend: cron_mod.CronBackend | N
             result["warnings"].append("cron jobs were skipped (--no-cron)")
 
         result["ok"] = True
+        if not getattr(args, "no_cron", False) and getattr(args, "with_portal", False):
+            sink = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(sink):
+                    portal_rc = portal.portal_command(
+                        portal_args, backend=cron_backend,
+                        native_ctx=(
+                            None if getattr(args, "portal_review", None)
+                            else get_native_context()),
+                        create_only=True)
+                raw = sink.getvalue()
+                try:
+                    parsed = json.loads(raw) if raw.strip() else None
+                except ValueError:
+                    parsed = None
+                receipt = parsed if isinstance(parsed, dict) else {
+                    "ok": False, "error": "portal returned no valid receipt"}
+            except Exception as exc:  # noqa: BLE001 - portal failure is separate
+                portal_rc = 1
+                receipt = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            receipt["ok"] = receipt.get("ok") is True and portal_rc == 0
+            result["portal"] = receipt
+            if not receipt.get("ok"):
+                result["ok"] = False
+                result["warnings"].append(
+                    "portal job enable did not complete; core jobs were left armed")
+                result.setdefault(
+                    "error", "portal enable did not complete: "
+                    + str(receipt.get("detail") or receipt.get("status") or "unknown"))
     except Exception as exc:  # noqa: BLE001 - fail loudly and roll back honestly
         result["ok"] = False
         result["error"] = f"{type(exc).__name__}: {exc}"
-        if created and not getattr(args, "no_cron", False):
+        if (created and not getattr(args, "no_cron", False)
+                and not getattr(args, "with_portal", False)):
             rolled, failures = _rollback_created_jobs(created, backend)
             if rolled:
                 result["rolled_back"] = rolled
@@ -820,7 +909,7 @@ def setup_command(args: argparse.Namespace, *, backend: cron_mod.CronBackend | N
         return 1
 
     _emit(result, as_json=as_json, human=_setup_human(result))
-    return 0
+    return 0 if result.get("ok") else 1
 
 
 def _import_preview(legacy_tree: str, as_json: bool) -> int:
@@ -904,6 +993,10 @@ def _setup_human(result: dict[str, Any]) -> str:
         if result.get("rollback_failures"):
             lines.append(f"  rollback FAILURES (still present): "
                          f"{json.dumps(result['rollback_failures'], sort_keys=True)}")
+        portal = result.get("portal") or {}
+        if portal:
+            lines.append(f"  portal         : "
+                         f"{portal.get('status') or portal.get('error') or 'unknown'}")
         return "\n".join(lines)
     caps = result.get("capabilities", {})
     jobs = {j["name"]: j for j in result.get("jobs", [])}
@@ -944,6 +1037,10 @@ def _setup_human(result: dict[str, Any]) -> str:
         lines.append(f"  imported       : {counts.get('copied', 0)} copied, "
                      f"{counts.get('identical', 0)} identical, "
                      f"manifest {result['import'].get('manifest_sha256', '')[:12]}")
+    portal = result.get("portal") or {}
+    if portal:
+        lines.append(f"  portal         : "
+                     f"{portal.get('status') or portal.get('error') or 'unknown'}")
     checks = result.get("checks", {})
     lines.append(f"  self-test      : {checks.get('self_test', {})}")
     lines.append("  pause anytime  : hermes secretary pause")
@@ -2121,7 +2218,10 @@ def deliveries_command(args: argparse.Namespace) -> int:
 
 def portal_command(args: argparse.Namespace, *, backend: Any = None) -> int:
     """Lazy glue: the portal service owns actions, backend and JSON output."""
-    from . import secretary_portal as _portal
+    try:  # package import
+        from . import secretary_portal as _portal
+    except ImportError:  # direct/standalone import
+        from secretary import secretary_portal as _portal  # type: ignore
 
     return _portal.portal_command(
         args,
