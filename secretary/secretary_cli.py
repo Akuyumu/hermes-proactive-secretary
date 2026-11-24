@@ -95,6 +95,8 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
               ("status", "Show enabled state, jobs, last run, coverage and counts"),
               ("job", "Manage the proactive secretary job "
                       "(preview | enable | status | pause | resume | remove)"),
+             ("cadence", "Portal cadence gate (status | set | apply): plugin-owned "
+                         "interval, no scheduler rewrite"),
               ("pause", "Global pause: stop collection and delivery"),
              ("resume", "Clear the global pause"),
              ("disable", "Pause and remove this plugin's own cron jobs"),
@@ -128,6 +130,14 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
                      help="native skill pin (repeatable)")
     job.add_argument("--deliver", default="local")
     job.add_argument("--workdir", default="")
+    cadence = p["cadence"]
+    cadence.add_argument("cadence_action", nargs="?",
+                         choices=("status", "set", "apply"), default="status",
+                         help="status (default) | set | apply")
+    cadence.add_argument("--set", dest="cadence_value", default="",
+                         help="interval in minutes or a duration like 6h (30-1440)")
+    cadence.add_argument("--apply", action="store_true", dest="apply_gate",
+                         help="convert the Portal job to the gated tick and arm it")
     p["setup"].add_argument("--force", action="store_true",
                             help="overwrite an existing policy file (default: keep it)")
     p["setup"].add_argument("--no-cron", action="store_true",
@@ -2216,6 +2226,74 @@ def deliveries_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def cadence_command(args: argparse.Namespace, *, backend: Any = None) -> int:
+    """Owner-facing surface for the plugin-owned Portal cadence.
+
+    ``status`` reads only. ``set`` writes the interval (no job change) so the
+    next ``apply`` uses it. ``apply`` installs the gate runner, writes the
+    interval and converts the Portal job to the gated tick — refusing whenever
+    scheduled or retry state would be discarded.
+    """
+    as_json = bool(getattr(args, "as_json", False) or getattr(args, "json", False))
+    action = str(getattr(args, "cadence_action", "") or "status").lower()
+    try:
+        from . import secretary_cadence as cadence
+    except ImportError:  # direct/standalone import
+        from secretary import secretary_cadence as cadence  # type: ignore
+
+    def emit(payload: dict[str, Any], code: int) -> int:
+        if as_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        elif payload.get("ok"):
+            print(f"portal cadence: {payload.get('status', 'ok')}")
+            if payload.get("interval_minutes"):
+                print(f"  interval   : {payload['interval_minutes']} minutes")
+            for key in ("job_schedule", "job_script", "last_wake", "next_due",
+                        "revision", "job_id"):
+                if payload.get(key) not in (None, ""):
+                    print(f"  {key:<11}: {payload[key]}")
+            if payload.get("detail"):
+                print(f"  detail     : {payload['detail']}")
+        else:
+            print(f"portal cadence: {payload.get('status', 'error')} - "
+                  f"{payload.get('error', 'unknown error')}", file=sys.stderr)
+        return code
+
+    raw = str(getattr(args, "cadence_value", "") or "").strip()
+    apply_gate = bool(getattr(args, "apply_gate", False)) or action == "apply"
+    if backend is None:
+        backend = _backend()
+    try:
+        if action == "status":
+            view = cadence.effective(backend)
+            if view.get("gated"):
+                view["status"] = "gated"
+            elif not view.get("present", True):
+                view["status"] = "not-gated"
+                view["detail"] = ("the Portal still runs on its native schedule; "
+                                  "`--set 6h --apply` converts it to the gate")
+            else:
+                view["status"] = "not-gated"
+                view["detail"] = "an interval is stored but the live job is not gated"
+            return emit(view, 0 if view.get("ok") else 1)
+        if not raw:
+            return emit({"ok": False, "status": "error",
+                         "error": "`--set <minutes|6h>` is required"}, 2)
+        if apply_gate:
+            result = cadence.convert(backend, raw)
+            return emit(result, 0 if result.get("ok") else 1)
+        plan = cadence.write_plan(raw)
+        plan["status"] = "stored"
+        plan["detail"] = ("stored only; run `--apply` to convert the Portal job, "
+                          "otherwise the live schedule is unchanged")
+        return emit(plan, 0)
+    except ValueError as exc:
+        return emit({"ok": False, "status": "refused", "error": str(exc)}, 2)
+    except Exception as exc:  # noqa: BLE001 - never claim success on a surprise
+        return emit({"ok": False, "status": "error",
+                     "error": f"{type(exc).__name__}: {exc}"}, 1)
+
+
 def portal_command(args: argparse.Namespace, *, backend: Any = None) -> int:
     """Lazy glue: the portal service owns actions, backend and JSON output."""
     try:  # package import
@@ -2234,6 +2312,7 @@ _DISPATCH = {
     "setup": setup_command,
     "status": status_command,
     "job": portal_command,
+    "cadence": cadence_command,
     "pause": pause_command,
     "resume": resume_command,
     "disable": disable_command,

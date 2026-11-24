@@ -30,6 +30,9 @@ RUNNER_FILENAMES = (
 PREPARATION_RUNNER_FILENAMES = (
     "proactive_secretary_prepare_runner.py",
 )
+GATE_RUNNER_FILENAMES = (
+    "proactive_secretary_portal_gate.py",
+)
 PLACEHOLDER = "{{PLUGIN_ROOT}}"
 BACKUP_SUFFIX = ".pre-hermes-proactive-secretary.bak"
 PLUGIN_NAME = "hermes-proactive-secretary"
@@ -102,18 +105,22 @@ def _atomic_write(target: Path, text: str) -> None:
 
 def install_runners(*, plugin_root: Path, template_root: Path, scripts_dir: Path,
                     ownership_path: Path, now: str | None = None,
-                    include_preparation: bool = False) -> list[dict[str, Any]]:
+                    include_preparation: bool = False,
+                    include_gate: bool = False) -> list[dict[str, Any]]:
     """Install owned runner templates into ``scripts_dir`` and record ownership.
 
     The preparation runner is installed only when the caller explicitly opts in
     (``hermes secretary setup --with-preparation``); merely setting
-    ``preparation_enabled`` in configuration never installs or arms it.
+    ``preparation_enabled`` in configuration never installs or arms it. The
+    Portal wake gate is installed only when the owner converts the Portal to
+    the gated cadence, so an ungated install carries no extra script.
     """
     installed_at = now or _now()
     ownership = _load_ownership(ownership_path)
     results: list[dict[str, Any]] = []
-    names = RUNNER_FILENAMES + (
-        PREPARATION_RUNNER_FILENAMES if include_preparation else ())
+    names = (RUNNER_FILENAMES
+             + (PREPARATION_RUNNER_FILENAMES if include_preparation else ())
+             + (GATE_RUNNER_FILENAMES if include_gate else ()))
     for name in names:
         source = template_root / name
         try:
