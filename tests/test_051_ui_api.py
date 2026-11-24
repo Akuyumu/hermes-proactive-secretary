@@ -38,7 +38,7 @@ class PackagingAndSchemaTests(unittest.TestCase):
         module_version = _version_from(ROOT / "src" / "proactive_pilot" / "__init__.py",
                                        r'__version__\s*=\s*"([^"]+)"')
         self.assertEqual(manifest_version, module_version)
-        self.assertEqual(manifest_version, "1.1.2")
+        self.assertEqual(manifest_version, "1.1.3")
         report = exporter.scan(ROOT)
         self.assertTrue(report["ok"], report["problems"])
         for name in ("desktop/plugin.js", "dashboard/plugin_api.py", "dashboard/manifest.json"):
@@ -70,7 +70,7 @@ class PackagingAndSchemaTests(unittest.TestCase):
         imported = exporter._import_registration(extracted)
         self.assertTrue(imported["ok"], imported)
         dashboard = json.loads((extracted / "dashboard" / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(dashboard["version"], "1.1.2")
+        self.assertEqual(dashboard["version"], "1.1.3")
         self.assertEqual(dashboard["api"], "plugin_api.py")
 
     def test_doctor_requires_the_real_custom_ui_and_api(self):
@@ -302,6 +302,129 @@ class SettingsApiTests(_ApiBase):
         self.assertIn("mail_enabled", payload["expanding"])
         self.assertTrue(payload["explanation"])
         self.assertEqual(payload["values"]["public_interests"], [])
+
+    def test_preparation_mode_preview_write_round_trip_and_review_only_not_flagged(self):
+        values = self.client.get("/settings").json()["values"]
+        self.assertIn("preparation_mode", values)
+        self.assertEqual(values["preparation_mode"], "")
+        blanks = {name: value for name, value in values.items() if value == ""}
+        revision = self.client.get("/settings").json()["revision"]
+
+        # The blank default stays blank on read until an explicit Save.
+        self.assertEqual(
+            self.client.get("/settings").json()["values"]["preparation_mode"], "")
+
+        preview = self.client.post("/settings/preview", json={
+            "revision": revision, "values": {"preparation_mode": "review_only"}})
+        self.assertEqual(preview.status_code, 200, preview.text)
+        self.assertFalse(preview.json()["requires_confirmation"])
+        result = self.client.post("/settings", json={
+            "revision": revision, "values": {"preparation_mode": "review_only"}})
+        self.assertEqual(result.status_code, 200, result.text)
+        readback = self.client.get("/settings").json()["values"]
+        self.assertEqual(readback["preparation_mode"], "review_only")
+        for name, value in blanks.items():
+            if name != "preparation_mode":
+                self.assertEqual(readback[name], value)
+
+    def test_widening_to_prepare_and_approve_needs_exact_ack_and_invalid_mode_is_4xx(self):
+        values = self.client.get("/settings").json()["values"]
+        self.assertIn("preparation_mode", values)
+        revision = self.client.get("/settings").json()["revision"]
+        if values["preparation_mode"] != "review_only":
+            narrow = self.client.post("/settings", json={
+                "revision": revision, "values": {"preparation_mode": "review_only"}})
+            self.assertEqual(narrow.status_code, 200, narrow.text)
+            revision = self.client.get("/settings").json()["revision"]
+        before = self.h.snapshot()
+
+        preview = self.client.post("/settings/preview", json={
+            "revision": revision, "values": {"preparation_mode": "prepare_and_approve"}})
+        self.assertEqual(preview.status_code, 200, preview.text)
+        plan = preview.json()
+        self.assertTrue(plan["requires_confirmation"])
+        self.assertIn("preparation_mode", plan["expanding"])
+        self.assertEqual(self.h.snapshot(), before)
+
+        refused = self.client.post("/settings", json={
+            "revision": revision, "values": {"preparation_mode": "prepare_and_approve"}})
+        self.assertEqual(refused.status_code, 409, refused.text)
+        self.assertEqual(refused.json()["error"], "permission_confirmation_required")
+        self.assertEqual(self.h.snapshot(), before)
+
+        accepted = self.client.post("/settings", json={
+            "revision": revision, "values": {"preparation_mode": "prepare_and_approve"},
+            "acknowledged_expanding": plan["expanding"]})
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        self.assertEqual(accepted.json()["values"]["preparation_mode"], "prepare_and_approve")
+        settled = self.h.snapshot()
+
+        revision = self.client.get("/settings").json()["revision"]
+        invalid = self.client.post("/settings", json={
+            "revision": revision, "values": {"preparation_mode": "not_a_mode"}})
+        self.assertGreaterEqual(invalid.status_code, 400)
+        self.assertLess(invalid.status_code, 500)
+        self.assertEqual(self.h.snapshot(), settled)
+        self.assertEqual(
+            self.client.get("/settings").json()["values"]["preparation_mode"], "prepare_and_approve")
+
+    def _set_preparation_mode(self, mode, acknowledge=False):
+        revision = self.client.get("/settings").json()["revision"]
+        body = {"revision": revision, "values": {"preparation_mode": mode}}
+        if acknowledge:
+            preview = self.client.post("/settings/preview", json=body)
+            self.assertEqual(preview.status_code, 200, preview.text)
+            body["acknowledged_expanding"] = preview.json()["expanding"]
+        result = self.client.post("/settings", json=body)
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(
+            self.client.get("/settings").json()["values"]["preparation_mode"], mode)
+
+    def test_downgrade_from_prepare_and_approve_to_prepare_private_needs_no_confirmation(self):
+        self._set_preparation_mode("prepare_and_approve", acknowledge=True)
+        revision = self.client.get("/settings").json()["revision"]
+        before = self.h.snapshot()
+
+        preview = self.client.post("/settings/preview", json={
+            "revision": revision, "values": {"preparation_mode": "prepare_private"}})
+        self.assertEqual(preview.status_code, 200, preview.text)
+        plan = preview.json()
+        self.assertFalse(plan["requires_confirmation"])
+        self.assertNotIn("preparation_mode", plan["expanding"])
+        self.assertEqual(self.h.snapshot(), before)
+
+        saved = self.client.post("/settings", json={
+            "revision": revision, "values": {"preparation_mode": "prepare_private"}})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(
+            self.client.get("/settings").json()["values"]["preparation_mode"],
+            "prepare_private")
+
+    def test_review_only_to_legacy_blank_needs_confirmation_and_only_writes_after_ack(self):
+        self._set_preparation_mode("review_only")
+        revision = self.client.get("/settings").json()["revision"]
+        before = self.h.snapshot()
+
+        preview = self.client.post("/settings/preview", json={
+            "revision": revision, "values": {"preparation_mode": ""}})
+        self.assertEqual(preview.status_code, 200, preview.text)
+        plan = preview.json()
+        self.assertTrue(plan["requires_confirmation"])
+        self.assertIn("preparation_mode", plan["expanding"])
+        self.assertEqual(self.h.snapshot(), before)
+
+        refused = self.client.post("/settings", json={
+            "revision": revision, "values": {"preparation_mode": ""}})
+        self.assertEqual(refused.status_code, 409, refused.text)
+        self.assertEqual(refused.json()["error"], "permission_confirmation_required")
+        self.assertEqual(self.h.snapshot(), before)
+
+        accepted = self.client.post("/settings", json={
+            "revision": revision, "values": {"preparation_mode": ""},
+            "acknowledged_expanding": plan["expanding"]})
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        self.assertEqual(
+            self.client.get("/settings").json()["values"]["preparation_mode"], "")
 
     def test_production_backup_adapter_uses_shared_manifest_schema(self):
         from proactive_pilot import config_backup

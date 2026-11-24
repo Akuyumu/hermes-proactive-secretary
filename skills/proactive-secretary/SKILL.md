@@ -1,7 +1,7 @@
 ---
 name: proactive-secretary
 description: "Use when the user asks to follow up on, watch, track, be notified about, notify me about or keep an eye on something, or to set up, tune, pause or troubleshoot proactive alerts and reminders."
-version: 1.1.2
+version: 1.1.3
 author: Hermes Plugin Community
 license: MIT
 platforms: [linux, macos]

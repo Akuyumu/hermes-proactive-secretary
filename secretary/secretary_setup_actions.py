@@ -484,9 +484,17 @@ class SetupActions:
                     "cooldown_minutes", "collector_budget_seconds",
                     "max_candidates_per_kind", "feed_max_sources_per_run"}
         list_keys = {"public_interests", "public_sources", "preparation_scopes"}
+        preparation_modes = {"", "review_only", "prepare_private", "prepare_and_approve"}
         clean: dict[str, Any] = {}
         for key, value in values.items():
-            if key in text_keys:
+            if key == "preparation_mode":
+                if not isinstance(value, str) or value not in preparation_modes:
+                    raise SetupActionError(
+                        "invalid_setting",
+                        "preparation_mode must be blank, review_only, prepare_private or prepare_and_approve.",
+                    )
+                clean[key] = value
+            elif key in text_keys:
                 if not isinstance(value, str):
                     raise SetupActionError("invalid_setting", f"{key} must be text.")
                 clean[key] = value
@@ -533,6 +541,15 @@ class SetupActions:
             prior = {_digest(item) for item in (before.get(key) or [])}
             if any(_digest(item) not in prior for item in (after.get(key) or [])):
                 expanding.append(key)
+        prior_mode = before.get("preparation_mode") or ""
+        next_mode = after.get("preparation_mode") or ""
+        # Stepping down from prepare_and_approve to prepare_private only removes
+        # the extra ask before consequential work; it does not widen permission,
+        # so it needs no change confirmation. A legacy blank stays flagged.
+        narrowing = prior_mode == "prepare_and_approve" and next_mode == "prepare_private"
+        if (prior_mode != next_mode and not narrowing
+                and next_mode in ("", "prepare_private", "prepare_and_approve")):
+            expanding.append("preparation_mode")
         return expanding
 
     def settings(self) -> dict[str, Any]:
@@ -555,6 +572,7 @@ class SetupActions:
             "public_interests": ("Add public topics", "Track the listed public topics; this does not connect an account."),
             "public_sources": ("Add public sources", "Read the listed public sources; this does not connect a private account."),
             "preparation_scopes": ("Add preparation scopes", "Preparation may use the additional scopes listed, only where already authorised."),
+            "preparation_mode": ("Change autonomy mode", "Use the newly selected preparation mode; a legacy blank value could permit earlier configuration."),
         }
         return [{"key": key, "label": labels[key][0], "description": labels[key][1]}
                 for key in keys if key in labels]

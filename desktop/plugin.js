@@ -652,7 +652,28 @@ function SettingsEditor({ ctx, statusQuery }) {
           textField('feed_max_sources_per_run', 'Public sources read per run', '0 reads none while keeping the list.', 'number'),
           switchField('preparation_enabled', 'Draft private preparation', 'Opt-in drafting for responsibilities you accepted.'),
           switchField('preparation_source_consent', 'Let preparation use already-checked facts', 'Only fresh facts from sources you enabled; no new connector.'),
-          textField('preparation_mode', 'Autonomy mode', 'review_only, prepare_private or prepare_and_approve. Review-only blocks autonomous preparation.', 'text'),
+          jsx(ListRow, {
+            key: 'preparation_mode',
+            title: 'Autonomy mode',
+            description: 'Blank keeps legacy behaviour with no new grant. Review-only blocks autonomous preparation.',
+            action: jsx('select', {
+              'aria-label': 'Autonomy mode',
+              className: 'h-8 w-full rounded-md border border-(--ui-stroke-secondary) bg-(--ui-surface-primary) px-2 text-[length:var(--conversation-text-font-size)] text-(--ui-text-primary) disabled:cursor-not-allowed disabled:opacity-60',
+              disabled,
+              value: String(values.preparation_mode ?? ''),
+              onChange: event => set('preparation_mode', event.target.value),
+              children: [
+                ['', 'Legacy / no new grant'],
+                ['review_only', 'Review only'],
+                ['prepare_private', 'Prepare privately'],
+                ['prepare_and_approve', 'Prepare and approve']
+              ].map(([optionValue, optionLabel]) => jsx('option', {
+                key: optionValue || 'legacy',
+                value: optionValue,
+                children: optionLabel
+              }))
+            })
+          }),
           textField('preparation_scopes', 'What preparation may read', 'Comma-separated scopes such as conversation, public, mail, calendar, tasks.', 'list'),
           jsx(ListRow, {
             key: 'public_sources',
