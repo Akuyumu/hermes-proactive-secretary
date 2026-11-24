@@ -1,5 +1,5 @@
 name: hermes-proactive-secretary
-version: 1.1.6
+version: 1.1.7
 kind: standalone
 platforms:
   - linux
@@ -291,6 +291,9 @@ config_schema:
     choices:
       - 3h
       - 6h
+      - 9h
+      - 12h
+      - 24h
     default: 3h
   fallback_provider:
     type: str

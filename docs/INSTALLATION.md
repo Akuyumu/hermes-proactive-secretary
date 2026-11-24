@@ -2,7 +2,7 @@
 
 This guide is for the person using Hermes. It covers a normal installation, the optional host compatibility update, first setup and upgrades. Developer and host-level detail lives in [Engineering](ENGINEERING.md).
 
-Hermes Proactive Secretary is version **1.1.6**. The plugin id is `hermes-proactive-secretary` and the commands are `hermes secretary`. On first load after an upgrade, existing state under `plugin-data/hermes-proactive-portal/` is copied once and idempotently into the new `plugin-data/hermes-proactive-secretary/` root; the legacy tree is left untouched as a rollback copy. Old owner-facing cron jobs are retired by `setup` (and the portal job by `hermes secretary job enable`) using the ownership ledger, then recreated under the new names. If you had enabled the old portal job, re-run `hermes secretary job enable --schedule "<your schedule>"` after the upgrade to recreate it under the new name.
+Hermes Proactive Secretary is version **1.1.7**. The plugin id is `hermes-proactive-secretary` and the commands are `hermes secretary`. On first load after an upgrade, existing state under `plugin-data/hermes-proactive-portal/` is copied once and idempotently into the new `plugin-data/hermes-proactive-secretary/` root; the legacy tree is left untouched as a rollback copy. Old owner-facing cron jobs are retired by `setup` (and the portal job by `hermes secretary job enable`) using the ownership ledger, then recreated under the new names. If you had enabled the old portal job, re-run `hermes secretary job enable --schedule "<your schedule>"` after the upgrade to recreate it under the new name.
 
 ## 1. Check host compatibility first
 

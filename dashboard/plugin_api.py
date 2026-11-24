@@ -317,6 +317,56 @@ def settings_update(body: dict[str, Any], request: Request):
         return _unavailable(exc)
 
 
+@router.get("/cadence")
+def cadence_read(request: Request):
+    """Read-only: stored interval, whether the live Portal is gated, next due."""
+    try:
+        _guard(request)
+        from secretary import secretary_cadence as cadence
+        from secretary import secretary_cli as secretary_cli
+        view = cadence.effective(secretary_cli._backend())
+        view["status"] = "gated" if view.get("gated") else "not-gated"
+        return view
+    except SetupActionError as exc:
+        return _error_response(exc)
+    except Exception as exc:  # noqa: BLE001 - bounded error, never raise out
+        return _unavailable(exc)
+
+
+@router.post("/cadence")
+def cadence_write(body: dict[str, Any], request: Request):
+    """Store the interval, and (only with ``apply``) convert the Portal job.
+
+    ``apply`` refuses with nothing changed when the job is paused, duplicated or
+    holding scheduled/retry state — the states a native schedule rewrite would
+    destroy. Without ``apply`` the live job is untouched.
+    """
+    try:
+        _guard(request)
+        if not isinstance(body, dict):
+            raise SetupActionError("invalid_body", "A JSON object is required.")
+        interval = body.get("interval")
+        if interval in (None, ""):
+            raise SetupActionError("invalid_body", "An interval is required.")
+        apply_now = bool(body.get("apply"))
+        from secretary import secretary_cadence as cadence
+        if apply_now:
+            from secretary import secretary_cli as secretary_cli
+            result = cadence.convert(secretary_cli._backend(), interval)
+        else:
+            plan = cadence.write_plan(interval)
+            result = {**plan, "status": "stored",
+                      "detail": "stored only; the live Portal schedule is unchanged"}
+        return JSONResponse(status_code=200 if result.get("ok") else 409, content=result)
+    except SetupActionError as exc:
+        return _error_response(exc)
+    except ValueError as exc:
+        return JSONResponse(status_code=409,
+                            content={"ok": False, "status": "refused", "error": str(exc)})
+    except Exception as exc:  # noqa: BLE001 - bounded error, never raise out
+        return _unavailable(exc)
+
+
 @router.post("/setup/trigger")
 def setup_trigger(request: Request):
     try:

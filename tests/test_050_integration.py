@@ -191,7 +191,7 @@ class AllowanceAndSettingsTests(unittest.TestCase):
         self.assertEqual(
             (schema["portal_cadence"]["type"], schema["portal_cadence"]["default"],
              set(schema["portal_cadence"]["choices"])),
-            ("str", "3h", {"3h", "6h"}))
+            ("str", "3h", {"3h", "6h", "9h", "12h", "24h"}))
         _clean, errors = models.validate_route_settings({"primary_provider": "p"})
         self.assertTrue(any("together" in error for error in errors))
         _clean, errors = models.validate_route_settings(

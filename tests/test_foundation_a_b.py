@@ -257,7 +257,7 @@ class NativeSettingsTests(unittest.TestCase):
             (props["portal_reasoning_effort"]["type"],
              props["portal_reasoning_effort"]["default"]), ("str", ""))
         self.assertEqual(props["portal_cadence"]["default"], "3h")
-        self.assertEqual(props["portal_cadence"]["choices"], ["3h", "6h"])
+        self.assertEqual(props["portal_cadence"]["choices"], ["3h", "6h", "9h", "12h", "24h"])
         self.assertEqual(props["collector_budget_seconds"]["minimum"], 5)
         self.assertEqual(props["max_candidates_per_kind"]["maximum"], 500)
 

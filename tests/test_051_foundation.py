@@ -477,7 +477,7 @@ class HostFormSchemaTests(unittest.TestCase):
         cadence = yaml.safe_load((ROOT / "plugin.yaml").read_text(
             encoding="utf-8"))["config_schema"]["portal_cadence"]
         self.assertEqual((cadence["type"], cadence["default"]), ("str", "3h"))
-        self.assertEqual(cadence["choices"], ["3h", "6h"])
+        self.assertEqual(cadence["choices"], ["3h", "6h", "9h", "12h", "24h"])
         self.assertEqual(by_key["portal_cadence"]["default"], "3h")
         for field in fields:
             self.assertTrue(field["label"], field["key"])

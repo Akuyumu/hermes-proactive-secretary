@@ -458,6 +458,45 @@ function SettingsEditor({ ctx, statusQuery }) {
   const values = draft ? draft.values : data.values || {}
   const disabled = settingsQuery.isLoading || Boolean(settingsQuery.error)
 
+  const [cadenceBusy, setCadenceBusy] = useState(false)
+  const [cadenceChoice, setCadenceChoice] = useState('')
+  const cadenceQuery = useQuery({
+    queryKey: ['proactive-secretary', 'cadence'],
+    queryFn: () => ctx.rest('/cadence'),
+    refetchInterval: 30000
+  })
+  const cadenceView = cadenceQuery.data || {}
+  const CADENCE_OPTIONS = [['3h', 180], ['6h', 360], ['9h', 540], ['12h', 720], ['24h', 1440]]
+  const storedCadence = CADENCE_OPTIONS.find(
+    ([, minutes]) => minutes === Number(cadenceView.interval_minutes)
+  )
+  const cadenceValue = cadenceChoice || (storedCadence ? storedCadence[0] : '3h')
+
+  async function applyCadence() {
+    setCadenceBusy(true)
+    try {
+      const result = await ctx.rest('/cadence', {
+        method: 'POST',
+        body: { interval: cadenceValue, apply: true }
+      })
+      if (result && result.ok) {
+        setCadenceChoice('')
+        host.notify({
+          kind: 'success',
+          message: `Portal cadence applied: every ${result.interval_minutes} minutes.`
+        })
+        setNotice('')
+      } else {
+        setNotice(`Cadence not applied: ${(result && (result.error || result.status)) || 'unknown error'}. Nothing was changed.`)
+      }
+      await Promise.all([cadenceQuery.refetch(), statusQuery.refetch()])
+    } catch (error) {
+      host.notifyError(error, 'Could not apply the Portal cadence.')
+    } finally {
+      setCadenceBusy(false)
+    }
+  }
+
   function set(key, value) {
     setDraft(previous => (previous
       ? { ...previous, values: { ...previous.values, [key]: value } }
@@ -614,7 +653,29 @@ function SettingsEditor({ ctx, statusQuery }) {
         className: 'space-y-1',
         children: [
           jsx('h4', { className: 'font-medium', children: 'Setup' }),
-          textField('timezone', 'Timezone', 'Used for quiet hours and the daily allowance.', 'text')
+          textField('timezone', 'Timezone', 'Used for quiet hours and the daily allowance.', 'text'),
+          jsx(ListRow, {
+            key: 'autonomy_mode_basics',
+            title: 'Autonomy mode',
+            description: 'What the secretary may do on its own. Review only blocks autonomous preparation.',
+            action: jsx('select', {
+              'aria-label': 'Autonomy mode',
+              className: 'h-8 w-full rounded-md border border-(--ui-stroke-secondary) bg-(--ui-surface-primary) px-2 text-[length:var(--conversation-text-font-size)] text-(--ui-text-primary) disabled:cursor-not-allowed disabled:opacity-60',
+              disabled,
+              value: String(values.preparation_mode ?? ''),
+              onChange: event => set('preparation_mode', event.target.value),
+              children: [
+                ['', 'Legacy / no new grant'],
+                ['review_only', 'Review only'],
+                ['prepare_private', 'Prepare privately'],
+                ['prepare_and_approve', 'Prepare and approve']
+              ].map(([optionValue, optionLabel]) => jsx('option', {
+                key: optionValue || 'legacy',
+                value: optionValue,
+                children: optionLabel
+              }))
+            })
+          })
         ]
       }),
       jsxs('section', {
@@ -626,6 +687,43 @@ function SettingsEditor({ ctx, statusQuery }) {
           textField('quiet_start_hour', 'Quiet hours begin (0-23)', 'Ordinary messages wait from this local hour.', 'number'),
           textField('quiet_end_hour', 'Quiet hours end (0-23)', 'Ordinary messages may resume from this local hour.', 'number'),
           textField('cooldown_minutes', 'Minimum gap between messages (minutes)', 'A short breathing space between ordinary messages.', 'number')
+        ]
+      }),
+      jsxs('section', {
+        className: 'space-y-1',
+        children: [
+          jsx('h4', { className: 'font-medium', children: 'Portal' }),
+          jsx(ListRow, {
+            key: 'portal_cadence',
+            title: 'How often the portal runs',
+            description: 'Choose an interval, then Apply. Applying converts the Portal to the wake gate and stores the interval; the job keeps its id and history.',
+            action: jsx('select', {
+              'aria-label': 'How often the portal runs',
+              className: 'h-8 w-full rounded-md border border-(--ui-stroke-secondary) bg-(--ui-surface-primary) px-2 text-[length:var(--conversation-text-font-size)] text-(--ui-text-primary) disabled:cursor-not-allowed disabled:opacity-60',
+              disabled,
+              value: cadenceValue,
+              onChange: event => { setCadenceChoice(event.target.value); setNotice('') },
+              children: CADENCE_OPTIONS.map(([optionValue, minutes]) => jsx('option', {
+                key: optionValue,
+                value: optionValue,
+                children: `Every ${minutes / 60} hour${minutes === 60 ? '' : 's'}`
+              }))
+            })
+          }),
+          jsx(ListRow, {
+            key: 'portal_cadence_effective',
+            title: 'Running cadence',
+            description: cadenceView.gated
+              ? `Gated every ${cadenceView.interval_minutes} minutes. Last wake ${cadenceView.last_wake || 'not yet'}, next due ${cadenceView.next_due || 'on the next tick'}.`
+              : 'Not gated yet: the Portal still runs on its native schedule. Apply converts it to the wake gate.',
+            action: jsx(Button, {
+              size: 'sm',
+              variant: 'outline',
+              disabled: disabled || cadenceBusy,
+              onClick: applyCadence,
+              children: cadenceBusy ? 'Applying…' : 'Apply cadence'
+            })
+          })
         ]
       }),
       jsxs('section', {
@@ -652,28 +750,6 @@ function SettingsEditor({ ctx, statusQuery }) {
           textField('feed_max_sources_per_run', 'Public sources read per run', '0 reads none while keeping the list.', 'number'),
           switchField('preparation_enabled', 'Draft private preparation', 'Opt-in drafting for responsibilities you accepted.'),
           switchField('preparation_source_consent', 'Let preparation use already-checked facts', 'Only fresh facts from sources you enabled; no new connector.'),
-          jsx(ListRow, {
-            key: 'preparation_mode',
-            title: 'Autonomy mode',
-            description: 'Blank keeps legacy behaviour with no new grant. Review-only blocks autonomous preparation.',
-            action: jsx('select', {
-              'aria-label': 'Autonomy mode',
-              className: 'h-8 w-full rounded-md border border-(--ui-stroke-secondary) bg-(--ui-surface-primary) px-2 text-[length:var(--conversation-text-font-size)] text-(--ui-text-primary) disabled:cursor-not-allowed disabled:opacity-60',
-              disabled,
-              value: String(values.preparation_mode ?? ''),
-              onChange: event => set('preparation_mode', event.target.value),
-              children: [
-                ['', 'Legacy / no new grant'],
-                ['review_only', 'Review only'],
-                ['prepare_private', 'Prepare privately'],
-                ['prepare_and_approve', 'Prepare and approve']
-              ].map(([optionValue, optionLabel]) => jsx('option', {
-                key: optionValue || 'legacy',
-                value: optionValue,
-                children: optionLabel
-              }))
-            })
-          }),
           textField('preparation_scopes', 'What preparation may read', 'Comma-separated scopes such as conversation, public, mail, calendar, tasks.', 'list'),
           jsx(ListRow, {
             key: 'public_sources',

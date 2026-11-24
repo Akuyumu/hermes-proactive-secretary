@@ -271,7 +271,7 @@ class ManifestSeamTests(unittest.TestCase):
             (schema["portal_reasoning_effort"]["type"],
              schema["portal_reasoning_effort"]["default"]), ("str", ""))
         self.assertEqual(schema["portal_cadence"]["default"], "3h")
-        self.assertEqual(schema["portal_cadence"]["choices"], ["3h", "6h"])
+        self.assertEqual(schema["portal_cadence"]["choices"], ["3h", "6h", "9h", "12h", "24h"])
         self.assertNotIn("properties", schema)
         for key, spec in schema.items():
             self.assertIsInstance(spec, dict)
