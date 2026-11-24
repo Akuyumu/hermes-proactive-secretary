@@ -372,6 +372,7 @@ def effective(backend: Any, job_name: str | None = None, *, name: str | None = N
     return {
         "ok": plan.get("ok", True),
         "error": plan.get("error", ""),
+        "present": bool(plan.get("present")),
         "job": name,
         "rows": len(rows),
         "interval_minutes": int(plan.get("interval_minutes") or DEFAULT_MINUTES),

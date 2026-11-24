@@ -177,20 +177,6 @@ The scope vocabulary is exactly `conversation`, `public`, `mail`, `calendar`, `t
 
 Handoff never executes. `hermes secretary responsibilities handoff --id <opaque-id>` prints the current generation, hash and target for ordinary foreground approval; any send, book, purchase, publish or calendar/task mutation still requires your exact approval through normal Hermes tools. On a host without the strict contract, `hermes secretary prepare` reports the limitation and leaves the unit unclaimed.
 
-## Portal cadence without rewriting the schedule
-
-`schema` here is the *setup default*: it decides the cadence the Portal is created with. Changing the cadence of an existing Portal job does not rewrite the native schedule, because the host's schedule editor drops a pending slot and clears a quota hold, and no conditional edit exists for a plugin to use.
-
-Instead the Portal can run on a **gated tick**: the job keeps a fixed 15-minute expression and this plugin's pre-run script decides whether the agent actually wakes. The owner's interval lives in a small owner-only state file, so changing it is one atomic write — job id, history, continuity, retries and quota holds are never touched.
-
-```bash
-hermes secretary cadence status                 # stored interval vs the live job (read-only)
-hermes secretary cadence --set 6h               # store the interval only; live schedule unchanged
-hermes secretary cadence --set 6h --apply       # install the gate and convert the Portal job
-```
-
-`--apply` refuses, with nothing changed, when the Portal is paused, missing, duplicated, or holding `pending_slot`, a quota hold or a retry — those are exactly the states an edit would discard. Spacing is accurate to one tick (a 6h interval wakes 6h00–6h15 after the last wake), which is the price of never touching scheduler state. `hermes secretary disable` still removes only the runner files this plugin recorded.
-
 ## Public discovery and privacy
 
 Public discovery is off by default. Add only public, keyless sources you trust, for example through `hermes secretary watch add "<public topic>"` or explicit `public_sources` entries. Supported parser kinds include `github_releases`, `reddit_rss`, `rss_atom`, `web_page`, `nea_forecast`, `university_json`, `university_opportunity`, `smrt_notice` and `cna_rss`.
@@ -289,7 +275,7 @@ Maintainer commands from the source tree, using a Python environment with the He
 PYTHONPATH=src python3 -m unittest discover -s tests
 PYTHONPATH=src python3 -m proactive_pilot.selftest
 python3 scripts/release_export.py scan
-python3 scripts/release_export.py build --output ./dist/hermes-proactive-secretary-1.1.5.tar.gz
+python3 scripts/release_export.py build --output ./dist/hermes-proactive-secretary-1.1.6.tar.gz
 python3 scripts/release_export.py doctor --installed /path/to/extracted-package
 ```
 
