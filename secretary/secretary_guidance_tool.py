@@ -30,8 +30,8 @@ TOOL_DESCRIPTION = (
     "notice lane obeys it deterministically. Use when the owner signals a topic "
     "is finished (e.g. exams are over, a sheet is no longer needed). Closing and "
     "reopening are two-step: first propose the exact change, then confirm only "
-    "after the owner replies yes. Closing is temporary by default and never "
-    "cancels a requested reminder."
+    "after the owner replies with the exact sentence the proposal returned. "
+    "Closing is temporary by default and never cancels a requested reminder."
 )
 TOOL_SCHEMA = {
     "type": "object",
