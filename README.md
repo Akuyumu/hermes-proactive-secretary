@@ -62,7 +62,8 @@ until you enable it and choose what it may use, and it never sends anything.
 - **Topic closure.** When you ask to stop notices about a topic, the tool then
   gives you a one-line description of the exact change — for example
   `close "exams" until 2026-12-02` — and asks you to reply with one exact
-  sentence, for example "yes, close exams". Only that sentence is accepted: a
+  sentence, for example "yes, close exams until 2026-12-02" or "yes, close exams
+  permanently". Only that sentence is accepted: a
   bare "yes", a different topic, a shorter expiry or an extra clause is refused,
   because the plugin cannot see what the assistant showed you. Requested
   reminders are unaffected. A permanent closure needs you to say so.

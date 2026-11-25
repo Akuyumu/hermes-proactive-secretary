@@ -100,7 +100,10 @@ class GuidanceAuthorityTests(unittest.TestCase):
         payload.update(extra)
         return self._call(payload, session_id=session_id)
 
-    def _confirm(self, ref, reply="yes, close exams", session_id="s-guidance"):
+    def _confirm(self, ref, reply=None, session_id="s-guidance"):
+        if reply is None:
+            row = guidance.read_pending(self.data, ref) or {}
+            reply = row.get("reply_with") or "yes"
         self._remember(reply, session_id=session_id)
         return self._call({"action": "confirm", "ref": ref,
                            "evidence_quote": reply}, session_id=session_id)
@@ -202,7 +205,7 @@ class GuidanceAuthorityTests(unittest.TestCase):
         self.assertIsNotNone(guidance.read_pending(self.data, exams["ref"]))
         self.assertIsNotNone(guidance.read_pending(self.data, travel["ref"]))
 
-        named = self._confirm(exams["ref"], reply="yes, close exams")
+        named = self._confirm(exams["ref"])
         self.assertTrue(named["ok"], named)
         self.assertEqual(named["confirmed_ref"], exams["ref"])
         self.assertIsNone(guidance.read_pending(self.data, exams["ref"]))
@@ -214,7 +217,7 @@ class GuidanceAuthorityTests(unittest.TestCase):
             "exams are over, close the exams topic", topics=("exams",))
         travel = self._propose_close(
             "travel is over, close the travel topic", topics=("travel",))
-        reply = "yes, close exams"
+        reply = exams["reply_with"]
         self._remember(reply)
         confirmed = self._call(
             {"action": "confirm", "ref": exams["ref"], "evidence_quote": reply},
@@ -307,7 +310,7 @@ class GuidanceAuthorityTests(unittest.TestCase):
     def test_intervening_turn_keeps_a_named_reply_working(self):
         first = self._propose_close("exams are over, close the exams topic")
         self._remember("what is the weather like")
-        result = self._confirm(first["ref"], reply="yes, close exams")
+        result = self._confirm(first["ref"])
         self.assertTrue(result["ok"], result)
         self.assertEqual(self._call({"action": "list"})["count"], 1)
 
@@ -346,6 +349,38 @@ class GuidanceAuthorityTests(unittest.TestCase):
                              "evidence_quote": reply}, session_id="s-guidance")
         self.assertFalse(result["ok"], result)
         self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_trailing_question_mark_is_refused(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        reply = first["reply_with"] + "?"
+        self._remember(reply)
+        result = self._call({"action": "confirm", "ref": first["ref"],
+                             "evidence_quote": reply}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_quoted_echo_is_refused(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        reply = '"' + first["reply_with"] + '"'
+        self._remember(reply)
+        result = self._call({"action": "confirm", "ref": first["ref"],
+                             "evidence_quote": reply}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_two_durations_have_distinct_confirmations(self):
+        permanent = self._propose_close(
+            "exams are over, close the exams topic permanently", permanent=True)
+        dated = self._propose_close(
+            "exams are over, close the exams topic until 2026-12-24")
+        self.assertNotEqual(permanent["reply_with"], dated["reply_with"])
+        self.assertIn("permanently", permanent["reply_with"])
+        self.assertIn("2026-12-24", dated["reply_with"])
+        result = self._confirm(permanent["ref"], reply=dated["reply_with"])
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+        self.assertTrue(self._confirm(permanent["ref"])["ok"])
+        self.assertTrue(self._call({"action": "list"})["entries"][0]["permanent"])
 
     def test_question_is_not_a_confirmation(self):
         first = self._propose_close("exams are over, close the exams topic")
@@ -509,7 +544,7 @@ class GuidanceAuthorityTests(unittest.TestCase):
         self.assertIn('"exams"', first["summary"])
         self.assertEqual(self._call({"action": "list"})["count"], 1)
 
-        confirmed = self._confirm(first["ref"], reply="yes, reopen exams")
+        confirmed = self._confirm(first["ref"])
         self.assertTrue(confirmed["ok"], confirmed)
         self.assertEqual(confirmed["status"], "reopened")
         self.assertEqual(confirmed["confirmed_ref"], first["ref"])

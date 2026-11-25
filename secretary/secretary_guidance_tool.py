@@ -374,9 +374,13 @@ _QUESTION_START = re.compile(
 
 
 def _normalise_reply(text: str) -> str:
-    """Case, punctuation and spacing do not matter; wording does."""
-    cleaned = re.sub(r"[^\w\s]", " ", str(text or "").lower())
-    return re.sub(r"\s+", " ", cleaned).strip()
+    """Case, spacing and trailing punctuation do not matter; wording does.
+
+    Question marks and quotation marks are kept: "yes, close exams?" and
+    \"yes, close exams\" are not the sentence the owner was asked to send.
+    """
+    cleaned = re.sub(r"\s+", " ", str(text or "").lower()).strip()
+    return cleaned.rstrip("., ").strip()
 
 
 def _standalone_affirmative(text: str) -> bool:

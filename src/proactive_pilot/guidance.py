@@ -169,12 +169,23 @@ def _pending_summary(action: str, topics: list[str], keys: list[str],
     return f"close {names} until {_summary_date(until_iso)}"
 
 
-def _pending_reply(action: str, topics: list[str], keys: list[str]) -> str:
-    """The exact sentence the owner is asked to reply with."""
+def _pending_reply(action: str, topics: list[str], keys: list[str],
+                   until: str, permanent: bool) -> str:
+    """The exact sentence the owner is asked to reply with.
+
+    The duration is part of the sentence, so two proposals for the same topic
+    with different durations cannot share one confirmation.
+    """
     names = [str(topic).strip() for topic in topics if str(topic).strip()]
-    if names:
-        return f"yes, {action} " + " and ".join(names)
-    return f"yes, {action} those"
+    if not names:
+        return f"yes, {action} those"
+    sentence = f"yes, {action} " + " and ".join(names)
+    if action == "close":
+        if permanent:
+            return sentence + " permanently"
+        if until:
+            return sentence + " until " + str(until)[:10]
+    return sentence
 
 
 def create_pending(root: Any, *, session_id: Any, action: Any, topics: Iterable[Any],
@@ -229,12 +240,21 @@ def create_pending(root: Any, *, session_id: Any, action: Any, topics: Iterable[
         request["permanent"] = bool(permanent)
     request["summary"] = _pending_summary(
         act, clean_topics, clean_keys, request["until"], request["permanent"])
-    request["reply_with"] = _pending_reply(act, clean_topics, clean_keys)
+    request["reply_with"] = _pending_reply(
+        act, clean_topics, clean_keys, request["until"], request["permanent"])
     store = _read_pending_store(root)
     if not store.get("ok"):
         return {"ok": False, "status": "refused", "error": store.get("error")}
     kept = [row for row in store["requests"]
             if isinstance(row, dict) and not _pending_expired(row, moment)]
+    # Another live proposal with the same sentence would make the reply ambiguous.
+    for row in kept:
+        if (str(row.get("session_id") or "") == session
+                and not row.get("consumed")
+                and str(row.get("reply_with") or "") == request["reply_with"]):
+            return {"ok": False, "status": "refused",
+                    "error": ("another change with the same confirmation wording is "
+                              "waiting; finish or cancel it first")}
     kept.insert(0, request)
     store["requests"] = kept[:MAX_PENDING]
     try:
