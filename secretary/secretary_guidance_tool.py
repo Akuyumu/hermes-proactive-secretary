@@ -111,9 +111,10 @@ _NUMBER_WORDS = {
 }
 _UNIT_DAYS = {"day": 1, "week": 7, "month": 30, "year": 365}
 _CONFIRM_SUFFIX = ("; ask the owner to say it in their own words, then try again")
-_PROPOSE_ASK = ("Show the owner exactly this change and ask them to reply yes. If more "
-                "than one change is waiting, ask them to name the topic. Then call "
-                "action=confirm with this ref and their reply as evidence_quote.")
+_PROPOSE_ASK = ("Show the owner exactly this change and ask them to reply, for example "
+                "\"yes, close exams\". If more than one change is waiting, ask them to "
+                "name the topic. Then call action=confirm with this ref and their reply "
+                "as evidence_quote.")
 
 
 def _ensure_src() -> None:
@@ -363,6 +364,13 @@ _AFFIRMATIVE_FILLERS = frozenset({"yes", "yeah", "yep", "yup", "ok", "okay", "su
                                  "reopen", "now"})
 
 
+_QUESTION_START = re.compile(
+    r"^\s*(?:should|shall|do|does|can|could|would|will|is|are|am|what|when|why|"
+    r"how|which|who)\b",
+    re.IGNORECASE,
+)
+
+
 def _standalone_affirmative(text: str) -> bool:
     """A short reply that only says yes.
 
@@ -433,10 +441,16 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
     if not _quote_matches(payload.get("evidence_quote"), turn):
         return {"ok": False, "status": "refused",
                 "error": "evidence_quote must quote the owner's confirming message"}
-    if not _AFFIRMATIVE.search(text):
+    quote = str(payload.get("evidence_quote") or "")
+    standalone = _standalone_affirmative(quote)
+    if not standalone and not _AFFIRMATIVE.search(quote):
         return {"ok": False, "status": "refused",
-                "error": "the owner's reply is not an affirmative confirmation"}
-    if _NEGATION_ANY.search(text) or _CONDITIONAL_TURN.search(text):
+                "error": "the owner's reply is not an affirmative approval"}
+    if quote.rstrip().endswith("?") or (
+            not standalone and _QUESTION_START.search(quote)):
+        return {"ok": False, "status": "refused",
+                "error": "a question is not a confirmation"}
+    if _NEGATION_ANY.search(quote) or _CONDITIONAL_TURN.search(quote):
         return {"ok": False, "status": "refused",
                 "error": "a negated or conditional reply cannot confirm guidance"}
 
@@ -445,23 +459,35 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
             r"(?<![\w])" + re.escape(str(value)) + r"(?![\w])", re.IGNORECASE)
 
     pending_rows = guidance.pending_for_session(root, session_id)
-    refs_named = {other.get("ref") for other in pending_rows
-                  if other.get("ref") and _whole_word(str(other.get("ref"))).search(text)}
-    labels_matched = {other.get("ref") for other in pending_rows
-                      if any(_whole_word(token).search(text)
-                             for token in other.get("label_tokens") or [] if token)}
-    candidates = refs_named | labels_matched
-    if ref not in refs_named:
-        if len(candidates) > 1:
+    refs_named: set[Any] = set()
+    candidates: set[Any] = set()
+    for other in pending_rows:
+        named_ref = bool(other.get("ref")) and bool(
+            _whole_word(str(other.get("ref"))).search(quote))
+        named_label = any(_whole_word(token).search(quote)
+                          for token in other.get("label_tokens") or [] if token)
+        if named_ref:
+            refs_named.add(other.get("ref"))
+        if named_ref or named_label:
+            candidates.add(other.get("ref"))
+    if len(candidates) > 1:
+        return {"ok": False, "status": "refused",
+                "error": "the reply names more than one change; say which one"}
+    if ref in candidates:
+        approved = True
+    elif standalone and len(pending_rows) == 1:
+        approved = True
+    elif len(candidates) == 1:
+        return {"ok": False, "status": "refused",
+                "error": "that reply is for a different change"}
+    else:
+        return {"ok": False, "status": "refused",
+                "error": "the reply does not say which change it confirms"}
+    if approved and not standalone and not refs_named:
+        cue = _CLOSE_CUE if str(row.get("action")) == "close" else _REOPEN_CUE
+        if not cue.search(quote):
             return {"ok": False, "status": "refused",
-                    "error": "the reply names more than one change; say which one"}
-        if len(candidates) == 1 and ref in candidates:
-            pass
-        elif len(pending_rows) == 1 and _standalone_affirmative(text):
-            pass
-        else:
-            return {"ok": False, "status": "refused",
-                    "error": "the reply does not say which change it confirms"}
+                    "error": "the reply names the topic but does not approve the change"}
 
     token = guidance.turn_token(session_id, at, text)
     if not guidance.consume_turn(root, token):

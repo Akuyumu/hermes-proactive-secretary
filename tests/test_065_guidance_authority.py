@@ -112,7 +112,7 @@ class GuidanceAuthorityTests(unittest.TestCase):
         self.assertEqual(first["status"], "confirmation_required")
         self.assertTrue(first["ref"].startswith("gref-"), first)
         self.assertIn('"exams"', first["summary"])
-        self.assertIn("reply yes", first["ask"])
+        self.assertIn("yes, close exams", first["ask"])
         self.assertEqual(self._call({"action": "list"})["count"], 0)
 
         confirmed = self._confirm(first["ref"])
@@ -261,6 +261,46 @@ class GuidanceAuthorityTests(unittest.TestCase):
         self.assertIn('close "exams" until 2026-12-24', first["summary"])
         self.assertNotIn("days", first["summary"])
         self.assertNotIn("for ", first["summary"])
+
+    def test_question_is_not_a_confirmation(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        reply = "Should I confirm exams?"
+        self._remember(reply)
+        result = self._call({"action": "confirm", "ref": first["ref"],
+                             "evidence_quote": reply}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertIn("question", result["error"])
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_topic_without_approval_does_not_confirm(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        reply = "Yes, I have exams tomorrow."
+        self._remember(reply)
+        result = self._call({"action": "confirm", "ref": first["ref"],
+                             "evidence_quote": reply}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertIn("does not approve", result["error"])
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_quote_must_carry_the_approval(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        self._remember("Yes. Please.")
+        result = self._call({"action": "confirm", "ref": first["ref"],
+                             "evidence_quote": "Please."}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_reply_naming_two_refs_is_refused(self):
+        exams = self._propose_close("exams are over, close the exams topic")
+        travel = self._propose_close("travel is booked, close the travel topic",
+                                     topics=("travel",))
+        reply = "yes " + exams["ref"] + " and " + travel["ref"]
+        self._remember(reply)
+        result = self._call({"action": "confirm", "ref": exams["ref"],
+                             "evidence_quote": reply}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertIn("more than one", result["error"])
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
 
     def test_reply_naming_both_pending_topics_is_refused(self):
         exams = self._propose_close("exams are over, close the exams topic")
