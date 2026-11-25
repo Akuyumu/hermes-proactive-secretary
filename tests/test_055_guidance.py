@@ -187,6 +187,23 @@ class NoticeBoundaryTests(_Rooted):
                           "expiry": "2026-11-26T12:00:00Z"})
             self.assertNotEqual(receipt.get("status"), "evidence_is_history", (ref, receipt))
 
+    def test_short_scheme_is_a_source_id(self):
+        receipt = self.portal_notices.submit_notice(
+            self.store, self.clock, identity=self.identity,
+            proposal={"event_key": "evt-x", "topic": "release",
+                      "message": "Changed.", "evidence_refs": ["x:item/plans/a"],
+                      "expiry": "2026-11-26T12:00:00Z"})
+        self.assertNotEqual(receipt.get("status"), "evidence_is_history", receipt)
+
+    def test_windows_style_planning_path_is_history(self):
+        receipt = self.portal_notices.submit_notice(
+            self.store, self.clock, identity=self.identity,
+            proposal={"event_key": "evt-win", "topic": "study plan",
+                      "message": "Same countdown.",
+                      "evidence_refs": ["plans\\release.md"],
+                      "expiry": "2026-11-26T12:00:00Z"})
+        self.assertEqual(receipt.get("status"), "evidence_is_history", receipt)
+
     def test_bare_planning_file_is_history(self):
         receipt = self.portal_notices.submit_notice(
             self.store, self.clock, identity=self.identity,
@@ -237,7 +254,7 @@ class ToolTests(_Rooted):
     def test_conversational_close_then_list_then_reopen(self):
         closed = self.tool.dispatch({
             "action": "close", "topics": ["Exams"],
-            "reason": "yikes i dont need that cheatsheet actl"})
+            "reason": "yikes i dont need that cheatsheet actl"}, authorized=True)
         self.assertTrue(closed["ok"], closed)
         self.assertIn("note", closed)
         listed = self.tool.dispatch({"action": "list"})
@@ -245,12 +262,15 @@ class ToolTests(_Rooted):
         self.assertEqual(listed["entries"][0]["labels"], ["Exams"])
         self.assertIn("cheatsheet", listed["entries"][0]["source"])
         reopened = self.tool.dispatch({"action": "reopen",
-                                       "id": listed["entries"][0]["id"]})
+                                       "id": listed["entries"][0]["id"]}, authorized=True)
         self.assertTrue(reopened["ok"], reopened)
         self.assertEqual(self.tool.dispatch({"action": "list"})["count"], 0)
 
     def test_close_requires_a_topic_or_key(self):
-        self.assertFalse(self.tool.dispatch({"action": "close"})["ok"])
+        self.assertFalse(self.tool.dispatch({"action": "close"}, authorized=True)["ok"])
+
+    def test_unauthorized_dispatch_cannot_mutate(self):
+        self.assertFalse(self.tool.dispatch({"action": "close", "topics": ["x"]})["ok"])
 
     def test_handler_never_raises(self):
         handler = self.tool.tool_handler(None)
@@ -270,15 +290,17 @@ class ToolTests(_Rooted):
         self.assertEqual(guidance.suppressed(self.root, labels=["exams"]), "unavailable")
 
     def test_old_cached_normalisation_does_not_break_a_closure(self):
+        fixed = datetime(2026, 11, 25, 12, 0, tzinfo=timezone.utc)
         # An entry written before the normalisation change stored 'studyplan'.
         path = guidance.store_path(self.root)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"schema": 1, "revision": 3, "entries": [{
             "id": "gd-old", "labels": ["Study Plan"], "labels_norm": ["studyplan"],
             "keys": [], "action": "close", "scope": "discretionary",
-            "since": "2026-11-24T00:00:00Z", "until": "2026-12-24T00:00:00Z",
+            "since": "2026-11-24T00:00:00Z", "until": "2027-12-24T00:00:00Z",
             "permanent": False, "source": "owner"}]}), encoding="utf-8")
-        self.assertTrue(guidance.suppressed(self.root, labels=["study plan"]))
+        self.assertEqual(guidance.suppressed(self.root, labels=["study plan"], now=fixed),
+                         "gd-old")
 
     def test_malformed_entries_are_ignored_not_fatal(self):
         path = guidance.store_path(self.root)
@@ -286,8 +308,7 @@ class ToolTests(_Rooted):
         path.write_text(json.dumps({"schema": 1, "revision": 1, "entries": [
             None, {"no": "id"}, {"id": "x", "labels": "not-a-list", "action": "close"}
         ]}), encoding="utf-8")
-        self.assertEqual(guidance.suppressed(self.root, labels=["anything"]), "")
-        self.assertEqual(guidance.list_active(self.root)["count"], 0)
+        self.assertEqual(guidance.suppressed(self.root, labels=["anything"]), "unavailable")
 
     def test_bad_revision_is_unavailable(self):
         path = guidance.store_path(self.root)

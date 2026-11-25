@@ -366,15 +366,14 @@ _HISTORY_EVIDENCE = re.compile(
     r"(^|/)(\.planning|plans)(/|$)|(^|/)(progress|findings|task_plan)\.md(#.*)?$",
     re.IGNORECASE,
 )
-_SOURCE_REF = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]{1,15}:|://")
+_SOURCE_REF = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:|://")
 
 
 def _evidence_is_only_history(refs: list[str]) -> bool:
     """True when every evidence reference is a local planning/history artifact.
 
-    A source id (``cal:…``, ``mail:…``, ``feed:…``, a URL) is never treated as
-    history just because its text contains a word like "plans": only local
-    path-shaped references count, so fresh source evidence is not refused.
+    A source id (``cal:…``, ``x:…``, a URL) is never history just because its text
+    contains a word like "plans": only local path-shaped references count.
     """
     if not refs:
         return False
@@ -383,7 +382,8 @@ def _evidence_is_only_history(refs: list[str]) -> bool:
         text = str(ref).strip()
         if _SOURCE_REF.search(text):
             return False
-        return bool(_HISTORY_EVIDENCE.search(text))
+        normalised = text.replace("\\", "/")
+        return bool(_HISTORY_EVIDENCE.search(normalised))
 
     return all(is_history(ref) for ref in refs)
 

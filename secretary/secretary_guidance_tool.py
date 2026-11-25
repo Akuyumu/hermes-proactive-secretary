@@ -44,6 +44,10 @@ TOOL_SCHEMA = {
                       "description": "Only when the owner explicitly wants it permanent"},
         "id": {"type": "string", "description": "Entry id for reopen"},
         "reason": {"type": "string", "description": "The owner's own words"},
+        "session_id": {"type": "string",
+                       "description": "Current chat session id; required to prove the owner's turn"},
+        "evidence_quote": {"type": "string",
+                           "description": "Exact words from the owner's current message"},
     },
     "required": ["action"],
     "additionalProperties": False,
@@ -56,7 +60,7 @@ def _ensure_src() -> None:
         sys.path.insert(0, src)
 
 
-def dispatch(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def dispatch(payload: dict[str, Any] | None = None, *, authorized: bool = False) -> dict[str, Any]:
     _ensure_src()
     from proactive_pilot import guidance
 
@@ -66,6 +70,11 @@ def dispatch(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     reason = str(body.get("reason") or "").strip()[:200]
     if action == "list":
         return guidance.list_active(root)
+    if action in ("close", "reopen") and not authorized:
+        # The exported function is a call surface too: a mutation must carry the
+        # tool's authority check, not just its arguments.
+        return {"ok": False, "status": "refused",
+                "error": "guidance changes require a verified owner turn"}
     if action == "reopen":
         entry_id = str(body.get("id") or "").strip()
         if not entry_id:
@@ -87,23 +96,34 @@ def dispatch(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     return result
 
 
-def _foreground_authority(ctx: Any) -> tuple[bool, str]:
-    """Only a private foreground turn may change guidance.
+def _foreground_authority(ctx: Any, payload: dict[str, Any]) -> tuple[bool, str]:
+    """Positive host-attested proof: a private human turn quoting the owner.
 
-    An unknown context is not treated as foreground: if the host cannot prove the
-    lane, the write is refused rather than guessed.
+    A null execution, a TTY or an environment variable is not proof — delegated
+    children of a scheduled run also report "not cron". The authoritative turn
+    record the host keeps for a session is what we require, exactly as follow-ups
+    and responsibilities do.
     """
     if ctx is None:
         return False, "a foreground conversation context is required"
-    getter = getattr(ctx, "current_cron_execution", None)
-    if not callable(getter):
-        return False, "this context cannot prove a foreground turn"
+    session_id = str(payload.get("session_id") or "").strip()
+    if not session_id:
+        return False, "session_id is required to prove an owner turn"
     try:
-        execution = getter()
-    except Exception:  # noqa: BLE001 - unverifiable is not foreground
-        return False, "foreground authority could not be verified"
-    if execution is not None:
-        return False, "scheduled runs may read guidance but never change it"
+        from .secretary_responsibilities import latest_turn, _quote_matches
+        from .secretary_followups import _turn_is_private_human
+    except Exception:  # noqa: BLE001 - unavailable authority proof means refuse
+        return False, "owner authority could not be checked"
+    try:
+        turn = latest_turn(ctx, session_id=session_id)
+    except Exception:  # noqa: BLE001
+        return False, "owner authority could not be checked"
+    if turn is None:
+        return False, "no current human conversation turn for this session"
+    if not _turn_is_private_human(turn):
+        return False, "a background or shared turn cannot change guidance"
+    if not _quote_matches(payload.get("evidence_quote"), turn):
+        return False, "evidence_quote must quote the owner's current message"
     return True, ""
 
 
@@ -113,10 +133,12 @@ def tool_handler(ctx: Any = None):
         action = str(body.get("action") or "list").strip().lower()
         try:
             if action != "list":
-                ok, why = _foreground_authority(ctx)
+                ok, why = _foreground_authority(ctx, body)
                 if not ok:
                     return json.dumps({"ok": False, "status": "refused", "error": why},
                                       ensure_ascii=False, sort_keys=True)
+                return json.dumps(dispatch(body, authorized=True),
+                                  ensure_ascii=False, sort_keys=True)
             return json.dumps(dispatch(body), ensure_ascii=False, sort_keys=True)
         except ValueError as exc:
             return json.dumps({"ok": False, "status": "refused", "error": str(exc)},

@@ -96,6 +96,8 @@ def read_store(root: Any) -> dict[str, Any]:
         revision = int(data.get("revision") or 0)
     except (TypeError, ValueError):
         return {"ok": False, "error": "guidance store has an invalid revision"}
+    if not isinstance(data.get("revision", 0), int) or isinstance(data.get("revision"), bool):
+        return {"ok": False, "error": "guidance store has an invalid revision"}
     return {"ok": True, "present": True, "schema": SCHEMA, "entries": entries,
             "revision": revision}
 
@@ -156,11 +158,25 @@ def _entry_labels_norm(entry: dict[str, Any]) -> list[str]:
 
 
 def _valid_entry(entry: Any) -> bool:
-    return (isinstance(entry, dict)
-            and isinstance(entry.get("labels"), list)
-            and isinstance(entry.get("keys", []), list)
-            and entry.get("action") in ("close", "watch")
-            and bool(entry.get("id")))
+    if not (isinstance(entry, dict) and isinstance(entry.get("id"), str)
+            and entry.get("id")):
+        return False
+    labels = entry.get("labels")
+    keys = entry.get("keys", [])
+    if not isinstance(labels, list) or not isinstance(keys, list):
+        return False
+    if any(not isinstance(label, str) for label in labels):
+        return False
+    if any(not isinstance(key, str) for key in keys):
+        return False
+    return entry.get("action") in ("close", "watch")
+
+
+def _expiry_ok(entry: dict[str, Any]) -> bool:
+    if entry.get("permanent"):
+        return True
+    until_raw = entry.get("until")
+    return until_raw in (None, "") or _parse_iso(until_raw) is not None
 
 
 def _active(entry: dict[str, Any], now: datetime) -> bool:
@@ -171,9 +187,20 @@ def _active(entry: dict[str, Any], now: datetime) -> bool:
         return True
     parsed = _parse_iso(until_raw)
     if parsed is None:
-        # A malformed expiry is not "forever"; treat it as inactive everywhere.
         return False
     return parsed > now
+
+
+def _match(entries: list[Any], *, wanted_labels: set[str], wanted_keys: set[str],
+           now: datetime) -> dict[str, Any] | None:
+    for entry in entries:
+        if entry.get("action") != "close" or not _active(entry, now):
+            continue
+        if wanted_keys and wanted_keys.intersection(entry.get("keys") or []):
+            return entry
+        if wanted_labels and wanted_labels.intersection(_entry_labels_norm(entry)):
+            return entry
+    return None
 
 
 def list_active(root: Any, now: datetime | None = None) -> dict[str, Any]:
@@ -244,6 +271,19 @@ def reopen(root: Any, entry_id: str) -> dict[str, Any]:
     return {"ok": True, "status": "reopened", "id": entry_id}
 
 
+def _snapshot(root: Any) -> dict[str, Any]:
+    """One validated read. Any damage is ``ok: False`` — never a partial view."""
+    store = read_store(root)
+    if not store.get("ok"):
+        return store
+    entries = store.get("entries") or []
+    if any(not _valid_entry(entry) for entry in entries):
+        return {"ok": False, "error": "guidance store contains a malformed entry"}
+    if any(not _expiry_ok(entry) for entry in entries):
+        return {"ok": False, "error": "guidance store contains a malformed expiry"}
+    return store
+
+
 def matching_entry(root: Any, *, labels: Iterable[Any] = (), keys: Iterable[Any] = (),
                    now: datetime | None = None) -> dict[str, Any] | None:
     """Return the active closure that matches exactly, or None."""
@@ -252,32 +292,29 @@ def matching_entry(root: Any, *, labels: Iterable[Any] = (), keys: Iterable[Any]
     wanted_keys = {str(key).strip() for key in keys if str(key).strip()}
     if not wanted_labels and not wanted_keys:
         return None
-    store = read_store(root)
+    store = _snapshot(root)
     if not store.get("ok"):
         return None
-    for entry in store.get("entries", []):
-        if not _valid_entry(entry) or entry.get("action") != "close":
-            continue
-        if not _active(entry, moment):
-            continue
-        if wanted_keys and wanted_keys.intersection(entry.get("keys") or []):
-            return entry
-        if wanted_labels and wanted_labels.intersection(_entry_labels_norm(entry)):
-            return entry
-    return None
+    return _match(store["entries"], wanted_labels=wanted_labels,
+                  wanted_keys=wanted_keys, now=moment)
 
 
 def suppressed(root: Any, *, labels: Iterable[Any] = (), keys: Iterable[Any] = (),
                now: datetime | None = None) -> str:
-    """Empty when allowed, an entry id when closed, ``unavailable`` on read error.
+    """Empty when allowed, an entry id when closed, ``unavailable`` on damage.
 
-    ``unavailable`` is deliberately distinguishable from "no match": the notice
-    lane must fail closed rather than quietly treat a broken store as permission.
+    One snapshot decides; damage is never read as permission.
     """
     if root is None:
         return "unavailable"
-    store = read_store(root)
+    moment = now or _now()
+    store = _snapshot(root)
     if not store.get("ok"):
         return "unavailable"
-    entry = matching_entry(root, labels=labels, keys=keys, now=now)
+    wanted_labels = {normalise(label) for label in labels if normalise(label)}
+    wanted_keys = {str(key).strip() for key in keys if str(key).strip()}
+    if not wanted_labels and not wanted_keys:
+        return ""
+    entry = _match(store["entries"], wanted_labels=wanted_labels,
+                   wanted_keys=wanted_keys, now=moment)
     return str(entry.get("id") or "") if entry else ""
