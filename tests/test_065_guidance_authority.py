@@ -262,6 +262,38 @@ class GuidanceAuthorityTests(unittest.TestCase):
         self.assertNotIn("days", first["summary"])
         self.assertNotIn("for ", first["summary"])
 
+    def test_reply_naming_both_pending_topics_is_refused(self):
+        exams = self._propose_close("exams are over, close the exams topic")
+        travel = self._propose_close("travel is booked, close the travel topic",
+                                     topics=("travel",))
+        self.assertIn("ref", exams)
+        self.assertIn("ref", travel)
+        reply = "yes, close exams and travel"
+        self._remember(reply)
+        result = self._call({"action": "confirm", "ref": exams["ref"],
+                             "evidence_quote": reply}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertIn("more than one", result["error"])
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+        self.assertIsNotNone(guidance.read_pending(self.data, exams["ref"]))
+        self.assertIsNotNone(guidance.read_pending(self.data, travel["ref"]))
+
+    def test_unrelated_affirmative_does_not_confirm(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        reply = "yes i know, what is for lunch"
+        self._remember(reply)
+        result = self._call({"action": "confirm", "ref": first["ref"],
+                             "evidence_quote": reply}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertIn("does not say which change", result["error"])
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_short_yes_still_confirms_one_pending(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        result = self._confirm(first["ref"], reply="yes please")
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(self._call({"action": "list"})["count"], 1)
+
     def test_until_with_a_date_is_a_duration_not_a_condition(self):
         first = self._propose_close(
             "exams are over, close the exams topic until 2026-12-24")

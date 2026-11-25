@@ -111,8 +111,9 @@ _NUMBER_WORDS = {
 }
 _UNIT_DAYS = {"day": 1, "week": 7, "month": 30, "year": 365}
 _CONFIRM_SUFFIX = ("; ask the owner to say it in their own words, then try again")
-_PROPOSE_ASK = ("Show the owner exactly this change and ask them to reply yes. Then "
-                "call action=confirm with this ref and their reply as evidence_quote.")
+_PROPOSE_ASK = ("Show the owner exactly this change and ask them to reply yes. If more "
+                "than one change is waiting, ask them to name the topic. Then call "
+                "action=confirm with this ref and their reply as evidence_quote.")
 
 
 def _ensure_src() -> None:
@@ -354,6 +355,31 @@ def _pending_source(payload: dict[str, Any]) -> str:
     return ("owner: " + reason) if reason else "owner"
 
 
+_AFFIRMATIVE_WORDS = frozenset({"yes", "yeah", "yep", "yup", "ok", "okay", "sure",
+                               "confirm", "confirmed"})
+_AFFIRMATIVE_FILLERS = frozenset({"yes", "yeah", "yep", "yup", "ok", "okay", "sure",
+                                 "confirm", "confirmed", "do", "it", "please", "then",
+                                 "go", "ahead", "that", "this", "the", "for", "close",
+                                 "reopen", "now"})
+
+
+def _standalone_affirmative(text: str) -> bool:
+    """A short reply that only says yes.
+
+    An affirmative word buried in an unrelated sentence ("yes I know, how is the
+    weather") is not an approval of this change.
+    """
+    cleaned = re.sub(r"[^\w\s'-]", " ", str(text or "").lower())
+    words = re.sub(r"\s+", " ", cleaned).strip().split()
+    if not words:
+        return False
+    if " ".join(words) in {"do it", "go ahead", "please do", "please do it"}:
+        return True
+    if not any(word in _AFFIRMATIVE_WORDS for word in words[:2]):
+        return False
+    return all(word in _AFFIRMATIVE_FILLERS for word in words)
+
+
 def _confirm(ctx: Any, payload: dict[str, Any], *,
              host_session_id: Any = None) -> dict[str, Any]:
     _ensure_src()
@@ -419,12 +445,21 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
             r"(?<![\w])" + re.escape(str(value)) + r"(?![\w])", re.IGNORECASE)
 
     pending_rows = guidance.pending_for_session(root, session_id)
-    if len(pending_rows) > 1:
-        named = bool(ref and _whole_word(ref).search(text))
-        if not named:
-            named = any(_whole_word(token).search(text)
-                        for token in row.get("label_tokens") or [] if token)
-        if not named:
+    refs_named = {other.get("ref") for other in pending_rows
+                  if other.get("ref") and _whole_word(str(other.get("ref"))).search(text)}
+    labels_matched = {other.get("ref") for other in pending_rows
+                      if any(_whole_word(token).search(text)
+                             for token in other.get("label_tokens") or [] if token)}
+    candidates = refs_named | labels_matched
+    if ref not in refs_named:
+        if len(candidates) > 1:
+            return {"ok": False, "status": "refused",
+                    "error": "the reply names more than one change; say which one"}
+        if len(candidates) == 1 and ref in candidates:
+            pass
+        elif len(pending_rows) == 1 and _standalone_affirmative(text):
+            pass
+        else:
             return {"ok": False, "status": "refused",
                     "error": "the reply does not say which change it confirms"}
 
