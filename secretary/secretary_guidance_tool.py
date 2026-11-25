@@ -87,16 +87,36 @@ def dispatch(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     return result
 
 
+def _foreground_authority(ctx: Any) -> tuple[bool, str]:
+    """Only a private foreground turn may change guidance.
+
+    An unknown context is not treated as foreground: if the host cannot prove the
+    lane, the write is refused rather than guessed.
+    """
+    if ctx is None:
+        return False, "a foreground conversation context is required"
+    getter = getattr(ctx, "current_cron_execution", None)
+    if not callable(getter):
+        return False, "this context cannot prove a foreground turn"
+    try:
+        execution = getter()
+    except Exception:  # noqa: BLE001 - unverifiable is not foreground
+        return False, "foreground authority could not be verified"
+    if execution is not None:
+        return False, "scheduled runs may read guidance but never change it"
+    return True, ""
+
+
 def tool_handler(ctx: Any = None):
     def handler(args: dict[str, Any] | None = None, **_kwargs: Any) -> str:
         body = args or {}
         action = str(body.get("action") or "list").strip().lower()
         try:
             if action != "list":
-                # Closure is an owner decision made in a private foreground turn;
-                # a scheduled wake may read the store but never write it.
-                from .secretary_followups import _require_foreground
-                _require_foreground(ctx)
+                ok, why = _foreground_authority(ctx)
+                if not ok:
+                    return json.dumps({"ok": False, "status": "refused", "error": why},
+                                      ensure_ascii=False, sort_keys=True)
             return json.dumps(dispatch(body), ensure_ascii=False, sort_keys=True)
         except ValueError as exc:
             return json.dumps({"ok": False, "status": "refused", "error": str(exc)},

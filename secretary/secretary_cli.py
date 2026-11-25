@@ -2272,6 +2272,13 @@ def guidance_command(args: argparse.Namespace) -> int:
         return code
 
     root = Path(paths.data_root())
+    if action in ("close", "reopen"):
+        # The CLI cannot prove a private turn: a scheduled process has no TTY and
+        # carries cron session markers. Mutations therefore belong to the tool.
+        if os.environ.get("HERMES_CRON_SESSION") or not sys.stdin.isatty():
+            return emit({"ok": False, "status": "refused",
+                         "error": ("guidance changes need a private foreground turn; "
+                                   "use the secretary_guidance tool in chat")}, 2)
     try:
         if action == "list":
             result = guidance.list_active(root)

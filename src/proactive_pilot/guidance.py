@@ -81,7 +81,7 @@ def read_store(root: Any) -> dict[str, Any]:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return {**_empty(), "ok": True, "present": False}
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         return {"ok": False, "error": f"guidance store unreadable: {type(exc).__name__}"}
     try:
         data = json.loads(raw)
@@ -92,8 +92,12 @@ def read_store(root: Any) -> dict[str, Any]:
     entries = data.get("entries")
     if not isinstance(entries, list):
         return {"ok": False, "error": "guidance store has no entry list"}
+    try:
+        revision = int(data.get("revision") or 0)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "guidance store has an invalid revision"}
     return {"ok": True, "present": True, "schema": SCHEMA, "entries": entries,
-            "revision": int(data.get("revision") or 0)}
+            "revision": revision}
 
 
 def _write_store(root: Any, store: dict[str, Any]) -> None:
@@ -139,11 +143,37 @@ def _parse_until(until: Any, *, permanent: bool, now: datetime) -> tuple[str, st
     return _iso(parsed), ""
 
 
+def _entry_labels_norm(entry: dict[str, Any]) -> list[str]:
+    """Normalise from the stored originals, never from a cached list.
+
+    The cached ``labels_norm`` can be stale after a normalisation change; deriving
+    it here keeps older closures matching their original spelling.
+    """
+    labels = entry.get("labels")
+    if not isinstance(labels, list):
+        return []
+    return sorted({normalise(label) for label in labels if normalise(label)})
+
+
+def _valid_entry(entry: Any) -> bool:
+    return (isinstance(entry, dict)
+            and isinstance(entry.get("labels"), list)
+            and isinstance(entry.get("keys", []), list)
+            and entry.get("action") in ("close", "watch")
+            and bool(entry.get("id")))
+
+
 def _active(entry: dict[str, Any], now: datetime) -> bool:
     if entry.get("permanent"):
         return True
-    until = _parse_iso(entry.get("until"))
-    return until is None or until > now
+    until_raw = entry.get("until")
+    if until_raw in (None, ""):
+        return True
+    parsed = _parse_iso(until_raw)
+    if parsed is None:
+        # A malformed expiry is not "forever"; treat it as inactive everywhere.
+        return False
+    return parsed > now
 
 
 def list_active(root: Any, now: datetime | None = None) -> dict[str, Any]:
@@ -152,7 +182,7 @@ def list_active(root: Any, now: datetime | None = None) -> dict[str, Any]:
         return store
     moment = now or _now()
     active = [entry for entry in store["entries"]
-              if isinstance(entry, dict) and _active(entry, moment)]
+              if _valid_entry(entry) and _active(entry, moment)]
     return {"ok": True, "present": store.get("present", False),
             "revision": int(store.get("revision") or 0), "entries": active,
             "count": len(active)}
@@ -222,19 +252,17 @@ def matching_entry(root: Any, *, labels: Iterable[Any] = (), keys: Iterable[Any]
     wanted_keys = {str(key).strip() for key in keys if str(key).strip()}
     if not wanted_labels and not wanted_keys:
         return None
-    listing = list_active(root, moment)
-    if not listing.get("ok"):
+    store = read_store(root)
+    if not store.get("ok"):
         return None
-    for entry in listing.get("entries", []):
-        if not isinstance(entry, dict) or entry.get("action") != "close":
+    for entry in store.get("entries", []):
+        if not _valid_entry(entry) or entry.get("action") != "close":
             continue
-        until_raw = entry.get("until")
-        if not entry.get("permanent") and until_raw and _parse_iso(until_raw) is None:
-            # A malformed expiry must not read as "closed forever".
+        if not _active(entry, moment):
             continue
         if wanted_keys and wanted_keys.intersection(entry.get("keys") or []):
             return entry
-        if wanted_labels and wanted_labels.intersection(entry.get("labels_norm") or []):
+        if wanted_labels and wanted_labels.intersection(_entry_labels_norm(entry)):
             return entry
     return None
 

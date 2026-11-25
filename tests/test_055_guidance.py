@@ -174,6 +174,28 @@ class NoticeBoundaryTests(_Rooted):
                       "expiry": "2026-11-26T12:00:00Z"})
         self.assertEqual(receipt.get("status"), "evidence_is_history", receipt)
 
+    def test_source_lookalike_paths_are_not_history(self):
+        # A source id whose text contains 'plans' must not be mistaken for history.
+        for ref in ("feed:https://example.org/plans/release",
+                    "mail:attachment/2026/findings.md",
+                    "cal:event:planning-with-files"):
+            receipt = self.portal_notices.submit_notice(
+                self.store, self.clock, identity=self.identity,
+                proposal={"event_key": "evt-" + ref[:8], "topic": "release",
+                          "message": "Something changed.",
+                          "evidence_refs": [ref],
+                          "expiry": "2026-11-26T12:00:00Z"})
+            self.assertNotEqual(receipt.get("status"), "evidence_is_history", (ref, receipt))
+
+    def test_bare_planning_file_is_history(self):
+        receipt = self.portal_notices.submit_notice(
+            self.store, self.clock, identity=self.identity,
+            proposal={"event_key": "evt-bare", "topic": "study plan",
+                      "message": "Same countdown.",
+                      "evidence_refs": ["task_plan.md#L42"],
+                      "expiry": "2026-11-26T12:00:00Z"})
+        self.assertEqual(receipt.get("status"), "evidence_is_history", receipt)
+
     def test_source_evidence_is_not_refused_for_history(self):
         receipt = self.portal_notices.submit_notice(
             self.store, self.clock, identity=self.identity,
@@ -246,6 +268,33 @@ class ToolTests(_Rooted):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("{broken", encoding="utf-8")
         self.assertEqual(guidance.suppressed(self.root, labels=["exams"]), "unavailable")
+
+    def test_old_cached_normalisation_does_not_break_a_closure(self):
+        # An entry written before the normalisation change stored 'studyplan'.
+        path = guidance.store_path(self.root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"schema": 1, "revision": 3, "entries": [{
+            "id": "gd-old", "labels": ["Study Plan"], "labels_norm": ["studyplan"],
+            "keys": [], "action": "close", "scope": "discretionary",
+            "since": "2026-11-24T00:00:00Z", "until": "2026-12-24T00:00:00Z",
+            "permanent": False, "source": "owner"}]}), encoding="utf-8")
+        self.assertTrue(guidance.suppressed(self.root, labels=["study plan"]))
+
+    def test_malformed_entries_are_ignored_not_fatal(self):
+        path = guidance.store_path(self.root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"schema": 1, "revision": 1, "entries": [
+            None, {"no": "id"}, {"id": "x", "labels": "not-a-list", "action": "close"}
+        ]}), encoding="utf-8")
+        self.assertEqual(guidance.suppressed(self.root, labels=["anything"]), "")
+        self.assertEqual(guidance.list_active(self.root)["count"], 0)
+
+    def test_bad_revision_is_unavailable(self):
+        path = guidance.store_path(self.root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"schema": 1, "revision": "abc", "entries": []}),
+                        encoding="utf-8")
+        self.assertEqual(guidance.suppressed(self.root, labels=["x"]), "unavailable")
 
     def test_punctuation_and_non_ascii_labels_stay_distinct(self):
         guidance.close(self.root, ["C++"])
