@@ -87,10 +87,20 @@ def dispatch(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     return result
 
 
-def tool_handler(_ctx: Any = None):
+def tool_handler(ctx: Any = None):
     def handler(args: dict[str, Any] | None = None, **_kwargs: Any) -> str:
+        body = args or {}
+        action = str(body.get("action") or "list").strip().lower()
         try:
-            return json.dumps(dispatch(args or {}), ensure_ascii=False, sort_keys=True)
+            if action != "list":
+                # Closure is an owner decision made in a private foreground turn;
+                # a scheduled wake may read the store but never write it.
+                from .secretary_followups import _require_foreground
+                _require_foreground(ctx)
+            return json.dumps(dispatch(body), ensure_ascii=False, sort_keys=True)
+        except ValueError as exc:
+            return json.dumps({"ok": False, "status": "refused", "error": str(exc)},
+                              ensure_ascii=False, sort_keys=True)
         except Exception as exc:  # noqa: BLE001 - never raise into the model loop
             return json.dumps({"ok": False,
                                "error": f"guidance failed ({type(exc).__name__})"},

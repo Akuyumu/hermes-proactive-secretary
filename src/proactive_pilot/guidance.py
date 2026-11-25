@@ -57,8 +57,12 @@ def _parse_iso(value: Any) -> datetime | None:
 
 
 def normalise(value: Any) -> str:
-    """Lower-case alphanumeric form used for exact label comparison."""
-    return _NORMALISE.sub("", str(value or "").lower())
+    """Case-folded, whitespace-collapsed form used for exact label comparison.
+
+    Punctuation is preserved on purpose: stripping it makes ``C++`` and ``C#``
+    collide, and dropping non-ASCII makes a non-English label unmatchable.
+    """
+    return " ".join(str(value or "").casefold().split())
 
 
 def store_path(root: Any) -> Path:
@@ -164,6 +168,9 @@ def close(root: Any, labels: Iterable[str], *, keys: Iterable[str] = (),
     if not clean_labels and not clean_keys:
         return {"ok": False, "status": "refused",
                 "error": "a topic label or at least one stable key is required"}
+    if any(not normalise(label) for label in clean_labels):
+        return {"ok": False, "status": "refused",
+                "error": "a topic label is empty after normalising"}
     until_iso, error = _parse_until(until, permanent=permanent, now=moment)
     if error:
         return {"ok": False, "status": "refused", "error": error}
@@ -215,8 +222,15 @@ def matching_entry(root: Any, *, labels: Iterable[Any] = (), keys: Iterable[Any]
     wanted_keys = {str(key).strip() for key in keys if str(key).strip()}
     if not wanted_labels and not wanted_keys:
         return None
-    for entry in list_active(root, moment).get("entries", []):
+    listing = list_active(root, moment)
+    if not listing.get("ok"):
+        return None
+    for entry in listing.get("entries", []):
         if not isinstance(entry, dict) or entry.get("action") != "close":
+            continue
+        until_raw = entry.get("until")
+        if not entry.get("permanent") and until_raw and _parse_iso(until_raw) is None:
+            # A malformed expiry must not read as "closed forever".
             continue
         if wanted_keys and wanted_keys.intersection(entry.get("keys") or []):
             return entry
@@ -227,8 +241,15 @@ def matching_entry(root: Any, *, labels: Iterable[Any] = (), keys: Iterable[Any]
 
 def suppressed(root: Any, *, labels: Iterable[Any] = (), keys: Iterable[Any] = (),
                now: datetime | None = None) -> str:
-    """Empty when allowed, otherwise the id of the closure that blocks it."""
+    """Empty when allowed, an entry id when closed, ``unavailable`` on read error.
+
+    ``unavailable`` is deliberately distinguishable from "no match": the notice
+    lane must fail closed rather than quietly treat a broken store as permission.
+    """
     if root is None:
-        return ""
+        return "unavailable"
+    store = read_store(root)
+    if not store.get("ok"):
+        return "unavailable"
     entry = matching_entry(root, labels=labels, keys=keys, now=now)
     return str(entry.get("id") or "") if entry else ""

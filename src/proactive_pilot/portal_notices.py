@@ -362,6 +362,41 @@ def _prune_seen(queue: dict[str, Any], now: datetime) -> None:
             seen.pop(key, None)
 
 
+_HISTORY_EVIDENCE = re.compile(
+    r"(^|/)(\.planning|plans|progress\.md|findings\.md)(/|$)|\bplanning-with-files\b",
+    re.IGNORECASE,
+)
+
+
+def _evidence_is_only_history(refs: list[str]) -> bool:
+    """True when every evidence reference is a planning/history artifact.
+
+    History is legitimate context, but it is not evidence that something changed
+    now: a repeat notice must point at a source or a genuinely due trigger.
+    """
+    if not refs:
+        return False
+    return all(bool(_HISTORY_EVIDENCE.search(str(ref))) for ref in refs)
+
+
+def _guidance_root(store: Any) -> Any:
+    """Canonical owner data root for guidance, independent of the state store.
+
+    The notice state store is rooted at ``<data_root>/var``; guidance lives at
+    ``<data_root>/guidance`` so the writer (tool/CLI, which use ``data_root``)
+    and the reader cannot drift apart.
+    """
+    try:
+        from paths import data_root  # plugin root module (runner/installed)
+        return Path(data_root())
+    except Exception:  # noqa: BLE001 - package import or odd sys.path
+        root = getattr(store, "root", None)
+        if root is None:
+            return None
+        path = Path(root)
+        return path.parent if path.name == "var" else path
+
+
 def _prune_executions(queue: dict[str, Any]) -> None:
     executions = queue["executions"]
     if len(executions) <= MAX_EXECUTIONS:
@@ -409,16 +444,26 @@ def submit_notice(
 
     # Deterministic owner guidance: a closed topic is refused before anything is
     # queued, so a changed countdown or a fresh event key cannot slip past it.
+    if _evidence_is_only_history(clean_proposal.get("evidence_refs", [])):
+        return _receipt(
+            ok=False, accepted=False, status="evidence_is_history",
+            reason=("this proposal rests only on planning history; a notice needs a "
+                    "current source change or a due authorised trigger"),
+            event_key=event_key, notice_id=notice_id, expiry=expiry,
+        )
     blocked = guidance.suppressed(
-        getattr(store, "root", None),
+        _guidance_root(store),
         labels=[clean_proposal.get("topic")],
         keys=[event_key, *clean_proposal.get("evidence_refs", [])],
         now=now,
     )
     if blocked:
         return _receipt(
-            ok=False, accepted=False, status="suppressed",
-            reason="the owner closed this topic", event_key=event_key,
+            ok=False, accepted=False,
+            status="suppressed" if blocked != "unavailable" else "guidance_unavailable",
+            reason=("the owner closed this topic" if blocked != "unavailable" else
+                    "owner guidance is unreadable; discretionary notices are held"),
+            event_key=event_key,
             notice_id=notice_id, expiry=expiry,
         )
 
@@ -823,13 +868,15 @@ def dispatch_notice(
         event_key = item["event_key"]
         # Re-check at emission: a topic closed after it was queued must not go out.
         blocked = guidance.suppressed(
-            getattr(store, "root", None),
+            _guidance_root(store),
             labels=[item.get("topic")],
             keys=[event_key, *(item.get("evidence_refs") or [])],
             now=now,
         )
         if blocked:
-            _terminal(queue, item, "suppressed", now)
+            _terminal(queue, item,
+                      "suppressed" if blocked != "unavailable" else "guidance_unavailable",
+                      now)
             changed = True
             continue
         _parsed, expiry_error = _parse_expiry(item.get("expiry"), now)

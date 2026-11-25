@@ -114,7 +114,7 @@ class NoticeBoundaryTests(_Rooted):
         class Store:
             def __init__(self, root):
                 self.root = root
-                self._inner = state_mod.StateStore(root, Clock())
+                self._inner = state_mod.StateStore(root / "var", Clock())
                 self.state = self._inner
 
             def lock(self):
@@ -164,6 +164,24 @@ class NoticeBoundaryTests(_Rooted):
             self.store, self.clock, identity=self.identity,
             proposal=self._proposal(topic="library holds"))
         self.assertNotEqual(receipt.get("status"), "suppressed", receipt)
+
+    def test_history_only_evidence_is_refused(self):
+        receipt = self.portal_notices.submit_notice(
+            self.store, self.clock, identity=self.identity,
+            proposal={"event_key": "evt-hist", "topic": "study plan",
+                      "message": "Still the same countdown.",
+                      "evidence_refs": [".planning/2026-10-02-pilot/progress.md"],
+                      "expiry": "2026-11-26T12:00:00Z"})
+        self.assertEqual(receipt.get("status"), "evidence_is_history", receipt)
+
+    def test_source_evidence_is_not_refused_for_history(self):
+        receipt = self.portal_notices.submit_notice(
+            self.store, self.clock, identity=self.identity,
+            proposal={"event_key": "evt-src", "topic": "library holds",
+                      "message": "A hold is ready.",
+                      "evidence_refs": ["cal:event:123"],
+                      "expiry": "2026-11-26T12:00:00Z"})
+        self.assertNotEqual(receipt.get("status"), "evidence_is_history", receipt)
 
     def test_unknown_key_does_not_block(self):
         guidance.close(self.root, [], keys=["cal:event:123"])
@@ -216,6 +234,25 @@ class ToolTests(_Rooted):
         handler = self.tool.tool_handler(None)
         payload = json.loads(handler({"action": "list"}))
         self.assertTrue(payload["ok"], payload)
+
+    def test_write_without_foreground_context_is_refused(self):
+        handler = self.tool.tool_handler(None)
+        payload = json.loads(handler({"action": "close", "topics": ["exams"]}))
+        self.assertFalse(payload["ok"], payload)
+        self.assertEqual(payload["status"], "refused")
+
+    def test_corrupt_store_holds_discretionary_notices(self):
+        path = guidance.store_path(self.root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{broken", encoding="utf-8")
+        self.assertEqual(guidance.suppressed(self.root, labels=["exams"]), "unavailable")
+
+    def test_punctuation_and_non_ascii_labels_stay_distinct(self):
+        guidance.close(self.root, ["C++"])
+        self.assertTrue(guidance.suppressed(self.root, labels=["C++"]))
+        self.assertEqual(guidance.suppressed(self.root, labels=["C#"]), "")
+        guidance.close(self.root, ["考试"])
+        self.assertTrue(guidance.suppressed(self.root, labels=["考试"]))
 
 
 if __name__ == "__main__":
