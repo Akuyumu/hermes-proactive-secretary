@@ -28,13 +28,16 @@ TOOL_NAME = "secretary_guidance"
 TOOL_DESCRIPTION = (
     "Record or lift the owner's standing 'stop raising this' guidance so the "
     "notice lane obeys it deterministically. Use when the owner signals a topic "
-    "is finished (e.g. exams are over, a sheet is no longer needed). Closing is "
-    "temporary by default and never cancels a requested reminder."
+    "is finished (e.g. exams are over, a sheet is no longer needed). Closing and "
+    "reopening are two-step: first propose the exact change, then confirm only "
+    "after the owner replies yes. Closing is temporary by default and never "
+    "cancels a requested reminder."
 )
 TOOL_SCHEMA = {
     "type": "object",
     "properties": {
-        "action": {"type": "string", "enum": ["close", "list", "reopen"]},
+        "action": {"type": "string", "enum": ["close", "list", "reopen", "confirm", "cancel"],
+                   "description": "close/reopen propose a change; confirm applies the shown ref"},
         "topics": {"type": "array", "items": {"type": "string"},
                    "description": "Topic labels exactly as the owner names them"},
         "keys": {"type": "array", "items": {"type": "string"},
@@ -44,6 +47,8 @@ TOOL_SCHEMA = {
         "permanent": {"type": "boolean",
                       "description": "Only when the owner explicitly wants it permanent"},
         "id": {"type": "string", "description": "Entry id for reopen"},
+        "ref": {"type": "string",
+                "description": "The confirmation reference returned by close or reopen"},
         "reason": {"type": "string", "description": "The owner's own words"},
         "evidence_quote": {"type": "string",
                            "description": "Exact words from the owner's current message"},
@@ -90,8 +95,24 @@ _PERMANENT = re.compile(
     r"\b(?:permanent|permanently|forever|always|indefinitely|for good)\b",
     re.IGNORECASE,
 )
-_CONFIRM_SUFFIX = ("; ask the owner to confirm in their own words and call again "
-                   "with that reply as evidence_quote")
+_AFFIRMATIVE = re.compile(
+    r"\b(?:yes|yeah|yep|confirm|confirmed|do it|please do|go ahead|ok(?:ay)?)\b",
+    re.IGNORECASE,
+)
+_DURATION = re.compile(
+    r"\b(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|a)\s*"
+    r"(day|week|month|year)s?\b",
+    re.IGNORECASE,
+)
+_ISO_DATE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
+_NUMBER_WORDS = {
+    "a": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+_UNIT_DAYS = {"day": 1, "week": 7, "month": 30, "year": 365}
+_CONFIRM_SUFFIX = ("; ask the owner to say it in their own words, then try again")
+_PROPOSE_ASK = ("Show the owner exactly this change and ask them to reply yes. Then "
+                "call action=confirm with this ref and their reply as evidence_quote.")
 
 
 def _ensure_src() -> None:
@@ -100,11 +121,27 @@ def _ensure_src() -> None:
         sys.path.insert(0, src)
 
 
+def _requested_until(sentence: str) -> Any:
+    """A duration the owner actually named, never a caller-supplied expiry."""
+    match = _DURATION.search(sentence or "")
+    if match:
+        raw = match.group(1).lower()
+        try:
+            count = int(raw)
+        except ValueError:
+            count = _NUMBER_WORDS.get(raw)
+        if count:
+            return count * _UNIT_DAYS.get(match.group(2).lower(), 1)
+    date = _ISO_DATE.search(sentence or "")
+    return date.group(1) if date else None
+
+
 def dispatch(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """Public entry: reads only. Mutations must go through tool_handler, which
     proves the owner's turn; this surface never applies one."""
     body = dict(payload or {})
-    if str(body.get("action") or "list").strip().lower() in ("close", "reopen"):
+    if str(body.get("action") or "list").strip().lower() in (
+            "close", "reopen", "confirm", "cancel"):
         return {"ok": False, "status": "refused",
                 "error": "guidance changes require a verified owner turn"}
     return _apply_mutation(body)
@@ -144,7 +181,8 @@ def _apply_mutation(payload: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 def _foreground_authority(ctx: Any, payload: dict[str, Any], *,
-                         host_session_id: Any = None) -> tuple[bool, str, str]:
+                         host_session_id: Any = None,
+                         details: dict[str, Any] | None = None) -> tuple[bool, str, str]:
     """Positive host-attested proof bound to the requested change.
 
     A null execution, a TTY or an environment variable is not proof — delegated
@@ -219,7 +257,7 @@ def _foreground_authority(ctx: Any, payload: dict[str, Any], *,
     if not action_sentence:
         if seen_candidate and rejection:
             return False, "refused", rejection
-        return False, "confirmation_required", (
+        return False, "refused", (
             "the owner's words do not name the action to change" + _CONFIRM_SUFFIX)
 
     def _whole_word(value: str, *, plural: bool = False) -> re.Pattern[str]:
@@ -238,22 +276,24 @@ def _foreground_authority(ctx: Any, payload: dict[str, Any], *,
 
     if action == "close":
         if not _CLOSE_CUE.search(action_sentence):
-            return False, "confirmation_required", (
+            return False, "refused", (
                 "the owner's words do not clearly close that topic" + _CONFIRM_SUFFIX)
         topics = payload.get("topics") or []
         labels = [str(label).strip() for label in topics if str(label).strip()]
         if topics:
-            bound = any(
+            # Every requested label must be named: one authorised topic cannot
+            # carry an extra one into the frozen payload.
+            bound = bool(labels) and all(
                 _whole_word(label, plural=True).search(action_sentence)
                 and not _label_excluded(label)
                 and _whole_word(label, plural=True).search(quote)
-                for label in labels if len(label) >= 3)
+                for label in labels)
             if not bound:
-                return False, "confirmation_required", (
-                    "the owner's words do not name the topic to close" + _CONFIRM_SUFFIX)
+                return False, "refused", (
+                    "the owner's words do not name every topic to close" + _CONFIRM_SUFFIX)
     elif action == "reopen":
         if not _REOPEN_CUE.search(action_sentence):
-            return False, "confirmation_required", (
+            return False, "refused", (
                 "the owner's words do not clearly reopen that topic" + _CONFIRM_SUFFIX)
         entry_id = str(payload.get("id") or "").strip()
         if not entry_id:
@@ -280,7 +320,7 @@ def _foreground_authority(ctx: Any, payload: dict[str, Any], *,
     if bool(payload.get("permanent")):
         if re.search(r"\b(?:temporary|temporarily|for\s+now)\b",
                      action_sentence, re.IGNORECASE):
-            return False, "confirmation_required", (
+            return False, "refused", (
                 "the owner's words do not say the change is permanent" + _CONFIRM_SUFFIX)
         permanent_ok = False
         for match in _PERMANENT.finditer(action_sentence):
@@ -289,9 +329,108 @@ def _foreground_authority(ctx: Any, payload: dict[str, Any], *,
                 permanent_ok = True
                 break
         if not permanent_ok:
-            return False, "confirmation_required", (
+            return False, "refused", (
                 "the owner's words do not say the change is permanent" + _CONFIRM_SUFFIX)
+    if details is not None:
+        details["action_sentence"] = action_sentence
     return True, "", ""
+
+
+def _pending_source(payload: dict[str, Any]) -> str:
+    reason = str(payload.get("reason") or "").strip()[:200]
+    return ("owner: " + reason) if reason else "owner"
+
+
+def _confirm(ctx: Any, payload: dict[str, Any], *,
+             host_session_id: Any = None) -> dict[str, Any]:
+    _ensure_src()
+    from proactive_pilot import guidance
+
+    ref = str(payload.get("ref") or "").strip()
+    session_id = str(host_session_id or "").strip()
+    if not ref:
+        return {"ok": False, "status": "refused", "error": "ref is required"}
+    if not session_id:
+        return {"ok": False, "status": "refused",
+                "error": "session_id is required to confirm a change"}
+    root = Path(paths.data_root())
+    row = guidance.read_pending(root, ref)
+    if row is None:
+        return {"ok": False, "status": "refused",
+                "error": "confirmation is unknown, expired or already used"}
+    if str(row.get("session_id") or "") != session_id:
+        return {"ok": False, "status": "refused",
+                "error": "confirmation belongs to another session"}
+    try:
+        from .secretary_responsibilities import latest_turn, _quote_matches
+        from .secretary_followups import _turn_is_private_human
+    except Exception:  # noqa: BLE001 - unavailable authority proof means refuse
+        return {"ok": False, "status": "refused",
+                "error": "owner authority could not be checked"}
+    try:
+        turn = latest_turn(ctx, session_id=session_id)
+    except Exception:  # noqa: BLE001
+        return {"ok": False, "status": "refused",
+                "error": "owner authority could not be checked"}
+    if turn is None:
+        return {"ok": False, "status": "refused",
+                "error": "no current human conversation turn for this session"}
+    if not _turn_is_private_human(turn):
+        return {"ok": False, "status": "refused",
+                "error": "a background or shared turn cannot confirm guidance"}
+    text = str(turn.get("text") or "")
+    if not _AFFIRMATIVE.search(text):
+        return {"ok": False, "status": "refused",
+                "error": "the owner's reply is not an affirmative confirmation"}
+    if _NEGATION_ANY.search(text) or _CONDITIONAL_TURN.search(text):
+        return {"ok": False, "status": "refused",
+                "error": "a negated or conditional reply cannot confirm guidance"}
+    created = guidance._parse_iso(row.get("created_at"))
+    try:
+        at = float(turn.get("at") or 0)
+    except (TypeError, ValueError):
+        at = 0.0
+    if created is None or at < created.timestamp():
+        return {"ok": False, "status": "refused",
+                "error": "the confirming reply predates this request"}
+    if not _quote_matches(payload.get("evidence_quote"), turn):
+        return {"ok": False, "status": "refused",
+                "error": "evidence_quote must quote the owner's confirming message"}
+
+    source = str(row.get("source") or "")
+    reason = ""
+    if source.startswith("owner: "):
+        reason = source[len("owner: "):]
+    elif source and source != "owner":
+        reason = source
+    apply_payload: dict[str, Any] = {
+        "action": row.get("action"),
+        "topics": row.get("topics") or [],
+        "keys": row.get("keys") or [],
+        "until": row.get("until"),
+        "permanent": bool(row.get("permanent")),
+        "reason": reason,
+    }
+    if str(row.get("action")) == "reopen":
+        apply_payload["id"] = row.get("id")
+    result = _apply_mutation(apply_payload)
+    if result.get("ok"):
+        guidance.consume_pending(root, ref)
+    result["confirmed_ref"] = ref
+    return result
+
+
+def _cancel(payload: dict[str, Any]) -> dict[str, Any]:
+    _ensure_src()
+    from proactive_pilot import guidance
+
+    ref = str(payload.get("ref") or "").strip()
+    if not ref:
+        return {"ok": False, "status": "refused", "error": "ref is required"}
+    if not guidance.consume_pending(Path(paths.data_root()), ref):
+        return {"ok": False, "status": "refused",
+                "error": "confirmation is unknown, expired or already used"}
+    return {"ok": True, "status": "cancelled", "cancelled_ref": ref}
 
 
 def tool_handler(ctx: Any = None):
@@ -300,19 +439,69 @@ def tool_handler(ctx: Any = None):
         body = args or {}
         action = str(body.get("action") or "list").strip().lower()
         try:
-            if action != "list":
+            if action == "list":
+                return json.dumps(dispatch(body), ensure_ascii=False, sort_keys=True)
+            if action in ("close", "reopen"):
+                details: dict[str, Any] = {}
                 ok, status, why = _foreground_authority(
-                    ctx, body, host_session_id=session_id)
+                    ctx, body, host_session_id=session_id, details=details)
                 if not ok:
-                    result = {"ok": False, "status": status, "error": why}
-                    if status == "confirmation_required":
-                        result["ask"] = (
-                            "Ask the owner to confirm this exact change in their own "
-                            "words, then call again with their reply as evidence_quote.")
-                    return json.dumps(result, ensure_ascii=False, sort_keys=True)
-                return json.dumps(_apply_mutation(body),
+                    return json.dumps({"ok": False, "status": status, "error": why},
+                                      ensure_ascii=False, sort_keys=True)
+                _ensure_src()
+                from proactive_pilot import guidance
+                root = Path(paths.data_root())
+                sid = str(session_id or body.get("session_id") or "").strip()
+                if action == "reopen":
+                    entry_id = str(body.get("id") or "").strip()
+                    try:
+                        store = guidance.read_store(root)
+                    except Exception:  # noqa: BLE001
+                        return json.dumps(
+                            {"ok": False, "status": "refused",
+                             "error": "guidance store could not be read"},
+                            ensure_ascii=False, sort_keys=True)
+                    if not store.get("ok"):
+                        return json.dumps(
+                            {"ok": False, "status": "refused",
+                             "error": store.get("error") or "guidance store could not be read"},
+                            ensure_ascii=False, sort_keys=True)
+                    entry = next((row for row in store.get("entries") or []
+                                  if isinstance(row, dict)
+                                  and row.get("id") == entry_id), None)
+                    if entry is None:
+                        return json.dumps(
+                            {"ok": False, "status": "refused",
+                             "error": "unknown entry id"},
+                            ensure_ascii=False, sort_keys=True)
+                    pending = guidance.create_pending(
+                        root, session_id=sid, action="reopen",
+                        topics=entry.get("labels") or [], keys=entry.get("keys") or [],
+                        until=None, permanent=False, source=_pending_source(body),
+                        entry_id=entry_id)
+                else:
+                    permanent = bool(body.get("permanent"))
+                    sentence = str(details.get("action_sentence") or "")
+                    pending = guidance.create_pending(
+                        root, session_id=sid, action="close",
+                        topics=body.get("topics") or [], keys=body.get("keys") or [],
+                        until=None if permanent else _requested_until(sentence),
+                        permanent=permanent, source=_pending_source(body))
+                if pending.get("ok") is False:
+                    return json.dumps(pending, ensure_ascii=False, sort_keys=True)
+                return json.dumps(
+                    {"ok": False, "status": "confirmation_required",
+                     "ref": pending["ref"], "summary": pending["summary"],
+                     "ask": _PROPOSE_ASK},
+                    ensure_ascii=False, sort_keys=True)
+            if action == "confirm":
+                return json.dumps(_confirm(ctx, body, host_session_id=session_id),
                                   ensure_ascii=False, sort_keys=True)
-            return json.dumps(dispatch(body), ensure_ascii=False, sort_keys=True)
+            if action == "cancel":
+                return json.dumps(_cancel(body), ensure_ascii=False, sort_keys=True)
+            return json.dumps({"ok": False, "status": "refused",
+                               "error": f"unknown action {action!r}"},
+                              ensure_ascii=False, sort_keys=True)
         except ValueError as exc:
             return json.dumps({"ok": False, "status": "refused", "error": str(exc)},
                               ensure_ascii=False, sort_keys=True)

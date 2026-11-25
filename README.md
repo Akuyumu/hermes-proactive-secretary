@@ -59,13 +59,10 @@ until you enable it and choose what it may use, and it never sends anything.
 
 ### It remembers your corrections
 
-- **Topic closure.** Say in a one-to-one chat "exams are over, stop notifying me
-  about exams" and matching notices are muted for seven days by default.
-  Requested reminders are unaffected, and you can reopen a topic by asking.
-  Quoted or reported text is refused, as is a negated or conditional
-  instruction ("don't close that yet"). The action, the topic and any
-  "permanent" must appear in your own words; when the plugin cannot find them it
-  asks you to confirm instead of guessing.
+- **Topic closure.** When you ask to stop notices about a topic, the tool
+  proposes the exact change, shows it to you, and writes it only after you reply
+  yes. Requested reminders are unaffected. A permanent closure needs you to say
+  so.
 - **Bounded context.** A few short, expiring notes about your projects,
   preferences and people, used to make notices relevant. Advisory only: they
   never grant access or consent.

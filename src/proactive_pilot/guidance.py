@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -30,6 +31,10 @@ STATE_DIR = "guidance"
 STATE_NAME = "topics.json"
 DEFAULT_DAYS = 7
 MAX_ENTRIES = 200
+PENDING_SCHEMA = 1
+PENDING_NAME = "guidance_pending.json"
+PENDING_TTL_SECONDS = 600
+MAX_PENDING = 10
 _NORMALISE = re.compile(r"[^a-z0-9]+")
 
 
@@ -67,6 +72,196 @@ def normalise(value: Any) -> str:
 
 def store_path(root: Any) -> Path:
     return Path(root) / STATE_DIR / STATE_NAME
+
+
+def pending_path(root: Any) -> Path:
+    return Path(root) / PENDING_NAME
+
+
+def _pending_empty() -> dict[str, Any]:
+    return {"schema": PENDING_SCHEMA, "requests": [], "revision": 0}
+
+
+def _read_pending_store(root: Any) -> dict[str, Any]:
+    if root is None:
+        return {"ok": False, "error": "guidance store root is unavailable"}
+    path = pending_path(root)
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {**_pending_empty(), "ok": True, "present": False}
+    except (OSError, UnicodeError) as exc:
+        return {"ok": False,
+                "error": f"guidance pending store unreadable: {type(exc).__name__}"}
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return {"ok": False, "error": "guidance pending store is not valid JSON"}
+    if not isinstance(data, dict) or data.get("schema") != PENDING_SCHEMA:
+        return {"ok": False, "error": "guidance pending store has an unknown schema"}
+    requests = data.get("requests")
+    if not isinstance(requests, list):
+        return {"ok": False, "error": "guidance pending store has no request list"}
+    revision = data.get("revision", 0)
+    if not isinstance(revision, int) or isinstance(revision, bool):
+        return {"ok": False, "error": "guidance pending store has an invalid revision"}
+    return {"ok": True, "present": True, "schema": PENDING_SCHEMA,
+            "requests": requests, "revision": revision}
+
+
+def _write_pending_store(root: Any, store: dict[str, Any]) -> None:
+    path = pending_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    payload = {"schema": PENDING_SCHEMA, "requests": store["requests"],
+               "revision": int(store.get("revision") or 0) + 1}
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent),
+                              prefix=".guidance-pending-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _pending_expired(request: dict[str, Any], now: datetime) -> bool:
+    expires = _parse_iso(request.get("expires_at"))
+    return expires is None or expires <= now
+
+
+def _display_names(topics: Iterable[str], keys: Iterable[str]) -> str:
+    names = [f'"{topic}"' for topic in topics] + [f'"{key}"' for key in keys]
+    return ", ".join(names) if names else "the item"
+
+
+def _pending_summary(action: str, topics: list[str], keys: list[str],
+                     until_iso: str, permanent: bool, now: datetime) -> str:
+    names = _display_names(topics, keys)
+    if action == "reopen":
+        return f"reopen {names}"
+    if permanent:
+        return f"close {names} permanently"
+    parsed = _parse_iso(until_iso)
+    if parsed is not None:
+        days = max(1, round((parsed - now).total_seconds() / 86400))
+        return f"close {names} for {days} days"
+    return f"close {names}"
+
+
+def create_pending(root: Any, *, session_id: Any, action: Any, topics: Iterable[Any],
+                   keys: Iterable[Any], until: Any, permanent: bool,
+                   source: Any, entry_id: Any = "") -> dict[str, Any]:
+    """Freeze the exact change the owner will be shown and asked to confirm."""
+    moment = _now()
+    act = str(action or "").strip().lower()
+    session = str(session_id or "").strip()
+    if not session:
+        return {"ok": False, "status": "refused",
+                "error": "session_id is required to prepare a change"}
+    if act not in ("close", "reopen"):
+        return {"ok": False, "status": "refused",
+                "error": "action must be close or reopen"}
+    clean_topics = sorted({str(topic).strip() for topic in (topics or ())
+                           if str(topic).strip()})
+    clean_keys = sorted({str(key).strip() for key in (keys or ())
+                         if str(key).strip()})
+    if any(not normalise(topic) for topic in clean_topics):
+        return {"ok": False, "status": "refused",
+                "error": "a topic label is empty after normalising"}
+    request: dict[str, Any] = {
+        "ref": "gref-" + secrets.token_hex(6),
+        "action": act,
+        "topics": clean_topics,
+        "keys": clean_keys,
+        "until": "",
+        "permanent": False,
+        "source": str(source or "owner")[:80],
+        "session_id": session,
+        "created_at": _iso(moment),
+        "expires_at": _iso(moment + timedelta(seconds=PENDING_TTL_SECONDS)),
+        "consumed": False,
+    }
+    if act == "reopen":
+        entry = str(entry_id or "").strip()
+        if not entry:
+            return {"ok": False, "status": "refused", "error": "id is required"}
+        request["id"] = entry
+    else:
+        if not clean_topics and not clean_keys:
+            return {"ok": False, "status": "refused",
+                    "error": "a topic label or at least one stable key is required"}
+        until_iso, error = _parse_until(until, permanent=bool(permanent), now=moment)
+        if error:
+            return {"ok": False, "status": "refused", "error": error}
+        request["until"] = until_iso
+        request["permanent"] = bool(permanent)
+    request["summary"] = _pending_summary(
+        act, clean_topics, clean_keys, request["until"], request["permanent"], moment)
+    store = _read_pending_store(root)
+    if not store.get("ok"):
+        return {"ok": False, "status": "refused", "error": store.get("error")}
+    kept = [row for row in store["requests"]
+            if isinstance(row, dict) and not _pending_expired(row, moment)]
+    kept.insert(0, request)
+    store["requests"] = kept[:MAX_PENDING]
+    try:
+        _write_pending_store(root, store)
+    except Exception as exc:  # noqa: BLE001 - never raise into the tool loop
+        return {"ok": False, "status": "error",
+                "error": f"guidance pending write failed ({type(exc).__name__})"}
+    return request
+
+
+def read_pending(root: Any, ref: Any) -> dict[str, Any] | None:
+    wanted = str(ref or "").strip()
+    if not wanted:
+        return None
+    store = _read_pending_store(root)
+    if not store.get("ok"):
+        return None
+    moment = _now()
+    for row in store["requests"]:
+        if not isinstance(row, dict) or str(row.get("ref") or "") != wanted:
+            continue
+        if row.get("consumed") or _pending_expired(row, moment):
+            return None
+        return dict(row)
+    return None
+
+
+def consume_pending(root: Any, ref: Any) -> bool:
+    wanted = str(ref or "").strip()
+    if not wanted:
+        return False
+    store = _read_pending_store(root)
+    if not store.get("ok"):
+        return False
+    moment = _now()
+    found = False
+    for row in store["requests"]:
+        if not isinstance(row, dict) or str(row.get("ref") or "") != wanted:
+            continue
+        if row.get("consumed") or _pending_expired(row, moment):
+            return False
+        row["consumed"] = True
+        found = True
+        break
+    if not found:
+        return False
+    store["requests"] = [row for row in store["requests"]
+                         if isinstance(row, dict) and not _pending_expired(row, moment)]
+    try:
+        _write_pending_store(root, store)
+    except Exception:  # noqa: BLE001 - never raise into the tool loop
+        return False
+    return True
 
 
 def _empty() -> dict[str, Any]:
