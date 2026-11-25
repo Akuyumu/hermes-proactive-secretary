@@ -198,6 +198,96 @@ class GuidanceAuthorityTests(unittest.TestCase):
         self.assertIn("conditional", result["error"].lower())
         self.assertEqual(self._call({"action": "list"})["count"], 0)
 
+    def test_unrelated_question_requires_confirmation(self):
+        message = "What time is lunch?"
+        self._remember(message)
+        result = self._call({
+            "action": "close", "topics": ["travel"],
+            "evidence_quote": message}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["status"], "confirmation_required")
+        self.assertIn("ask", result)
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_distant_negation_is_refused(self):
+        message = "Do not under any circumstances ever close the exams topic."
+        self._remember(message)
+        result = self._call({
+            "action": "close", "topics": ["exams"],
+            "evidence_quote": message}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["status"], "refused")
+        self.assertIn("negated", result["error"].lower())
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_once_conditional_is_refused(self):
+        message = "Once the results arrive, close the exams topic."
+        self._remember(message)
+        result = self._call({
+            "action": "close", "topics": ["exams"],
+            "evidence_quote": message}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["status"], "refused")
+        self.assertIn("conditional", result["error"].lower())
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_permanent_close_without_owner_words_requires_confirmation(self):
+        message = "exams are over, close the exams topic"
+        self._remember(message)
+        result = self._call({
+            "action": "close", "topics": ["exams"], "permanent": True,
+            "evidence_quote": message}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["status"], "confirmation_required")
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_permanent_close_with_owner_words_closes(self):
+        message = "exams are over, close the exams topic permanently"
+        self._remember(message)
+        result = self._call({
+            "action": "close", "topics": ["exams"], "permanent": True,
+            "evidence_quote": message}, session_id="s-guidance")
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["status"], "closed")
+        self.assertTrue(result["entry"]["permanent"])
+
+    def test_natural_stop_instruction_binds_target(self):
+        message = "exams are over, stop notifying me about exams"
+        self._remember(message)
+        result = self._call({
+            "action": "close", "topics": ["exams"],
+            "evidence_quote": message}, session_id="s-guidance")
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["status"], "closed")
+        self.assertEqual(result["entry"]["labels"], ["exams"])
+
+    def test_short_negated_instruction_is_refused(self):
+        message = "don't close the exams topic yet"
+        self._remember(message)
+        result = self._call({
+            "action": "close", "topics": ["exams"],
+            "evidence_quote": message}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["status"], "refused")
+        self.assertIn("negated", result["error"].lower())
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_reopen_with_owner_words_reopens_the_entry(self):
+        close_message = "exams are over, close the exams topic"
+        self._remember(close_message)
+        closed = self._call({
+            "action": "close", "topics": ["exams"],
+            "evidence_quote": close_message}, session_id="s-guidance")
+        self.assertTrue(closed["ok"], closed)
+        reopen_message = "reopen the exams topic"
+        self._remember(reopen_message)
+        reopened = self._call({
+            "action": "reopen", "id": closed["entry"]["id"],
+            "evidence_quote": reopen_message}, session_id="s-guidance")
+        self.assertTrue(reopened["ok"], reopened)
+        self.assertEqual(reopened["status"], "reopened")
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
     def test_public_dispatch_cannot_mutate(self):
         message = "exams are over, close it"
         self._remember(message)

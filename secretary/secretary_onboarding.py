@@ -1608,6 +1608,10 @@ TOOL_SCHEMA = {
         "apply_settings": {"type": "boolean"},
         "challenge": {"type": "string"},
         "step": {"type": "string"},
+        "provenance": {"type": "string",
+                       "enum": ["foreground_memory", "owner_reply"],
+                       "description": "Where the proposals came from; the service "
+                                      "defaults to foreground_memory"},
         "review_ref": {"type": "string",
                        "description": "Exact server-issued consent review reference"},
         "evidence_quote": {"type": "string",
@@ -1619,10 +1623,15 @@ TOOL_SCHEMA = {
 
 
 def tool_handler(service: OnboardingService):
-    def handler(args: Mapping[str, Any], **_kwargs: Any) -> str:
+    def handler(args: Mapping[str, Any], session_id: Any = None,
+                **_kwargs: Any) -> str:
         import json
         try:
-            return json.dumps(service.dispatch(str(args.get("action") or "inspect"), args),
+            payload = dict(args or {})
+            payload["session_id"] = str(
+                session_id or payload.get("session_id") or "")
+            return json.dumps(service.dispatch(str(payload.get("action") or "inspect"),
+                                               payload),
                               ensure_ascii=False, sort_keys=True)
         except (OnboardingError, consent.ConsentError) as exc:
             return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, sort_keys=True)

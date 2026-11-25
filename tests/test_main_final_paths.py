@@ -457,10 +457,10 @@ class OnboardingAndDiscoveryTests(Workspace):
 
 class PackagingTests(Workspace):
     def test_reproducible_code_only_package_and_doctor(self):
-        out = self.root / "portal-1.1.10.tar.gz"
+        out = self.root / "portal-1.1.11.tar.gz"
         result = release_export.build_package(out, root=ROOT)
         self.assertTrue(result["ok"])
-        self.assertEqual(result["version"], "1.1.10")
+        self.assertEqual(result["version"], "1.1.11")
         with tarfile.open(out) as archive:
             names = archive.getnames()
             self.assertTrue(any(name.endswith("plugin.yaml") for name in names))
@@ -471,7 +471,7 @@ class PackagingTests(Workspace):
             archive.extractall(install)
         doctor = release_export.doctor(install)
         self.assertTrue(doctor["ok"], doctor)
-        self.assertEqual(doctor["version"], "1.1.10")
+        self.assertEqual(doctor["version"], "1.1.11")
         self.assertEqual(doctor["identity"], "hermes-proactive-secretary")
 
 

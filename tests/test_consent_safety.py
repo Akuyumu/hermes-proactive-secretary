@@ -220,6 +220,22 @@ class OnboardingConsentTests(_ProfileTestCase):
             "evidence_quote": "yes"})
         self.assertFalse(arm["ok"])
 
+    def test_turn_in_another_session_cannot_authorise_onboarding_update(self):
+        ctx, tools = self.registered()
+        text = "Yes, enable private preparation for the conversation scope."
+        self.human(ctx, text, "s-A")
+        before = ctx.state.get(onboarding.STATE_KEY)
+        result = json.loads(tools["secretary_onboarding"]({
+            "action": "update", "session_id": "s-A", "explicit_consent": True,
+            "evidence_quote": text,
+            "settings": {"autonomy_mode": "prepare_private",
+                         "preparation_scopes": ["conversation"],
+                         "preparation_source_consent": False}},
+            session_id="s-B"))
+        self.assertFalse(result["ok"], result)
+        self.assertIn("current eligible human conversation turn", result["error"])
+        self.assertEqual(ctx.state.get(onboarding.STATE_KEY), before)
+
     def test_negated_unrelated_and_generic_yes_grants_deny_but_named_grant_works(self):
         ctx, tools = self.registered()
         for text in ("No, do not grant mail access.",

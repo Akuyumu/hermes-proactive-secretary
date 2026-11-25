@@ -60,16 +60,36 @@ TOOL_FUNCTION_SCHEMA: dict[str, Any] = {
 }
 
 
-_NEGATED_ACTION = re.compile(
-    r"\b(?:don['\u2019]?t|do\s+not|not|never|no\s+need\s+to|shouldn['\u2019]?t|"
-    r"should\s+not|won['\u2019]?t|will\s+not|cannot|can['\u2019]?t)\s+"
-    r"(?:\w+\s+){0,3}(?:close|stop|mute|drop|hide|reopen|suppress)\b",
+_ACTION_WORDS = re.compile(
+    r"\b(?:close|stop|mute|drop|forget|hide|suppress|reopen|resume|undo)\b",
+    re.IGNORECASE,
+)
+_NEGATION_ANY = re.compile(
+    r"\b(?:no|not|never|don['\u2019]?t|do not|does not|"
+    r"isn['\u2019]?t|won['\u2019]?t|will not|cannot|can['\u2019]?t|shouldn['\u2019]?t|"
+    r"refuse|decline)\b",
     re.IGNORECASE,
 )
 _CONDITIONAL_TURN = re.compile(
-    r"\b(?:if|unless|maybe|perhaps|possibly|might|wait|hold|pending|until)\b",
+    r"\b(?:if|unless|maybe|perhaps|possibly|might|"
+    r"once|when|whenever|after|before|until|pending|wait|hold|depends?)\b",
     re.IGNORECASE,
 )
+_CLOSE_CUE = re.compile(
+    r"\b(?:done|finished|over|no longer|don['\u2019]?t need|do not need|"
+    r"stop (?:notifying|sending|telling|showing)|close|drop|forget|mute)\b",
+    re.IGNORECASE,
+)
+_REOPEN_CUE = re.compile(
+    r"\b(?:reopen|un-?mute|resume|bring back|start again|undo)\b",
+    re.IGNORECASE,
+)
+_PERMANENT = re.compile(
+    r"\b(?:permanent|permanently|forever|always|indefinitely|for good)\b",
+    re.IGNORECASE,
+)
+_CONFIRM_SUFFIX = ("; ask the owner to confirm in their own words and call again "
+                   "with that reply as evidence_quote")
 
 
 def _ensure_src() -> None:
@@ -122,50 +142,89 @@ def _apply_mutation(payload: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 def _foreground_authority(ctx: Any, payload: dict[str, Any], *,
-                         host_session_id: Any = None) -> tuple[bool, str]:
-    """Positive host-attested proof: a private human turn quoting the owner.
+                         host_session_id: Any = None) -> tuple[bool, str, str]:
+    """Positive host-attested proof bound to the requested change.
 
     A null execution, a TTY or an environment variable is not proof — delegated
     children of a scheduled run also report "not cron". The authoritative turn
     record the host keeps for a session is what we require, exactly as follow-ups
-    and responsibilities do.
+    and responsibilities do. The quote itself must name the action, target and
+    duration being changed; when it does not, the caller must ask the owner to
+    confirm in their own words.
     """
     if ctx is None:
-        return False, "a foreground conversation context is required"
+        return False, "refused", "a foreground conversation context is required"
     # No task-id gate: Hermes mints an effective task id for every foreground
     # turn (agent/turn_context.py:641), so it identifies nothing. Foreground is
     # proved by the recorded turn below, which the pre_llm hook writes only for
     # an eligible human turn, plus the host-supplied session id.
     session_id = str(host_session_id or payload.get("session_id") or "").strip()
     if not session_id:
-        return False, "session_id is required to prove an owner turn"
+        return False, "refused", "session_id is required to prove an owner turn"
     try:
         from .secretary_responsibilities import latest_turn, _quote_matches
         from .secretary_followups import _turn_is_private_human
     except Exception:  # noqa: BLE001 - unavailable authority proof means refuse
-        return False, "owner authority could not be checked"
+        return False, "refused", "owner authority could not be checked"
     try:
         turn = latest_turn(ctx, session_id=session_id)
     except Exception:  # noqa: BLE001
-        return False, "owner authority could not be checked"
+        return False, "refused", "owner authority could not be checked"
     if turn is None:
-        return False, "no current human conversation turn for this session"
+        return False, "refused", "no current human conversation turn for this session"
     if not _turn_is_private_human(turn):
-        return False, "a background or shared turn cannot change guidance"
+        return False, "refused", "a background or shared turn cannot change guidance"
     if not _quote_matches(payload.get("evidence_quote"), turn):
-        return False, "evidence_quote must quote the owner's current message"
-    text = str(turn.get("text") or "")
+        return False, "refused", "evidence_quote must quote the owner's current message"
+
+    quote = str(payload.get("evidence_quote") or "")
+    action = str(payload.get("action") or "").strip().lower()
+    sentences = re.split(r"(?<=[.!?;])\s+|\n+", quote)
+    action_sentence = ""
+    action_match = None
+    for sentence in sentences:
+        found = _ACTION_WORDS.search(sentence)
+        if found:
+            action_sentence = sentence
+            action_match = found
+            break
+    if action_match is None:
+        return False, "confirmation_required", (
+            "the owner's words do not name the action to change" + _CONFIRM_SUFFIX)
+    prefix = action_sentence[:action_match.start()]
+    # "stop" is the action itself, so it is deliberately absent from negation.
+    if _NEGATION_ANY.search(prefix):
+        return False, "refused", "a negated instruction cannot change guidance"
+    if action_sentence.rstrip().endswith("?"):
+        return False, "refused", "a question is not an instruction"
+    if _CONDITIONAL_TURN.search(action_sentence):
+        return False, "refused", "a conditional turn cannot change guidance"
     from .secretary_responsibilities import _QUOTED, _REPORTED
-    if _QUOTED.search(text) or _REPORTED.search(text):
-        return False, "quoted or reported text cannot change guidance"
-    # Only a negation of THIS action refuses. A blanket negation match would
-    # reject the natural instruction "stop notifying me about exams", because
-    # "stop" is itself a negation word (secretary_responsibilities._NEGATION).
-    if _NEGATED_ACTION.search(text):
-        return False, "a negated instruction cannot change guidance"
-    if _CONDITIONAL_TURN.search(text):
-        return False, "a conditional turn cannot change guidance"
-    return True, ""
+    if _QUOTED.search(quote) or _REPORTED.search(quote):
+        return False, "refused", "quoted or reported text cannot change guidance"
+
+    if action == "close":
+        if not _CLOSE_CUE.search(action_sentence):
+            return False, "confirmation_required", (
+                "the owner's words do not clearly close that topic" + _CONFIRM_SUFFIX)
+        topics = payload.get("topics") or []
+        labels = [str(label).strip() for label in topics if str(label).strip()]
+        if topics:
+            lowered = quote.lower()
+            bound = any(
+                label.lower() in lowered or (label.lower() + "s") in lowered
+                for label in labels if len(label) >= 3)
+            if not bound:
+                return False, "confirmation_required", (
+                    "the owner's words do not name the topic to close" + _CONFIRM_SUFFIX)
+    elif action == "reopen":
+        if not _REOPEN_CUE.search(action_sentence):
+            return False, "confirmation_required", (
+                "the owner's words do not clearly reopen that topic" + _CONFIRM_SUFFIX)
+    if bool(payload.get("permanent")) and not _PERMANENT.search(quote):
+        return False, "confirmation_required", (
+            "the owner's words do not say the change is permanent" + _CONFIRM_SUFFIX)
+    return True, "", ""
 
 
 def tool_handler(ctx: Any = None):
@@ -175,11 +234,15 @@ def tool_handler(ctx: Any = None):
         action = str(body.get("action") or "list").strip().lower()
         try:
             if action != "list":
-                ok, why = _foreground_authority(
+                ok, status, why = _foreground_authority(
                     ctx, body, host_session_id=session_id)
                 if not ok:
-                    return json.dumps({"ok": False, "status": "refused", "error": why},
-                                      ensure_ascii=False, sort_keys=True)
+                    result = {"ok": False, "status": status, "error": why}
+                    if status == "confirmation_required":
+                        result["ask"] = (
+                            "Ask the owner to confirm this exact change in their own "
+                            "words, then call again with their reply as evidence_quote.")
+                    return json.dumps(result, ensure_ascii=False, sort_keys=True)
                 return json.dumps(_apply_mutation(body),
                                   ensure_ascii=False, sort_keys=True)
             return json.dumps(dispatch(body), ensure_ascii=False, sort_keys=True)

@@ -62,8 +62,10 @@ until you enable it and choose what it may use, and it never sends anything.
 - **Topic closure.** Say in a one-to-one chat "exams are over, stop notifying me
   about exams" and matching notices are muted for seven days by default.
   Requested reminders are unaffected, and you can reopen a topic by asking.
-  Quoted, reported, negated or conditional sentences ("don't close that yet")
-  are refused, and only a verified owner turn can set one.
+  Quoted or reported text is refused, as is a negated or conditional
+  instruction ("don't close that yet"). The action, the topic and any
+  "permanent" must appear in your own words; when the plugin cannot find them it
+  asks you to confirm instead of guessing.
 - **Bounded context.** A few short, expiring notes about your projects,
   preferences and people, used to make notices relevant. Advisory only: they
   never grant access or consent.
@@ -73,20 +75,19 @@ until you enable it and choose what it may use, and it never sends anything.
 
 ## How it works
 
-Three things can run. `hermes secretary setup` arms the first two together;
-the agent and the preparation job are separate opt-ins:
+Four jobs exist. `hermes secretary setup` arms the first two together; the
+other two are separate opt-ins:
 
-1. **Monitoring** — a script job every 15 minutes: deterministic collectors for
-   your enabled sources, then the notification gates, then delivery through
-   Hermes. Collection and gating are deterministic; judgment about what changed
-   may use the model route you configured.
-2. **Reminders** — a script job every minute, deterministic and model-free.
+1. **Monitoring** — every 15 minutes: deterministic collectors for your enabled
+   sources, then the notification gates, then delivery through Hermes. Collection
+   and gating are deterministic; judgment about what changed may use the model
+   route you configured.
+2. **Reminders** — every minute, deterministic and model-free.
 3. **The optional agent** (`--with-portal`) — a scheduled ordinary Hermes
    session for investigation, follow-ups and drafts. It uses more resources and
-   can be turned off without touching the monitors.
-
-A fourth job, **private preparation** (`--with-preparation`), is a separate
-script job that exists only when you opt in.
+   can be stopped without touching the monitors.
+4. **Private preparation** (`--with-preparation`) — a separate script job that
+   prepares material for accepted commitments, and exists only when you opt in.
 
 Configuration or onboarding alone arms nothing. Jobs are created explicitly by
 `hermes secretary setup`.

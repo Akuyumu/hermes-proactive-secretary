@@ -71,13 +71,16 @@ def _rows(ctx: Any) -> list[dict[str, Any]]:
     return [dict(row) for row in raw if isinstance(row, Mapping)]
 
 
-def current_human_turn(ctx: Any, session_id: Any = "") -> dict[str, Any] | None:
+def current_human_turn(ctx: Any, session_id: Any = "", *,
+                       require_session: bool = False) -> dict[str, Any] | None:
     """Return the newest eligible human turn, or None when ambiguous/stale."""
     now = time.time()
     rows = [row for row in _rows(ctx)
             if float(row.get("at") or 0) >= now - TURN_TTL_SECONDS
             and clean(row.get("text"))]
     sid = clean(session_id, 200)
+    if require_session and not sid:
+        return None
     if sid:
         rows = [row for row in rows if clean(row.get("session_id"), 200) == sid]
     if not rows:
@@ -111,7 +114,7 @@ def positive_turn(ctx: Any, payload: Mapping[str, Any] | None, *,
                   reference: str = "") -> dict[str, Any]:
     """Require an actual affirmative human turn relevant to the exact action."""
     payload = dict(payload or {})
-    turn = current_human_turn(ctx, payload.get("session_id"))
+    turn = current_human_turn(ctx, payload.get("session_id"), require_session=True)
     if turn is None:
         raise ConsentError(
             f"{purpose} requires a current eligible human conversation turn")
