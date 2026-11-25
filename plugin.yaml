@@ -30,6 +30,7 @@ provides_tools:
   - secretary_propose_notice
   - secretary_followup
   - secretary_draft
+  - secretary_guidance
 provides_hooks:
   - pre_llm_call
 
