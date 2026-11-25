@@ -187,6 +187,89 @@ class GuidanceAuthorityTests(unittest.TestCase):
         self.assertEqual(again["status"], "refused")
         self.assertEqual(self._call({"action": "list"})["count"], 1)
 
+    def test_two_pending_replies_must_name_the_change(self):
+        exams = self._propose_close(
+            "exams are over, close the exams topic", topics=("exams",))
+        travel = self._propose_close(
+            "travel is over, close the travel topic", topics=("travel",))
+        self.assertFalse(exams["ok"], exams)
+        self.assertFalse(travel["ok"], travel)
+
+        bare = self._confirm(exams["ref"], reply="yes")
+        self.assertFalse(bare["ok"], bare)
+        self.assertEqual(bare["status"], "refused")
+        self.assertIn("which change", bare["error"].lower())
+        self.assertIsNotNone(guidance.read_pending(self.data, exams["ref"]))
+        self.assertIsNotNone(guidance.read_pending(self.data, travel["ref"]))
+
+        named = self._confirm(exams["ref"], reply="yes, close exams")
+        self.assertTrue(named["ok"], named)
+        self.assertEqual(named["confirmed_ref"], exams["ref"])
+        self.assertIsNone(guidance.read_pending(self.data, exams["ref"]))
+        self.assertIsNotNone(guidance.read_pending(self.data, travel["ref"]))
+        self.assertEqual(self._call({"action": "list"})["count"], 1)
+
+    def test_one_turn_cannot_confirm_a_second_pending(self):
+        exams = self._propose_close(
+            "exams are over, close the exams topic", topics=("exams",))
+        travel = self._propose_close(
+            "travel is over, close the travel topic", topics=("travel",))
+        reply = "yes, close exams"
+        self._remember(reply)
+        confirmed = self._call(
+            {"action": "confirm", "ref": exams["ref"], "evidence_quote": reply},
+            session_id="s-guidance")
+        self.assertTrue(confirmed["ok"], confirmed)
+        again = self._call(
+            {"action": "confirm", "ref": travel["ref"], "evidence_quote": reply},
+            session_id="s-guidance")
+        self.assertFalse(again["ok"], again)
+        self.assertEqual(again["status"], "refused")
+        self.assertEqual(self._call({"action": "list"})["count"], 1)
+        self.assertIsNotNone(guidance.read_pending(self.data, travel["ref"]))
+
+    def test_turn_at_the_proposal_instant_is_refused(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        row = guidance.read_pending(self.data, first["ref"])
+        self.assertIsNotNone(row)
+        responsibilities.remember_human_turn(
+            self.ctx, session_id="s-guidance", user_message="yes",
+            platform="telegram", at=row["created_epoch"])
+        result = self._call(
+            {"action": "confirm", "ref": first["ref"], "evidence_quote": "yes"},
+            session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["status"], "refused")
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+        self.assertIsNotNone(guidance.read_pending(self.data, first["ref"]))
+
+    def test_cancel_from_another_session_is_refused(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        result = self._call(
+            {"action": "cancel", "ref": first["ref"]}, session_id="s-other")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["status"], "refused")
+        self.assertIsNotNone(guidance.read_pending(self.data, first["ref"]))
+        confirmed = self._confirm(first["ref"])
+        self.assertTrue(confirmed["ok"], confirmed)
+
+    def test_summary_uses_the_exact_date_not_a_day_count(self):
+        first = self._propose_close(
+            "Close the exams topic, it is over on 2026-12-24.")
+        self.assertFalse(first["ok"], first)
+        self.assertEqual(first["status"], "confirmation_required")
+        self.assertIn('close "exams" until 2026-12-24', first["summary"])
+        self.assertNotIn("days", first["summary"])
+        self.assertNotIn("for ", first["summary"])
+
+    def test_until_with_a_date_is_a_duration_not_a_condition(self):
+        first = self._propose_close(
+            "exams are over, close the exams topic until 2026-12-24")
+        self.assertTrue(first.get("ref"), first)
+        self.assertEqual(first["status"], "confirmation_required")
+        self.assertIn('close "exams" until 2026-12-24', first["summary"])
+
+
     def test_confirm_with_non_affirmative_reply_is_refused(self):
         first = self._propose_close("exams are over, close the exams topic")
         result = self._confirm(first["ref"], reply="maybe")

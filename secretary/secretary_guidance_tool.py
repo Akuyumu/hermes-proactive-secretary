@@ -121,6 +121,19 @@ def _ensure_src() -> None:
         sys.path.insert(0, src)
 
 
+def _strip_duration_phrase(sentence: str) -> str:
+    """Remove a stated duration before the conditional check.
+
+    "until 2026-12-24" and "for 3 weeks" name how long the change lasts; they are
+    not conditions. A bare "until" with no value stays a conditional.
+    """
+    text = sentence or ""
+    text = re.sub(r"\buntil\s+\d{4}-\d{2}-\d{2}\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b(?:until|for)\s+\d+\s+(?:day|days|week|weeks|month|months)\b",
+                  " ", text, flags=re.IGNORECASE)
+    return text
+
+
 def _requested_until(sentence: str) -> Any:
     """A duration the owner actually named, never a caller-supplied expiry."""
     match = _DURATION.search(sentence or "")
@@ -245,7 +258,7 @@ def _foreground_authority(ctx: Any, payload: dict[str, Any], *,
         if sentence.rstrip().endswith("?"):
             rejection = rejection or "a question is not an instruction"
             continue
-        if _CONDITIONAL_TURN.search(sentence):
+        if _CONDITIONAL_TURN.search(_strip_duration_phrase(sentence)):
             rejection = rejection or "a conditional turn cannot change guidance"
             continue
         if _QUOTED.search(sentence) or _REPORTED.search(sentence):
@@ -379,23 +392,46 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
         return {"ok": False, "status": "refused",
                 "error": "a background or shared turn cannot confirm guidance"}
     text = str(turn.get("text") or "")
+    try:
+        at = float(turn.get("at") or 0)
+    except (TypeError, ValueError):
+        at = 0.0
+    try:
+        created_epoch = float(row.get("created_epoch"))
+    except (TypeError, ValueError):
+        created = guidance._parse_iso(row.get("created_at"))
+        created_epoch = created.timestamp() if created is not None else 0.0
+    if at <= created_epoch:
+        return {"ok": False, "status": "refused",
+                "error": "the confirming reply is not newer than this request"}
+    if not _quote_matches(payload.get("evidence_quote"), turn):
+        return {"ok": False, "status": "refused",
+                "error": "evidence_quote must quote the owner's confirming message"}
     if not _AFFIRMATIVE.search(text):
         return {"ok": False, "status": "refused",
                 "error": "the owner's reply is not an affirmative confirmation"}
     if _NEGATION_ANY.search(text) or _CONDITIONAL_TURN.search(text):
         return {"ok": False, "status": "refused",
                 "error": "a negated or conditional reply cannot confirm guidance"}
-    created = guidance._parse_iso(row.get("created_at"))
-    try:
-        at = float(turn.get("at") or 0)
-    except (TypeError, ValueError):
-        at = 0.0
-    if created is None or at < created.timestamp():
+
+    def _whole_word(value: str) -> re.Pattern[str]:
+        return re.compile(
+            r"(?<![\w])" + re.escape(str(value)) + r"(?![\w])", re.IGNORECASE)
+
+    pending_rows = guidance.pending_for_session(root, session_id)
+    if len(pending_rows) > 1:
+        named = bool(ref and _whole_word(ref).search(text))
+        if not named:
+            named = any(_whole_word(token).search(text)
+                        for token in row.get("label_tokens") or [] if token)
+        if not named:
+            return {"ok": False, "status": "refused",
+                    "error": "the reply does not say which change it confirms"}
+
+    token = guidance.turn_token(session_id, at, text)
+    if not guidance.consume_turn(root, token):
         return {"ok": False, "status": "refused",
-                "error": "the confirming reply predates this request"}
-    if not _quote_matches(payload.get("evidence_quote"), turn):
-        return {"ok": False, "status": "refused",
-                "error": "evidence_quote must quote the owner's confirming message"}
+                "error": "this turn already confirmed another change"}
 
     source = str(row.get("source") or "")
     reason = ""
@@ -420,14 +456,23 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
     return result
 
 
-def _cancel(payload: dict[str, Any]) -> dict[str, Any]:
+def _cancel(payload: dict[str, Any], *, host_session_id: Any = None) -> dict[str, Any]:
     _ensure_src()
     from proactive_pilot import guidance
 
     ref = str(payload.get("ref") or "").strip()
+    session_id = str(host_session_id or "").strip()
     if not ref:
         return {"ok": False, "status": "refused", "error": "ref is required"}
-    if not guidance.consume_pending(Path(paths.data_root()), ref):
+    root = Path(paths.data_root())
+    row = guidance.read_pending(root, ref)
+    if row is None:
+        return {"ok": False, "status": "refused",
+                "error": "confirmation is unknown, expired or already used"}
+    if str(row.get("session_id") or "") != session_id:
+        return {"ok": False, "status": "refused",
+                "error": "confirmation belongs to another session"}
+    if not guidance.consume_pending(root, ref):
         return {"ok": False, "status": "refused",
                 "error": "confirmation is unknown, expired or already used"}
     return {"ok": True, "status": "cancelled", "cancelled_ref": ref}
@@ -498,7 +543,8 @@ def tool_handler(ctx: Any = None):
                 return json.dumps(_confirm(ctx, body, host_session_id=session_id),
                                   ensure_ascii=False, sort_keys=True)
             if action == "cancel":
-                return json.dumps(_cancel(body), ensure_ascii=False, sort_keys=True)
+                return json.dumps(_cancel(body, host_session_id=session_id),
+                                  ensure_ascii=False, sort_keys=True)
             return json.dumps({"ok": False, "status": "refused",
                                "error": f"unknown action {action!r}"},
                               ensure_ascii=False, sort_keys=True)

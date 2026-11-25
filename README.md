@@ -59,9 +59,10 @@ until you enable it and choose what it may use, and it never sends anything.
 
 ### It remembers your corrections
 
-- **Topic closure.** When you ask to stop notices about a topic, the tool
-  proposes the exact change, shows it to you, and writes it only after you reply
-  yes. Requested reminders are unaffected. A permanent closure needs you to say
+- **Topic closure.** When you ask to stop notices about a topic, the tool then
+  gives you a one-line description of the exact change — for example
+  `close "exams" until 2026-12-02` — and writes only after you reply that it is
+  right. Requested reminders are unaffected. A permanent closure needs you to say
   so.
 - **Bounded context.** A few short, expiring notes about your projects,
   preferences and people, used to make notices relevant. Advisory only: they

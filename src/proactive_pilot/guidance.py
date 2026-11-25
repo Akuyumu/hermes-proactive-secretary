@@ -22,6 +22,7 @@ import os
 import re
 import secrets
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -79,7 +80,7 @@ def pending_path(root: Any) -> Path:
 
 
 def _pending_empty() -> dict[str, Any]:
-    return {"schema": PENDING_SCHEMA, "requests": [], "revision": 0}
+    return {"schema": PENDING_SCHEMA, "requests": [], "used_turns": [], "revision": 0}
 
 
 def _read_pending_store(root: Any) -> dict[str, Any]:
@@ -102,17 +103,21 @@ def _read_pending_store(root: Any) -> dict[str, Any]:
     requests = data.get("requests")
     if not isinstance(requests, list):
         return {"ok": False, "error": "guidance pending store has no request list"}
+    used_turns = data.get("used_turns", [])
+    if not isinstance(used_turns, list):
+        return {"ok": False, "error": "guidance pending store has an invalid used-turn list"}
     revision = data.get("revision", 0)
     if not isinstance(revision, int) or isinstance(revision, bool):
         return {"ok": False, "error": "guidance pending store has an invalid revision"}
     return {"ok": True, "present": True, "schema": PENDING_SCHEMA,
-            "requests": requests, "revision": revision}
+            "requests": requests, "used_turns": used_turns, "revision": revision}
 
 
 def _write_pending_store(root: Any, store: dict[str, Any]) -> None:
     path = pending_path(root)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     payload = {"schema": PENDING_SCHEMA, "requests": store["requests"],
+               "used_turns": list(store.get("used_turns") or [])[:50],
                "revision": int(store.get("revision") or 0) + 1}
     fd, tmp = tempfile.mkstemp(dir=str(path.parent),
                               prefix=".guidance-pending-", suffix=".tmp")
@@ -136,23 +141,32 @@ def _pending_expired(request: dict[str, Any], now: datetime) -> bool:
     return expires is None or expires <= now
 
 
-def _display_names(topics: Iterable[str], keys: Iterable[str]) -> str:
-    names = [f'"{topic}"' for topic in topics] + [f'"{key}"' for key in keys]
+def _display_names(labels: Iterable[str]) -> str:
+    names = [f'"{label}"' for label in labels]
     return ", ".join(names) if names else "the item"
 
 
-def _pending_summary(action: str, topics: list[str], keys: list[str],
-                     until_iso: str, permanent: bool, now: datetime) -> str:
-    names = _display_names(topics, keys)
-    if action == "reopen":
-        return f"reopen {names}"
-    if permanent:
-        return f"close {names} permanently"
+def _summary_date(until_iso: str) -> str:
     parsed = _parse_iso(until_iso)
     if parsed is not None:
-        days = max(1, round((parsed - now).total_seconds() / 86400))
-        return f"close {names} for {days} days"
-    return f"close {names}"
+        return parsed.date().isoformat()
+    return str(until_iso or "")[:10]
+
+
+def _pending_summary(action: str, topics: list[str], keys: list[str],
+                     until_iso: str, permanent: bool) -> str:
+    if action == "reopen":
+        return f"reopen {_display_names(topics or keys)}"
+    if not topics and keys:
+        count = len(keys)
+        item = "item" if count == 1 else "items"
+        if permanent:
+            return f"close {count} saved {item} permanently"
+        return f"close {count} saved {item} until {_summary_date(until_iso)}"
+    names = _display_names(topics)
+    if permanent:
+        return f"close {names} permanently"
+    return f"close {names} until {_summary_date(until_iso)}"
 
 
 def create_pending(root: Any, *, session_id: Any, action: Any, topics: Iterable[Any],
@@ -185,7 +199,10 @@ def create_pending(root: Any, *, session_id: Any, action: Any, topics: Iterable[
         "source": str(source or "owner")[:80],
         "session_id": session,
         "created_at": _iso(moment),
+        "created_epoch": time.time(),
         "expires_at": _iso(moment + timedelta(seconds=PENDING_TTL_SECONDS)),
+        "label_tokens": ([normalise(topic) for topic in clean_topics if normalise(topic)]
+                         + [normalise(key) for key in clean_keys if normalise(key)]),
         "consumed": False,
     }
     if act == "reopen":
@@ -203,7 +220,7 @@ def create_pending(root: Any, *, session_id: Any, action: Any, topics: Iterable[
         request["until"] = until_iso
         request["permanent"] = bool(permanent)
     request["summary"] = _pending_summary(
-        act, clean_topics, clean_keys, request["until"], request["permanent"], moment)
+        act, clean_topics, clean_keys, request["until"], request["permanent"])
     store = _read_pending_store(root)
     if not store.get("ok"):
         return {"ok": False, "status": "refused", "error": store.get("error")}
@@ -234,6 +251,48 @@ def read_pending(root: Any, ref: Any) -> dict[str, Any] | None:
             return None
         return dict(row)
     return None
+
+
+def pending_for_session(root: Any, session_id: Any) -> list[dict[str, Any]]:
+    sid = str(session_id or "").strip()
+    if not sid:
+        return []
+    store = _read_pending_store(root)
+    if not store.get("ok"):
+        return []
+    moment = _now()
+    return [dict(row) for row in store["requests"]
+            if isinstance(row, dict)
+            and str(row.get("session_id") or "") == sid
+            and not row.get("consumed")
+            and not _pending_expired(row, moment)]
+
+
+def turn_token(session_id: Any, at: Any, text: Any) -> str:
+    raw = f"{session_id}|{int(float(at) * 1000)}|{text}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def consume_turn(root: Any, token: Any) -> bool:
+    wanted = str(token or "").strip()
+    if not wanted:
+        return False
+    store = _read_pending_store(root)
+    if not store.get("ok"):
+        return False
+    used = [str(row) for row in store.get("used_turns") or [] if str(row)]
+    if wanted in used:
+        return False
+    moment = _now()
+    used.insert(0, wanted)
+    store["used_turns"] = used[:50]
+    store["requests"] = [row for row in store["requests"]
+                         if isinstance(row, dict) and not _pending_expired(row, moment)]
+    try:
+        _write_pending_store(root, store)
+    except Exception:  # noqa: BLE001 - never raise into the tool loop
+        return False
+    return True
 
 
 def consume_pending(root: Any, ref: Any) -> bool:
