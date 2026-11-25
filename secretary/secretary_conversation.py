@@ -660,10 +660,14 @@ def register_onboarding_tool(ctx: Any, *, service: OnboardingService | None = No
     if not callable(tool_reg):
         return {"tool": False, "error": "register_tool unavailable"}
     try:
+        description = ("Inspect, propose from foreground memory, validate, preview and confirm "
+                       "resumable secretary onboarding. Never grants access on a model assertion.")
         tool_reg(
-            "secretary_onboarding", "secretary", TOOL_SCHEMA, tool_handler(service),
-            description=("Inspect, propose from foreground memory, validate, preview and confirm "
-                         "resumable secretary onboarding. Never grants access on a model assertion."),
+            "secretary_onboarding", "secretary",
+            {"name": "secretary_onboarding", "description": description,
+             "parameters": TOOL_SCHEMA},
+            tool_handler(service),
+            description=description,
             emoji="",
         )
         return {"tool": True}

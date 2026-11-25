@@ -310,7 +310,8 @@ def register_tool(ctx: Any, *, register_tool: Any = None) -> dict[str, Any]:
         register(
             TOOL_NAME,
             "secretary",
-            TOOL_SCHEMA,
+            {"name": TOOL_NAME, "description": TOOL_DESCRIPTION,
+             "parameters": TOOL_SCHEMA},
             tool_handler(ctx),
             description=TOOL_DESCRIPTION,
             emoji="",

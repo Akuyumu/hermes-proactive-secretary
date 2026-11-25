@@ -565,11 +565,15 @@ def register_tool(ctx: Any, *, register_tool: Any = None) -> dict[str, Any]:
     if not callable(register):
         return {"responsibility_tool": False, "error": "register_tool unavailable"}
     try:
+        description = ("Capture or manage an accepted responsibility from a real current "
+                       "human commitment. Tentative opportunities stay tentative. "
+                       "Handoff only inspects a current artifact and never executes.")
         register(
-            "secretary_responsibility", "secretary", TOOL_SCHEMA, tool_handler(ctx),
-            description=("Capture or manage an accepted responsibility from a real current "
-                         "human commitment. Tentative opportunities stay tentative. "
-                         "Handoff only inspects a current artifact and never executes."),
+            "secretary_responsibility", "secretary",
+            {"name": "secretary_responsibility", "description": description,
+             "parameters": TOOL_SCHEMA},
+            tool_handler(ctx),
+            description=description,
             emoji="",
         )
         return {"responsibility_tool": True}

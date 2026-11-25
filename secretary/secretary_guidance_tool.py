@@ -44,8 +44,6 @@ TOOL_SCHEMA = {
                       "description": "Only when the owner explicitly wants it permanent"},
         "id": {"type": "string", "description": "Entry id for reopen"},
         "reason": {"type": "string", "description": "The owner's own words"},
-        "session_id": {"type": "string",
-                       "description": "Current chat session id; required to prove the owner's turn"},
         "evidence_quote": {"type": "string",
                            "description": "Exact words from the owner's current message"},
     },
@@ -103,7 +101,8 @@ def dispatch(payload: dict[str, Any] | None = None, *, authorized: bool = False)
     return result
 
 
-def _foreground_authority(ctx: Any, payload: dict[str, Any]) -> tuple[bool, str]:
+def _foreground_authority(ctx: Any, payload: dict[str, Any], *, host_session_id: Any = None,
+                         host_task_id: Any = None) -> tuple[bool, str]:
     """Positive host-attested proof: a private human turn quoting the owner.
 
     A null execution, a TTY or an environment variable is not proof — delegated
@@ -113,7 +112,9 @@ def _foreground_authority(ctx: Any, payload: dict[str, Any]) -> tuple[bool, str]
     """
     if ctx is None:
         return False, "a foreground conversation context is required"
-    session_id = str(payload.get("session_id") or "").strip()
+    if str(host_task_id or "").strip():
+        return False, "a scheduled or delegated execution cannot change guidance"
+    session_id = str(host_session_id or payload.get("session_id") or "").strip()
     if not session_id:
         return False, "session_id is required to prove an owner turn"
     try:
@@ -131,16 +132,24 @@ def _foreground_authority(ctx: Any, payload: dict[str, Any]) -> tuple[bool, str]
         return False, "a background or shared turn cannot change guidance"
     if not _quote_matches(payload.get("evidence_quote"), turn):
         return False, "evidence_quote must quote the owner's current message"
+    text = str(turn.get("text") or "")
+    from .secretary_responsibilities import _QUOTED, _REPORTED, _NEGATION, _CONDITIONAL
+    if _QUOTED.search(text) or _REPORTED.search(text):
+        return False, "quoted or reported text cannot change guidance"
+    if _NEGATION.search(text) or _CONDITIONAL.search(text):
+        return False, "a negated or conditional turn cannot change guidance"
     return True, ""
 
 
 def tool_handler(ctx: Any = None):
-    def handler(args: dict[str, Any] | None = None, **_kwargs: Any) -> str:
+    def handler(args: dict[str, Any] | None = None, session_id: Any = None,
+                task_id: Any = None, **_kwargs: Any) -> str:
         body = args or {}
         action = str(body.get("action") or "list").strip().lower()
         try:
             if action != "list":
-                ok, why = _foreground_authority(ctx, body)
+                ok, why = _foreground_authority(
+                    ctx, body, host_session_id=session_id, host_task_id=task_id)
                 if not ok:
                     return json.dumps({"ok": False, "status": "refused", "error": why},
                                       ensure_ascii=False, sort_keys=True)

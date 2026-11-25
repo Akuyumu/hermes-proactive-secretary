@@ -1373,11 +1373,14 @@ class FollowupIntegrationTests(unittest.TestCase):
         ctx, _handler = self._foreground()
         before = portal.PROMPT
         tool = ctx.tools["secretary_followup"]
-        self.assertEqual(tool["schema"], importlib.import_module(
-            f"{_PKG.__name__}.secretary.secretary_followups").TOOL_SCHEMA)
-        self.assertEqual(tool["schema"]["type"], "object")
-        self.assertIs(tool["schema"]["additionalProperties"], False)
-        self.assertIn("action", tool["schema"]["required"])
+        parameters = importlib.import_module(
+            f"{_PKG.__name__}.secretary.secretary_followups").TOOL_SCHEMA
+        self.assertEqual(tool["schema"]["name"], "secretary_followup")
+        self.assertIn("description", tool["schema"])
+        self.assertEqual(tool["schema"]["parameters"], parameters)
+        self.assertEqual(tool["schema"]["parameters"]["type"], "object")
+        self.assertIs(tool["schema"]["parameters"]["additionalProperties"], False)
+        self.assertIn("action", tool["schema"]["parameters"]["required"])
         self.assertEqual(before, portal.PROMPT)
 
 
