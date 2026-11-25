@@ -360,8 +360,11 @@ _AFFIRMATIVE_WORDS = frozenset({"yes", "yeah", "yep", "yup", "ok", "okay", "sure
                                "confirm", "confirmed"})
 _AFFIRMATIVE_FILLERS = frozenset({"yes", "yeah", "yep", "yup", "ok", "okay", "sure",
                                  "confirm", "confirmed", "do", "it", "please", "then",
-                                 "go", "ahead", "that", "this", "the", "for", "close",
-                                 "reopen", "now"})
+                                 "go", "ahead", "that", "this", "the", "for", "now"})
+_PAST_TENSE = re.compile(
+    r"\b(?:did|already|yesterday|last\s+(?:week|month|night|time|year)|used\s+to|had|was|were)\b",
+    re.IGNORECASE,
+)
 
 
 _QUESTION_START = re.compile(
@@ -442,7 +445,9 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
         return {"ok": False, "status": "refused",
                 "error": "evidence_quote must quote the owner's confirming message"}
     quote = str(payload.get("evidence_quote") or "")
-    standalone = _standalone_affirmative(quote)
+    # Assent must be assent in the reply the owner actually sent: a caller cannot
+    # clip a bare "Yes" out of a longer sentence that says something else.
+    standalone = _standalone_affirmative(text) and _standalone_affirmative(quote)
     if not standalone and not _AFFIRMATIVE.search(quote):
         return {"ok": False, "status": "refused",
                 "error": "the owner's reply is not an affirmative approval"}
@@ -453,6 +458,9 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
     if _NEGATION_ANY.search(quote) or _CONDITIONAL_TURN.search(quote):
         return {"ok": False, "status": "refused",
                 "error": "a negated or conditional reply cannot confirm guidance"}
+    if _PAST_TENSE.search(quote):
+        return {"ok": False, "status": "refused",
+                "error": "that describes something already done, not an approval"}
 
     def _whole_word(value: str) -> re.Pattern[str]:
         return re.compile(
@@ -483,8 +491,16 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
     else:
         return {"ok": False, "status": "refused",
                 "error": "the reply does not say which change it confirms"}
+    pending_action = str(row.get("action") or "")
+    if not standalone:
+        if pending_action == "close" and _REOPEN_CUE.search(quote):
+            return {"ok": False, "status": "refused",
+                    "error": "the reply asks to reopen, not to close"}
+        if pending_action == "reopen" and not _REOPEN_CUE.search(quote):
+            return {"ok": False, "status": "refused",
+                    "error": "the reply does not ask to reopen"}
     if approved and not standalone and not refs_named:
-        cue = _CLOSE_CUE if str(row.get("action")) == "close" else _REOPEN_CUE
+        cue = _CLOSE_CUE if pending_action == "close" else _REOPEN_CUE
         if not cue.search(quote):
             return {"ok": False, "status": "refused",
                     "error": "the reply names the topic but does not approve the change"}

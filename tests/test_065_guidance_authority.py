@@ -262,6 +262,33 @@ class GuidanceAuthorityTests(unittest.TestCase):
         self.assertNotIn("days", first["summary"])
         self.assertNotIn("for ", first["summary"])
 
+    def test_clipped_yes_cannot_confirm(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        self._remember("Yes, I have exams tomorrow.")
+        result = self._call({"action": "confirm", "ref": first["ref"],
+                             "evidence_quote": "Yes"}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_past_tense_report_is_not_an_approval(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        reply = "Yes, I did close exams yesterday."
+        self._remember(reply)
+        result = self._call({"action": "confirm", "ref": first["ref"],
+                             "evidence_quote": reply}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertIn("already done", result["error"])
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_opposite_action_does_not_confirm_a_close(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        reply = "yes, reopen it"
+        self._remember(reply)
+        result = self._call({"action": "confirm", "ref": first["ref"],
+                             "evidence_quote": reply}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
     def test_question_is_not_a_confirmation(self):
         first = self._propose_close("exams are over, close the exams topic")
         reply = "Should I confirm exams?"
