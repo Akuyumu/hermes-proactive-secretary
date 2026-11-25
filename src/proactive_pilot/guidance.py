@@ -169,6 +169,14 @@ def _pending_summary(action: str, topics: list[str], keys: list[str],
     return f"close {names} until {_summary_date(until_iso)}"
 
 
+def _pending_reply(action: str, topics: list[str], keys: list[str]) -> str:
+    """The exact sentence the owner is asked to reply with."""
+    names = [str(topic).strip() for topic in topics if str(topic).strip()]
+    if names:
+        return f"yes, {action} " + " and ".join(names)
+    return f"yes, {action} those"
+
+
 def create_pending(root: Any, *, session_id: Any, action: Any, topics: Iterable[Any],
                    keys: Iterable[Any], until: Any, permanent: bool,
                    source: Any, entry_id: Any = "") -> dict[str, Any]:
@@ -221,6 +229,7 @@ def create_pending(root: Any, *, session_id: Any, action: Any, topics: Iterable[
         request["permanent"] = bool(permanent)
     request["summary"] = _pending_summary(
         act, clean_topics, clean_keys, request["until"], request["permanent"])
+    request["reply_with"] = _pending_reply(act, clean_topics, clean_keys)
     store = _read_pending_store(root)
     if not store.get("ok"):
         return {"ok": False, "status": "refused", "error": store.get("error")}

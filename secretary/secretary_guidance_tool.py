@@ -111,9 +111,9 @@ _NUMBER_WORDS = {
 }
 _UNIT_DAYS = {"day": 1, "week": 7, "month": 30, "year": 365}
 _CONFIRM_SUFFIX = ("; ask the owner to say it in their own words, then try again")
-_PROPOSE_ASK = ("Show the owner exactly this change and ask them to reply naming it, for "
-                "example \"yes, close exams\". A bare yes will not do. Then call "
-                "action=confirm with this ref and their reply as evidence_quote.")
+_PROPOSE_ASK = ("Show the owner this summary and ask them to reply with exactly the "
+                "reply_with sentence. Anything else is refused. Then call action=confirm "
+                "with this ref and their reply as evidence_quote.")
 
 
 def _ensure_src() -> None:
@@ -373,6 +373,12 @@ _QUESTION_START = re.compile(
 )
 
 
+def _normalise_reply(text: str) -> str:
+    """Case, punctuation and spacing do not matter; wording does."""
+    cleaned = re.sub(r"[^\w\s]", " ", str(text or "").lower())
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 def _standalone_affirmative(text: str) -> bool:
     """A short reply that only says yes.
 
@@ -444,83 +450,23 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
         return {"ok": False, "status": "refused",
                 "error": "evidence_quote must quote the owner's confirming message"}
     quote = str(payload.get("evidence_quote") or "")
-    from .secretary_responsibilities import _QUOTED as _Q, _REPORTED as _R
-    # The whole reply is judged, not only the span the caller chose: an approval
-    # quoted inside a refusal or reported as something the assistant said is not
-    # the owner approving anything.
-    if _Q.search(text) or _R.search(text):
+    expected = str(row.get("reply_with") or "").strip()
+    if not expected:
         return {"ok": False, "status": "refused",
-                "error": "quoting or reporting a phrase is not an approval"}
-    if _NEGATION_ANY.search(text):
+                "error": "this request has no confirmation wording; ask again"}
+    # The owner replies with the exact sentence the proposal named. Anything else
+    # -- a different topic, a narrower duration, an extra clause, a retraction or
+    # a bare reference -- is not the confirmation that was asked for.
+    if _normalise_reply(text) != _normalise_reply(expected):
         return {"ok": False, "status": "refused",
-                "error": "the reply negates the change"}
-    if _CONDITIONAL_TURN.search(_strip_duration_phrase(text)):
+                "error": f'reply exactly: "{expected}"'}
+    if _normalise_reply(quote) != _normalise_reply(expected):
         return {"ok": False, "status": "refused",
-                "error": "a conditional reply cannot confirm guidance"}
-    # Assent must be assent in the reply the owner actually sent: a caller cannot
-    # clip a bare "Yes" out of a longer sentence that says something else.
-    standalone = _standalone_affirmative(text) and _standalone_affirmative(quote)
-    if not standalone and not _AFFIRMATIVE.search(quote):
-        return {"ok": False, "status": "refused",
-                "error": "the owner's reply is not an affirmative approval"}
-    if (quote.rstrip().endswith("?") or text.rstrip().endswith("?")
-            or (not standalone and (_QUESTION_START.search(quote)
-                                    or _QUESTION_START.search(text)))):
-        return {"ok": False, "status": "refused",
-                "error": "a question is not a confirmation"}
-    if _NEGATION_ANY.search(quote) or _CONDITIONAL_TURN.search(quote):
-        return {"ok": False, "status": "refused",
-                "error": "a negated or conditional reply cannot confirm guidance"}
-    if _PAST_TENSE.search(quote) or _PAST_TENSE.search(text):
-        return {"ok": False, "status": "refused",
-                "error": "that describes something already done, not an approval"}
-
-    def _whole_word(value: str) -> re.Pattern[str]:
-        return re.compile(
-            r"(?<![\w])" + re.escape(str(value)) + r"(?![\w])", re.IGNORECASE)
-
+                "error": f'the quoted words must be exactly: "{expected}"'}
     pending_rows = guidance.pending_for_session(root, session_id)
-    refs_named: set[Any] = set()
-    candidates: set[Any] = set()
-    for other in pending_rows:
-        # Candidates are resolved against the whole reply: a caller cannot clip
-        # one topic out of a reply that named two.
-        named_ref = bool(other.get("ref")) and bool(
-            _whole_word(str(other.get("ref"))).search(text))
-        named_label = any(_whole_word(token).search(text)
-                          for token in other.get("label_tokens") or [] if token)
-        if named_ref:
-            refs_named.add(other.get("ref"))
-        if named_ref or named_label:
-            candidates.add(other.get("ref"))
-    if len(candidates) > 1:
+    if not any(other.get("ref") == ref for other in pending_rows):
         return {"ok": False, "status": "refused",
-                "error": "the reply names more than one change; say which one"}
-    # A bare "yes" is never enough. The plugin cannot see what the assistant
-    # showed the owner, so the owner's own words must name the change they are
-    # approving; the proposal then supplies the exact payload.
-    if ref in candidates:
-        approved = True
-    elif len(candidates) == 1:
-        return {"ok": False, "status": "refused",
-                "error": "that reply is for a different change"}
-    else:
-        return {"ok": False, "status": "refused",
-                "error": ("the reply must name the change, for example "
-                          "\"yes, close exams\"")}
-    pending_action = str(row.get("action") or "")
-    if not standalone:
-        if pending_action == "close" and _REOPEN_CUE.search(quote):
-            return {"ok": False, "status": "refused",
-                    "error": "the reply asks to reopen, not to close"}
-        if pending_action == "reopen" and not _REOPEN_CUE.search(quote):
-            return {"ok": False, "status": "refused",
-                    "error": "the reply does not ask to reopen"}
-    if approved and not standalone and not refs_named:
-        cue = _CLOSE_CUE if pending_action == "close" else _REOPEN_CUE
-        if not cue.search(quote):
-            return {"ok": False, "status": "refused",
-                    "error": "the reply names the topic but does not approve the change"}
+                "error": "confirmation is unknown, expired or already used"}
 
     token = guidance.turn_token(session_id, at, text)
     if not guidance.consume_turn(root, token):
@@ -631,6 +577,7 @@ def tool_handler(ctx: Any = None):
                 return json.dumps(
                     {"ok": False, "status": "confirmation_required",
                      "ref": pending["ref"], "summary": pending["summary"],
+                     "reply_with": pending.get("reply_with", ""),
                      "ask": _PROPOSE_ASK},
                     ensure_ascii=False, sort_keys=True)
             if action == "confirm":

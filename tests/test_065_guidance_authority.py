@@ -112,7 +112,7 @@ class GuidanceAuthorityTests(unittest.TestCase):
         self.assertEqual(first["status"], "confirmation_required")
         self.assertTrue(first["ref"].startswith("gref-"), first)
         self.assertIn('"exams"', first["summary"])
-        self.assertIn("yes, close exams", first["ask"])
+        self.assertTrue(first.get("reply_with"))
         self.assertEqual(self._call({"action": "list"})["count"], 0)
 
         confirmed = self._confirm(first["ref"])
@@ -198,7 +198,7 @@ class GuidanceAuthorityTests(unittest.TestCase):
         bare = self._confirm(exams["ref"], reply="yes")
         self.assertFalse(bare["ok"], bare)
         self.assertEqual(bare["status"], "refused")
-        self.assertIn("name the change", bare["error"].lower())
+        self.assertIn("reply exactly", bare["error"].lower())
         self.assertIsNotNone(guidance.read_pending(self.data, exams["ref"]))
         self.assertIsNotNone(guidance.read_pending(self.data, travel["ref"]))
 
@@ -335,7 +335,7 @@ class GuidanceAuthorityTests(unittest.TestCase):
         result = self._call({"action": "confirm", "ref": first["ref"],
                              "evidence_quote": reply}, session_id="s-guidance")
         self.assertFalse(result["ok"], result)
-        self.assertIn("already done", result["error"])
+        self.assertIn("reply exactly", result["error"])
         self.assertEqual(self._call({"action": "list"})["count"], 0)
 
     def test_opposite_action_does_not_confirm_a_close(self):
@@ -354,7 +354,7 @@ class GuidanceAuthorityTests(unittest.TestCase):
         result = self._call({"action": "confirm", "ref": first["ref"],
                              "evidence_quote": reply}, session_id="s-guidance")
         self.assertFalse(result["ok"], result)
-        self.assertIn("question", result["error"])
+        self.assertIn("reply exactly", result["error"])
         self.assertEqual(self._call({"action": "list"})["count"], 0)
 
     def test_topic_without_approval_does_not_confirm(self):
@@ -364,7 +364,7 @@ class GuidanceAuthorityTests(unittest.TestCase):
         result = self._call({"action": "confirm", "ref": first["ref"],
                              "evidence_quote": reply}, session_id="s-guidance")
         self.assertFalse(result["ok"], result)
-        self.assertIn("does not approve", result["error"])
+        self.assertIn("reply exactly", result["error"])
         self.assertEqual(self._call({"action": "list"})["count"], 0)
 
     def test_quote_must_carry_the_approval(self):
@@ -384,7 +384,7 @@ class GuidanceAuthorityTests(unittest.TestCase):
         result = self._call({"action": "confirm", "ref": exams["ref"],
                              "evidence_quote": reply}, session_id="s-guidance")
         self.assertFalse(result["ok"], result)
-        self.assertIn("more than one", result["error"])
+        self.assertIn("reply exactly", result["error"])
         self.assertEqual(self._call({"action": "list"})["count"], 0)
 
     def test_reply_naming_both_pending_topics_is_refused(self):
@@ -398,7 +398,7 @@ class GuidanceAuthorityTests(unittest.TestCase):
         result = self._call({"action": "confirm", "ref": exams["ref"],
                              "evidence_quote": reply}, session_id="s-guidance")
         self.assertFalse(result["ok"], result)
-        self.assertIn("more than one", result["error"])
+        self.assertIn("reply exactly", result["error"])
         self.assertEqual(self._call({"action": "list"})["count"], 0)
         self.assertIsNotNone(guidance.read_pending(self.data, exams["ref"]))
         self.assertIsNotNone(guidance.read_pending(self.data, travel["ref"]))
@@ -410,14 +410,14 @@ class GuidanceAuthorityTests(unittest.TestCase):
         result = self._call({"action": "confirm", "ref": first["ref"],
                              "evidence_quote": reply}, session_id="s-guidance")
         self.assertFalse(result["ok"], result)
-        self.assertIn("name the change", result["error"])
+        self.assertIn("reply exactly", result["error"])
         self.assertEqual(self._call({"action": "list"})["count"], 0)
 
     def test_bare_yes_never_confirms(self):
         first = self._propose_close("exams are over, close the exams topic")
         result = self._confirm(first["ref"], reply="yes please")
         self.assertFalse(result["ok"], result)
-        self.assertIn("name the change", result["error"])
+        self.assertIn("reply exactly", result["error"])
         self.assertEqual(self._call({"action": "list"})["count"], 0)
 
     def test_until_with_a_date_is_a_duration_not_a_condition(self):
