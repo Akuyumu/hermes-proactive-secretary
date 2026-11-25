@@ -61,9 +61,11 @@ until you enable it and choose what it may use, and it never sends anything.
 
 - **Topic closure.** When you ask to stop notices about a topic, the tool then
   gives you a one-line description of the exact change — for example
-  `close "exams" until 2026-12-02` — and writes only after you reply that it is
-  right. If more than one change is waiting, name the one you mean. Requested
-  reminders are unaffected. A permanent closure needs you to say so.
+  `close "exams" until 2026-12-02` — and writes only after you reply naming the
+  change, for example "yes, close exams". A bare "yes" is not enough: the plugin
+  cannot see what the assistant showed you, so your own words have to say what
+  you are approving. Requested reminders are unaffected. A permanent closure
+  needs you to say so.
 - **Bounded context.** A few short, expiring notes about your projects,
   preferences and people, used to make notices relevant. Advisory only: they
   never grant access or consent.

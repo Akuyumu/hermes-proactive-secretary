@@ -111,10 +111,9 @@ _NUMBER_WORDS = {
 }
 _UNIT_DAYS = {"day": 1, "week": 7, "month": 30, "year": 365}
 _CONFIRM_SUFFIX = ("; ask the owner to say it in their own words, then try again")
-_PROPOSE_ASK = ("Show the owner exactly this change and ask them to reply, for example "
-                "\"yes, close exams\". If more than one change is waiting, ask them to "
-                "name the topic. Then call action=confirm with this ref and their reply "
-                "as evidence_quote.")
+_PROPOSE_ASK = ("Show the owner exactly this change and ask them to reply naming it, for "
+                "example \"yes, close exams\". A bare yes will not do. Then call "
+                "action=confirm with this ref and their reply as evidence_quote.")
 
 
 def _ensure_src() -> None:
@@ -445,7 +444,7 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
         return {"ok": False, "status": "refused",
                 "error": "evidence_quote must quote the owner's confirming message"}
     quote = str(payload.get("evidence_quote") or "")
-    from .secretary_responsibilities import _QUOTED as _Q, _REPORTED as _R, turns_since
+    from .secretary_responsibilities import _QUOTED as _Q, _REPORTED as _R
     # The whole reply is judged, not only the span the caller chose: an approval
     # quoted inside a refusal or reported as something the assistant said is not
     # the owner approving anything.
@@ -497,21 +496,18 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
     if len(candidates) > 1:
         return {"ok": False, "status": "refused",
                 "error": "the reply names more than one change; say which one"}
+    # A bare "yes" is never enough. The plugin cannot see what the assistant
+    # showed the owner, so the owner's own words must name the change they are
+    # approving; the proposal then supplies the exact payload.
     if ref in candidates:
-        approved = True
-    elif standalone and len(pending_rows) == 1:
-        # A bare yes only answers the prompt it followed; anything said in
-        # between means they are not answering this question any more.
-        if turns_since(ctx, session_id=session_id, after_epoch=created_epoch) != 1:
-            return {"ok": False, "status": "refused",
-                    "error": "the conversation moved on; ask again before confirming"}
         approved = True
     elif len(candidates) == 1:
         return {"ok": False, "status": "refused",
                 "error": "that reply is for a different change"}
     else:
         return {"ok": False, "status": "refused",
-                "error": "the reply does not say which change it confirms"}
+                "error": ("the reply must name the change, for example "
+                          "\"yes, close exams\"")}
     pending_action = str(row.get("action") or "")
     if not standalone:
         if pending_action == "close" and _REOPEN_CUE.search(quote):
