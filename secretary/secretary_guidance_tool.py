@@ -54,6 +54,13 @@ TOOL_SCHEMA = {
 }
 
 
+TOOL_FUNCTION_SCHEMA: dict[str, Any] = {
+    "name": TOOL_NAME,
+    "description": TOOL_DESCRIPTION,
+    "parameters": TOOL_SCHEMA,
+}
+
+
 def _ensure_src() -> None:
     src = str(Path(paths.plugin_root()) / "src")
     if src not in sys.path:
@@ -155,7 +162,7 @@ def register_tool(ctx: Any, *, register_tool: Any = None) -> dict[str, Any]:
     if not callable(register):
         return {"guidance_tool": False, "guidance_tool_error": "register_tool unavailable"}
     try:
-        register(TOOL_NAME, "secretary", TOOL_SCHEMA, tool_handler(ctx),
+        register(TOOL_NAME, "secretary", TOOL_FUNCTION_SCHEMA, tool_handler(ctx),
                  description=TOOL_DESCRIPTION, emoji="")
         return {"guidance_tool": True}
     except Exception as exc:  # noqa: BLE001 - registration stays optional

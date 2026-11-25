@@ -367,19 +367,22 @@ _HISTORY_EVIDENCE = re.compile(
     re.IGNORECASE,
 )
 _SOURCE_REF = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:|://")
+_DRIVE_PATH = re.compile(r"^[A-Za-z]:[\\/]")
 
 
 def _evidence_is_only_history(refs: list[str]) -> bool:
     """True when every evidence reference is a local planning/history artifact.
 
-    A source id (``cal:…``, ``x:…``, a URL) is never history just because its text
-    contains a word like "plans": only local path-shaped references count.
+    A drive-qualified path is a path, not a source id, even though ``C:`` looks
+    like a scheme. A real source id (``cal:…``, ``x:…``, a URL) is never history.
     """
     if not refs:
         return False
 
     def is_history(ref: Any) -> bool:
         text = str(ref).strip()
+        if _DRIVE_PATH.match(text):
+            return bool(_HISTORY_EVIDENCE.search(text.replace("\\", "/")))
         if _SOURCE_REF.search(text):
             return False
         normalised = text.replace("\\", "/")

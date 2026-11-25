@@ -158,6 +158,11 @@ def _entry_labels_norm(entry: dict[str, Any]) -> list[str]:
 
 
 def _valid_entry(entry: Any) -> bool:
+    """Writer invariants, enforced on read as well.
+
+    An entry with no selector matches nothing and would read as "closed" while
+    silently never firing, so it is damage, not data.
+    """
     if not (isinstance(entry, dict) and isinstance(entry.get("id"), str)
             and entry.get("id")):
         return False
@@ -169,7 +174,14 @@ def _valid_entry(entry: Any) -> bool:
         return False
     if any(not isinstance(key, str) for key in keys):
         return False
-    return entry.get("action") in ("close", "watch")
+    if not any(label.strip() for label in labels) and not any(key.strip() for key in keys):
+        return False
+    if entry.get("action") not in ("close", "watch"):
+        return False
+    if entry.get("permanent"):
+        return True
+    until_raw = entry.get("until")
+    return bool(until_raw) and _parse_iso(until_raw) is not None
 
 
 def _expiry_ok(entry: dict[str, Any]) -> bool:
@@ -204,12 +216,13 @@ def _match(entries: list[Any], *, wanted_labels: set[str], wanted_keys: set[str]
 
 
 def list_active(root: Any, now: datetime | None = None) -> dict[str, Any]:
-    store = read_store(root)
+    store = _snapshot(root)
     if not store.get("ok"):
         return store
     moment = now or _now()
     active = [entry for entry in store["entries"]
-              if _valid_entry(entry) and _active(entry, moment)]
+              if _valid_entry(entry) and entry.get("action") == "close"
+              and _active(entry, moment)]
     return {"ok": True, "present": store.get("present", False),
             "revision": int(store.get("revision") or 0), "entries": active,
             "count": len(active)}

@@ -195,6 +195,24 @@ class NoticeBoundaryTests(_Rooted):
                       "expiry": "2026-11-26T12:00:00Z"})
         self.assertNotEqual(receipt.get("status"), "evidence_is_history", receipt)
 
+    def test_drive_qualified_planning_path_is_history(self):
+        receipt = self.portal_notices.submit_notice(
+            self.store, self.clock, identity=self.identity,
+            proposal={"event_key": "evt-drive", "topic": "study plan",
+                      "message": "Same countdown.",
+                      "evidence_refs": ["C:\\work\\plans\\x.md"],
+                      "expiry": "2026-11-26T12:00:00Z"})
+        self.assertEqual(receipt.get("status"), "evidence_is_history", receipt)
+
+    def test_drive_qualified_source_path_is_not_history(self):
+        receipt = self.portal_notices.submit_notice(
+            self.store, self.clock, identity=self.identity,
+            proposal={"event_key": "evt-drive2", "topic": "release",
+                      "message": "Changed.",
+                      "evidence_refs": ["C:\\work\\releases\\x.md"],
+                      "expiry": "2026-11-26T12:00:00Z"})
+        self.assertNotEqual(receipt.get("status"), "evidence_is_history", receipt)
+
     def test_windows_style_planning_path_is_history(self):
         receipt = self.portal_notices.submit_notice(
             self.store, self.clock, identity=self.identity,
@@ -272,6 +290,12 @@ class ToolTests(_Rooted):
     def test_unauthorized_dispatch_cannot_mutate(self):
         self.assertFalse(self.tool.dispatch({"action": "close", "topics": ["x"]})["ok"])
 
+    def test_tool_registers_a_function_schema(self):
+        schema = self.tool.TOOL_FUNCTION_SCHEMA
+        self.assertEqual(schema["name"], "secretary_guidance")
+        self.assertIn("parameters", schema)
+        self.assertIn("properties", schema["parameters"])
+
     def test_handler_never_raises(self):
         handler = self.tool.tool_handler(None)
         payload = json.loads(handler({"action": "list"}))
@@ -309,6 +333,23 @@ class ToolTests(_Rooted):
             None, {"no": "id"}, {"id": "x", "labels": "not-a-list", "action": "close"}
         ]}), encoding="utf-8")
         self.assertEqual(guidance.suppressed(self.root, labels=["anything"]), "unavailable")
+
+    def test_entry_without_a_selector_is_damage(self):
+        path = guidance.store_path(self.root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"schema": 1, "revision": 1, "entries": [{
+            "id": "gd-empty", "labels": [], "keys": [], "action": "close",
+            "permanent": False, "until": "2027-01-01T00:00:00Z"}]}), encoding="utf-8")
+        self.assertEqual(guidance.suppressed(self.root, labels=["anything"]), "unavailable")
+        self.assertEqual(guidance.list_active(self.root)["ok"], False)
+
+    def test_finite_entry_without_expiry_is_damage(self):
+        path = guidance.store_path(self.root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"schema": 1, "revision": 1, "entries": [{
+            "id": "gd-noexp", "labels": ["exams"], "keys": [], "action": "close",
+            "permanent": False, "until": ""}]}), encoding="utf-8")
+        self.assertEqual(guidance.suppressed(self.root, labels=["exams"]), "unavailable")
 
     def test_bad_revision_is_unavailable(self):
         path = guidance.store_path(self.root)
