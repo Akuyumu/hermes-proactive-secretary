@@ -86,15 +86,16 @@ class GuidanceAuthorityTests(unittest.TestCase):
             self.ctx, platform="telegram", user_message=text,
             session_id=session_id)
 
-    def _call(self, payload, session_id=None):
-        return json.loads(self.handler(payload, session_id=session_id))
+    def _call(self, payload, session_id=None, task_id=None):
+        return json.loads(self.handler(payload, session_id=session_id, task_id=task_id))
 
     def test_owner_close_records_an_entry(self):
         message = "exams are over, close it"
         self._remember(message)
         result = self._call({
             "action": "close", "topics": ["exams"],
-            "evidence_quote": message}, session_id="s-guidance")
+            "evidence_quote": message}, session_id="s-guidance",
+            task_id="3f0c2a9e-1b7d-4a63-9c2e-0e1f2a3b4c5d")
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["status"], "closed")
         self.assertEqual(result["entry"]["labels"], ["exams"])
@@ -111,7 +112,6 @@ class GuidanceAuthorityTests(unittest.TestCase):
         self.assertFalse(result["ok"], result)
         self.assertEqual(result["status"], "refused")
         self.assertIn("negated", result["error"].lower())
-        self.assertIn("conditional", result["error"].lower())
         self.assertEqual(self._call({"action": "list"})["count"], 0)
 
     def test_quoted_turn_cannot_close(self):
@@ -147,14 +147,63 @@ class GuidanceAuthorityTests(unittest.TestCase):
 
     def test_delegated_task_cannot_close(self):
         message = "exams are over, close it"
-        self._remember(message)
+        # A task id is not proof on its own: with no recorded human turn the
+        # tool still refuses. Task ids are no longer used as a foreground gate.
         result = json.loads(self.handler(
             {"action": "close", "topics": ["exams"], "evidence_quote": message},
-            session_id="s-guidance", task_id="task-1"))
+            session_id="s-no-turn", task_id="task-1"))
         self.assertFalse(result["ok"], result)
         self.assertEqual(result["status"], "refused")
-        self.assertIn("scheduled", result["error"].lower())
-        self.assertIn("delegated", result["error"].lower())
+        self.assertIn("no current human conversation turn", result["error"].lower())
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_ordinary_foreground_task_id_does_not_block(self):
+        message = "exams are over, close it"
+        self._remember(message)
+        result = self._call({
+            "action": "close", "topics": ["exams"],
+            "evidence_quote": message}, session_id="s-guidance",
+            task_id="3f0c2a9e-1b7d-4a63-9c2e-0e1f2a3b4c5d")
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["status"], "closed")
+
+    def test_natural_stop_instruction_closes(self):
+        message = "exams are over, stop notifying me about exams"
+        self._remember(message)
+        result = self._call({
+            "action": "close", "topics": ["exams"],
+            "evidence_quote": message}, session_id="s-guidance")
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["status"], "closed")
+
+    def test_negated_instruction_is_refused(self):
+        message = "don't close the exams topic yet"
+        self._remember(message)
+        result = self._call({
+            "action": "close", "topics": ["exams"],
+            "evidence_quote": message}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["status"], "refused")
+        self.assertIn("negated", result["error"].lower())
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_conditional_instruction_is_refused(self):
+        message = "if the exams are over, close the topic"
+        self._remember(message)
+        result = self._call({
+            "action": "close", "topics": ["exams"],
+            "evidence_quote": message}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["status"], "refused")
+        self.assertIn("conditional", result["error"].lower())
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_public_dispatch_cannot_mutate(self):
+        message = "exams are over, close it"
+        self._remember(message)
+        result = guidance_tool.dispatch({"action": "close", "topics": ["exams"]})
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["status"], "refused")
         self.assertEqual(self._call({"action": "list"})["count"], 0)
 
     def test_list_needs_no_authority(self):

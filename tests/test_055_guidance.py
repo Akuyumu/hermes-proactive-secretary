@@ -270,22 +270,22 @@ class ToolTests(_Rooted):
             f"{_PKG.__name__}.secretary.secretary_guidance_tool")
 
     def test_conversational_close_then_list_then_reopen(self):
-        closed = self.tool.dispatch({
+        closed = self.tool._apply_mutation({
             "action": "close", "topics": ["Exams"],
-            "reason": "yikes i dont need that cheatsheet actl"}, authorized=True)
+            "reason": "yikes i dont need that cheatsheet actl"})
         self.assertTrue(closed["ok"], closed)
         self.assertIn("note", closed)
         listed = self.tool.dispatch({"action": "list"})
         self.assertEqual(listed["count"], 1)
         self.assertEqual(listed["entries"][0]["labels"], ["Exams"])
         self.assertIn("cheatsheet", listed["entries"][0]["source"])
-        reopened = self.tool.dispatch({"action": "reopen",
-                                       "id": listed["entries"][0]["id"]}, authorized=True)
+        reopened = self.tool._apply_mutation({"action": "reopen",
+                                              "id": listed["entries"][0]["id"]})
         self.assertTrue(reopened["ok"], reopened)
         self.assertEqual(self.tool.dispatch({"action": "list"})["count"], 0)
 
     def test_close_requires_a_topic_or_key(self):
-        self.assertFalse(self.tool.dispatch({"action": "close"}, authorized=True)["ok"])
+        self.assertFalse(self.tool._apply_mutation({"action": "close"})["ok"])
 
     def test_unauthorized_dispatch_cannot_mutate(self):
         self.assertFalse(self.tool.dispatch({"action": "close", "topics": ["x"]})["ok"])

@@ -34,7 +34,7 @@ capped.
 ### Optional: a background agent that does the thinking
 
 With `hermes secretary setup --with-portal`, a scheduled copy of your Hermes
-agent wakes on your cadence, reads only the sources you enabled, and can:
+agent wakes on your cadence and can:
 
 - **Keep follow-ups.** "Keep an eye on the visa page" becomes an inspectable,
   stoppable follow-up with an expiry. You can file one, and so can the agent.
@@ -73,7 +73,8 @@ until you enable it and choose what it may use, and it never sends anything.
 
 ## How it works
 
-Three things can run, and they are armed separately:
+Three things can run. `hermes secretary setup` arms the first two together;
+the agent and the preparation job are separate opt-ins:
 
 1. **Monitoring** — a script job every 15 minutes: deterministic collectors for
    your enabled sources, then the notification gates, then delivery through
@@ -83,6 +84,9 @@ Three things can run, and they are armed separately:
 3. **The optional agent** (`--with-portal`) — a scheduled ordinary Hermes
    session for investigation, follow-ups and drafts. It uses more resources and
    can be turned off without touching the monitors.
+
+A fourth job, **private preparation** (`--with-preparation`), is a separate
+script job that exists only when you opt in.
 
 Configuration or onboarding alone arms nothing. Jobs are created explicitly by
 `hermes secretary setup`.

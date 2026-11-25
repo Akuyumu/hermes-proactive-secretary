@@ -14,6 +14,7 @@ Scope rules this tool keeps:
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -59,13 +60,37 @@ TOOL_FUNCTION_SCHEMA: dict[str, Any] = {
 }
 
 
+_NEGATED_ACTION = re.compile(
+    r"\b(?:don['\u2019]?t|do\s+not|not|never|no\s+need\s+to|shouldn['\u2019]?t|"
+    r"should\s+not|won['\u2019]?t|will\s+not|cannot|can['\u2019]?t)\s+"
+    r"(?:\w+\s+){0,3}(?:close|stop|mute|drop|hide|reopen|suppress)\b",
+    re.IGNORECASE,
+)
+_CONDITIONAL_TURN = re.compile(
+    r"\b(?:if|unless|maybe|perhaps|possibly|might|wait|hold|pending|until)\b",
+    re.IGNORECASE,
+)
+
+
 def _ensure_src() -> None:
     src = str(Path(paths.plugin_root()) / "src")
     if src not in sys.path:
         sys.path.insert(0, src)
 
 
-def dispatch(payload: dict[str, Any] | None = None, *, authorized: bool = False) -> dict[str, Any]:
+def dispatch(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Public entry: reads only. Mutations must go through tool_handler, which
+    proves the owner's turn; this surface never applies one."""
+    body = dict(payload or {})
+    if str(body.get("action") or "list").strip().lower() in ("close", "reopen"):
+        return {"ok": False, "status": "refused",
+                "error": "guidance changes require a verified owner turn"}
+    return _apply_mutation(body)
+
+
+def _apply_mutation(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Apply an already-authorised mutation. Callers must have proved the owner's
+    turn first; the only supported caller is tool_handler after its check."""
     _ensure_src()
     from proactive_pilot import guidance
 
@@ -75,11 +100,6 @@ def dispatch(payload: dict[str, Any] | None = None, *, authorized: bool = False)
     reason = str(body.get("reason") or "").strip()[:200]
     if action == "list":
         return guidance.list_active(root)
-    if action in ("close", "reopen") and not authorized:
-        # The exported function is a call surface too: a mutation must carry the
-        # tool's authority check, not just its arguments.
-        return {"ok": False, "status": "refused",
-                "error": "guidance changes require a verified owner turn"}
     if action == "reopen":
         entry_id = str(body.get("id") or "").strip()
         if not entry_id:
@@ -101,8 +121,8 @@ def dispatch(payload: dict[str, Any] | None = None, *, authorized: bool = False)
     return result
 
 
-def _foreground_authority(ctx: Any, payload: dict[str, Any], *, host_session_id: Any = None,
-                         host_task_id: Any = None) -> tuple[bool, str]:
+def _foreground_authority(ctx: Any, payload: dict[str, Any], *,
+                         host_session_id: Any = None) -> tuple[bool, str]:
     """Positive host-attested proof: a private human turn quoting the owner.
 
     A null execution, a TTY or an environment variable is not proof — delegated
@@ -112,8 +132,10 @@ def _foreground_authority(ctx: Any, payload: dict[str, Any], *, host_session_id:
     """
     if ctx is None:
         return False, "a foreground conversation context is required"
-    if str(host_task_id or "").strip():
-        return False, "a scheduled or delegated execution cannot change guidance"
+    # No task-id gate: Hermes mints an effective task id for every foreground
+    # turn (agent/turn_context.py:641), so it identifies nothing. Foreground is
+    # proved by the recorded turn below, which the pre_llm hook writes only for
+    # an eligible human turn, plus the host-supplied session id.
     session_id = str(host_session_id or payload.get("session_id") or "").strip()
     if not session_id:
         return False, "session_id is required to prove an owner turn"
@@ -133,11 +155,16 @@ def _foreground_authority(ctx: Any, payload: dict[str, Any], *, host_session_id:
     if not _quote_matches(payload.get("evidence_quote"), turn):
         return False, "evidence_quote must quote the owner's current message"
     text = str(turn.get("text") or "")
-    from .secretary_responsibilities import _QUOTED, _REPORTED, _NEGATION, _CONDITIONAL
+    from .secretary_responsibilities import _QUOTED, _REPORTED
     if _QUOTED.search(text) or _REPORTED.search(text):
         return False, "quoted or reported text cannot change guidance"
-    if _NEGATION.search(text) or _CONDITIONAL.search(text):
-        return False, "a negated or conditional turn cannot change guidance"
+    # Only a negation of THIS action refuses. A blanket negation match would
+    # reject the natural instruction "stop notifying me about exams", because
+    # "stop" is itself a negation word (secretary_responsibilities._NEGATION).
+    if _NEGATED_ACTION.search(text):
+        return False, "a negated instruction cannot change guidance"
+    if _CONDITIONAL_TURN.search(text):
+        return False, "a conditional turn cannot change guidance"
     return True, ""
 
 
@@ -149,11 +176,11 @@ def tool_handler(ctx: Any = None):
         try:
             if action != "list":
                 ok, why = _foreground_authority(
-                    ctx, body, host_session_id=session_id, host_task_id=task_id)
+                    ctx, body, host_session_id=session_id)
                 if not ok:
                     return json.dumps({"ok": False, "status": "refused", "error": why},
                                       ensure_ascii=False, sort_keys=True)
-                return json.dumps(dispatch(body, authorized=True),
+                return json.dumps(_apply_mutation(body),
                                   ensure_ascii=False, sort_keys=True)
             return json.dumps(dispatch(body), ensure_ascii=False, sort_keys=True)
         except ValueError as exc:
