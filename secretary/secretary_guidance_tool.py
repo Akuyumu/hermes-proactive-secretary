@@ -464,14 +464,15 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
     if not standalone and not _AFFIRMATIVE.search(quote):
         return {"ok": False, "status": "refused",
                 "error": "the owner's reply is not an affirmative approval"}
-    if quote.rstrip().endswith("?") or (
-            not standalone and _QUESTION_START.search(quote)):
+    if (quote.rstrip().endswith("?") or text.rstrip().endswith("?")
+            or (not standalone and (_QUESTION_START.search(quote)
+                                    or _QUESTION_START.search(text)))):
         return {"ok": False, "status": "refused",
                 "error": "a question is not a confirmation"}
     if _NEGATION_ANY.search(quote) or _CONDITIONAL_TURN.search(quote):
         return {"ok": False, "status": "refused",
                 "error": "a negated or conditional reply cannot confirm guidance"}
-    if _PAST_TENSE.search(quote):
+    if _PAST_TENSE.search(quote) or _PAST_TENSE.search(text):
         return {"ok": False, "status": "refused",
                 "error": "that describes something already done, not an approval"}
 
@@ -483,9 +484,11 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
     refs_named: set[Any] = set()
     candidates: set[Any] = set()
     for other in pending_rows:
+        # Candidates are resolved against the whole reply: a caller cannot clip
+        # one topic out of a reply that named two.
         named_ref = bool(other.get("ref")) and bool(
-            _whole_word(str(other.get("ref"))).search(quote))
-        named_label = any(_whole_word(token).search(quote)
+            _whole_word(str(other.get("ref"))).search(text))
+        named_label = any(_whole_word(token).search(text)
                           for token in other.get("label_tokens") or [] if token)
         if named_ref:
             refs_named.add(other.get("ref"))

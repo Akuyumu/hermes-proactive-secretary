@@ -262,6 +262,38 @@ class GuidanceAuthorityTests(unittest.TestCase):
         self.assertNotIn("days", first["summary"])
         self.assertNotIn("for ", first["summary"])
 
+    def test_question_clipped_to_an_approval_is_refused(self):
+        first = self._propose_close(
+            "exams are over, close the exams topic permanently", permanent=True)
+        self._remember("Did you mean yes, close exams?")
+        result = self._call({"action": "confirm", "ref": first["ref"],
+                             "evidence_quote": "yes, close exams"},
+                            session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_example_clipped_to_an_approval_is_refused(self):
+        first = self._propose_close(
+            "exams are over, close the exams topic permanently", permanent=True)
+        self._remember("Yes, close exams was the example.")
+        result = self._call({"action": "confirm", "ref": first["ref"],
+                             "evidence_quote": "yes, close exams"},
+                            session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_two_named_topics_cannot_be_clipped_to_one(self):
+        exams = self._propose_close("exams are over, close the exams topic")
+        travel = self._propose_close("travel is booked, close the travel topic",
+                                     topics=("travel",))
+        reply = "yes, close exams and travel"
+        self._remember(reply)
+        result = self._call({"action": "confirm", "ref": exams["ref"],
+                             "evidence_quote": "yes, close exams"},
+                            session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
     def test_approval_quoted_inside_a_refusal_is_refused(self):
         first = self._propose_close("exams are over, close the exams topic")
         turn = 'Do not say "yes, close exams" on my behalf.'
