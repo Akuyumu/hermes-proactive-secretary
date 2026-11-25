@@ -21,7 +21,7 @@ For example, it can prepare a short checklist before a recurring meeting, flag a
 
 ## Current state
 
-- Version: **1.1.7**
+- Version: **1.1.8**
 - Plugin id: `hermes-proactive-secretary`
 - Command: `hermes secretary`
 - `main` carries stable releases; `dev` is the active development branch.

@@ -2261,6 +2261,10 @@ def cadence_command(args: argparse.Namespace, *, backend: Any = None) -> int:
 
     raw = str(getattr(args, "cadence_value", "") or "").strip()
     apply_gate = bool(getattr(args, "apply_gate", False)) or action == "apply"
+    if apply_gate and action == "status":
+        # ``--apply`` is the flag form of the ``apply`` action; without this the
+        # default status branch would answer first and silently do nothing.
+        action = "apply"
     if backend is None:
         backend = _backend()
     try:

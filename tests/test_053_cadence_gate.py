@@ -255,5 +255,74 @@ class RunnerTests(_Isolated):
         self.assertEqual(cadence.read_plan()["last_wake"] != "", True)
 
 
+class CliApplyFlagTests(_Isolated):
+    """``--apply`` must behave the same as the ``apply`` action."""
+
+    def _cli(self):
+        return importlib.import_module(f"{_PKG.__name__}.secretary.secretary_cli")
+
+    def _run(self, argv):
+        import argparse
+        cli = self._cli()
+        parser = argparse.ArgumentParser(prog="hermes secretary")
+        sub = parser.add_subparsers(dest="secretary_command")
+        wrapper = sub.add_parser("secretary")
+        cli.register_cli(wrapper)
+        ns = parser.parse_args(["secretary", *argv])
+        calls = []
+        original = cadence.convert
+
+        def fake(backend, minutes, **kwargs):
+            calls.append((minutes, kwargs))
+            return {"ok": True, "status": "gated", "interval_minutes": 360,
+                    "job_id": "job-1"}
+
+        cadence.convert = fake
+        try:
+            code = cli.cadence_command(ns, backend=_Store([self.row()]))
+        finally:
+            cadence.convert = original
+        return code, calls
+
+    def test_flag_form_applies(self):
+        code, calls = self._run(["cadence", "--set", "6h", "--apply", "--json"])
+        self.assertEqual(code, 0)
+        self.assertEqual(len(calls), 1, "the flag form must convert, not just report")
+        self.assertEqual(calls[0][0], "6h")
+
+    def test_action_form_applies(self):
+        code, calls = self._run(["cadence", "apply", "--set", "6h", "--json"])
+        self.assertEqual(code, 0)
+        self.assertEqual(len(calls), 1)
+
+    def test_plain_set_does_not_convert(self):
+        code, calls = self._run(["cadence", "--set", "6h", "--json"])
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, [])
+
+
+class PromptGuidanceTests(unittest.TestCase):
+    """The wake must treat its own history as evidence, not as an agenda."""
+
+    def setUp(self):
+        self.portal = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal")
+
+    def test_earlier_answer_is_not_an_agenda(self):
+        text = self.portal.PROMPT
+        self.assertIn("never an agenda", text)
+        self.assertIn("outranks that earlier answer", text)
+
+    def test_closed_topics_do_not_return(self):
+        text = self.portal.PROMPT
+        self.assertIn("signals that a topic is finished", text)
+        self.assertIn("do not restate countdowns", text)
+        self.assertIn("Keep continuity for useful state", text)
+
+    def test_prompt_has_no_exam_specific_rule(self):
+        # The guidance must stay general: no per-topic hardcoding in the wake.
+        for word in ("exam", "MA3005", "MA3002", "notes"):
+            self.assertNotIn(word.lower(), self.portal.PROMPT.lower())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
