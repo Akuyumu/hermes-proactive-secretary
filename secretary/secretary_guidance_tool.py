@@ -72,7 +72,9 @@ _NEGATION_ANY = re.compile(
 )
 _CONDITIONAL_TURN = re.compile(
     r"\b(?:if|unless|maybe|perhaps|possibly|might|"
-    r"once|when|whenever|after|before|until|pending|wait|hold|depends?)\b",
+    r"once|when|whenever|after|before|until|pending|wait|hold|depends?|"
+    r"assuming|suppose|supposing|in\s+case|as\s+long\s+as|so\s+long\s+as|"
+    r"provided)\b",
     re.IGNORECASE,
 )
 _CLOSE_CUE = re.compile(
@@ -179,29 +181,60 @@ def _foreground_authority(ctx: Any, payload: dict[str, Any], *,
 
     quote = str(payload.get("evidence_quote") or "")
     action = str(payload.get("action") or "").strip().lower()
-    sentences = re.split(r"(?<=[.!?;])\s+|\n+", quote)
+    turn_text = str(turn.get("text") or "")
+    from .secretary_responsibilities import _QUOTED, _REPORTED
+
+    sentences = re.split(r"(?<=[.!?;])\s+|\n+", turn_text)
+    seen_candidate = False
+    rejection = ""
     action_sentence = ""
-    action_match = None
+    cursor = 0
     for sentence in sentences:
         found = _ACTION_WORDS.search(sentence)
-        if found:
+        if not found:
+            continue
+        seen_candidate = True
+        start = turn_text.find(sentence, cursor)
+        if start < 0:
+            start = cursor
+        cursor = start + len(sentence)
+        # The prefix is read from the whole host-recorded turn, so a negated
+        # instruction cannot be laundered through a later "evidence" sentence.
+        prefix = turn_text[:start + found.start()]
+        if _NEGATION_ANY.search(prefix):
+            rejection = rejection or "a negated instruction cannot change guidance"
+            continue
+        if sentence.rstrip().endswith("?"):
+            rejection = rejection or "a question is not an instruction"
+            continue
+        if _CONDITIONAL_TURN.search(sentence):
+            rejection = rejection or "a conditional turn cannot change guidance"
+            continue
+        if _QUOTED.search(sentence) or _REPORTED.search(sentence):
+            rejection = rejection or "quoted or reported text cannot change guidance"
+            continue
+        if not action_sentence:
             action_sentence = sentence
-            action_match = found
-            break
-    if action_match is None:
+
+    if not action_sentence:
+        if seen_candidate and rejection:
+            return False, "refused", rejection
         return False, "confirmation_required", (
             "the owner's words do not name the action to change" + _CONFIRM_SUFFIX)
-    prefix = action_sentence[:action_match.start()]
-    # "stop" is the action itself, so it is deliberately absent from negation.
-    if _NEGATION_ANY.search(prefix):
-        return False, "refused", "a negated instruction cannot change guidance"
-    if action_sentence.rstrip().endswith("?"):
-        return False, "refused", "a question is not an instruction"
-    if _CONDITIONAL_TURN.search(action_sentence):
-        return False, "refused", "a conditional turn cannot change guidance"
-    from .secretary_responsibilities import _QUOTED, _REPORTED
-    if _QUOTED.search(quote) or _REPORTED.search(quote):
-        return False, "refused", "quoted or reported text cannot change guidance"
+
+    def _whole_word(value: str, *, plural: bool = False) -> re.Pattern[str]:
+        suffix = r"(?:s)?" if plural else ""
+        return re.compile(
+            r"(?<![\w])" + re.escape(str(value).lower()) + suffix + r"(?![\w])",
+            re.IGNORECASE)
+
+    def _label_excluded(label: str) -> bool:
+        stem = re.escape(label) + r"(?:s)?"
+        return bool(
+            re.search(r"\b(?:not|except|excluding|other\s+than|apart\s+from)\s+"
+                      r"(?:the\s+)?" + stem + r"\b", action_sentence, re.IGNORECASE)
+            or re.search(r"\b" + stem + r"\s+(?:not|no)\b",
+                         action_sentence, re.IGNORECASE))
 
     if action == "close":
         if not _CLOSE_CUE.search(action_sentence):
@@ -210,9 +243,10 @@ def _foreground_authority(ctx: Any, payload: dict[str, Any], *,
         topics = payload.get("topics") or []
         labels = [str(label).strip() for label in topics if str(label).strip()]
         if topics:
-            lowered = quote.lower()
             bound = any(
-                label.lower() in lowered or (label.lower() + "s") in lowered
+                _whole_word(label, plural=True).search(action_sentence)
+                and not _label_excluded(label)
+                and _whole_word(label, plural=True).search(quote)
                 for label in labels if len(label) >= 3)
             if not bound:
                 return False, "confirmation_required", (
@@ -221,9 +255,42 @@ def _foreground_authority(ctx: Any, payload: dict[str, Any], *,
         if not _REOPEN_CUE.search(action_sentence):
             return False, "confirmation_required", (
                 "the owner's words do not clearly reopen that topic" + _CONFIRM_SUFFIX)
-    if bool(payload.get("permanent")) and not _PERMANENT.search(quote):
-        return False, "confirmation_required", (
-            "the owner's words do not say the change is permanent" + _CONFIRM_SUFFIX)
+        entry_id = str(payload.get("id") or "").strip()
+        if not entry_id:
+            return False, "refused", "id is required"
+        try:
+            _ensure_src()
+            from proactive_pilot import guidance
+            store = guidance.read_store(Path(paths.data_root()))
+        except Exception:  # noqa: BLE001 - unavailable store means refuse
+            return False, "refused", "guidance store could not be read"
+        if not store.get("ok"):
+            return False, "refused", store.get("error") or "guidance store could not be read"
+        entry = next((row for row in store.get("entries") or []
+                      if isinstance(row, dict) and row.get("id") == entry_id), None)
+        if entry is None:
+            return False, "refused", "unknown entry id"
+        selectors = [str(label) for label in entry.get("labels") or []]
+        selectors += [str(key) for key in entry.get("keys") or []]
+        if not any(selector and _whole_word(selector).search(action_sentence)
+                   for selector in selectors):
+            return False, "refused", (
+                "the owner's words do not name the entry being reopened")
+
+    if bool(payload.get("permanent")):
+        if re.search(r"\b(?:temporary|temporarily|for\s+now)\b",
+                     action_sentence, re.IGNORECASE):
+            return False, "confirmation_required", (
+                "the owner's words do not say the change is permanent" + _CONFIRM_SUFFIX)
+        permanent_ok = False
+        for match in _PERMANENT.finditer(action_sentence):
+            before = re.findall(r"[\w'\u2019]+", action_sentence[:match.start()])
+            if not _NEGATION_ANY.search(" ".join(before[-3:])):
+                permanent_ok = True
+                break
+        if not permanent_ok:
+            return False, "confirmation_required", (
+                "the owner's words do not say the change is permanent" + _CONFIRM_SUFFIX)
     return True, "", ""
 
 
