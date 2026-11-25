@@ -185,6 +185,27 @@ def latest_turn(ctx: Any, *, session_id: Any) -> dict[str, Any] | None:
     return None
 
 
+def turns_since(ctx: Any, *, session_id: Any, after_epoch: float) -> int:
+    """How many recorded human turns for this session came after *after_epoch*."""
+    sid = _clean(session_id, 200)
+    rows = _get(ctx, TURN_KEY)
+    if not isinstance(rows, list) or not sid:
+        return -1
+    count = 0
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        if _clean(row.get("session_id"), 200) != sid:
+            continue
+        try:
+            at = float(row.get("at") or 0)
+        except (TypeError, ValueError):
+            continue
+        if at > float(after_epoch):
+            count += 1
+    return count
+
+
 def _quote_matches(quote: Any, turn: Mapping[str, Any]) -> bool:
     evidence = _clean(quote, 2000)
     if not evidence:

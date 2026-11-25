@@ -262,6 +262,35 @@ class GuidanceAuthorityTests(unittest.TestCase):
         self.assertNotIn("days", first["summary"])
         self.assertNotIn("for ", first["summary"])
 
+    def test_approval_quoted_inside_a_refusal_is_refused(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        turn = 'Do not say "yes, close exams" on my behalf.'
+        self._remember(turn)
+        result = self._call({"action": "confirm", "ref": first["ref"],
+                             "evidence_quote": "yes, close exams"},
+                            session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_intervening_turn_invalidates_a_bare_yes(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        self._remember("what is the weather like")
+        self._remember("yes")
+        result = self._call({"action": "confirm", "ref": first["ref"],
+                             "evidence_quote": "yes"}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertIn("moved on", result["error"])
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
+    def test_echo_of_the_assistant_is_not_approval(self):
+        first = self._propose_close("exams are over, close the exams topic")
+        turn = 'Yes, you said "close exams".'
+        self._remember(turn)
+        result = self._call({"action": "confirm", "ref": first["ref"],
+                             "evidence_quote": turn}, session_id="s-guidance")
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(self._call({"action": "list"})["count"], 0)
+
     def test_clipped_yes_cannot_confirm(self):
         first = self._propose_close("exams are over, close the exams topic")
         self._remember("Yes, I have exams tomorrow.")

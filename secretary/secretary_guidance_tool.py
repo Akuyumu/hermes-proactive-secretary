@@ -445,6 +445,19 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
         return {"ok": False, "status": "refused",
                 "error": "evidence_quote must quote the owner's confirming message"}
     quote = str(payload.get("evidence_quote") or "")
+    from .secretary_responsibilities import _QUOTED as _Q, _REPORTED as _R, turns_since
+    # The whole reply is judged, not only the span the caller chose: an approval
+    # quoted inside a refusal or reported as something the assistant said is not
+    # the owner approving anything.
+    if _Q.search(text) or _R.search(text):
+        return {"ok": False, "status": "refused",
+                "error": "quoting or reporting a phrase is not an approval"}
+    if _NEGATION_ANY.search(text):
+        return {"ok": False, "status": "refused",
+                "error": "the reply negates the change"}
+    if _CONDITIONAL_TURN.search(_strip_duration_phrase(text)):
+        return {"ok": False, "status": "refused",
+                "error": "a conditional reply cannot confirm guidance"}
     # Assent must be assent in the reply the owner actually sent: a caller cannot
     # clip a bare "Yes" out of a longer sentence that says something else.
     standalone = _standalone_affirmative(text) and _standalone_affirmative(quote)
@@ -484,6 +497,11 @@ def _confirm(ctx: Any, payload: dict[str, Any], *,
     if ref in candidates:
         approved = True
     elif standalone and len(pending_rows) == 1:
+        # A bare yes only answers the prompt it followed; anything said in
+        # between means they are not answering this question any more.
+        if turns_since(ctx, session_id=session_id, after_epoch=created_epoch) != 1:
+            return {"ok": False, "status": "refused",
+                    "error": "the conversation moved on; ask again before confirming"}
         approved = True
     elif len(candidates) == 1:
         return {"ok": False, "status": "refused",
