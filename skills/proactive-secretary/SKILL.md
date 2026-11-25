@@ -20,6 +20,7 @@ Decide the surface from the user's words before reaching for any tool:
 | User says | Do |
 |---|---|
 | follow up on / watch / track / notify me / let me know when / keep an eye on | `secretary_followup` with `action="create"` — this is the secretary's own store |
+| stop raising it / I'm done with X / exams are over / don't need that any more | `secretary_guidance` with `action="close"` and the owner's own labels — the notice lane then refuses matching topics deterministically |
 | remind me at/on <time or event> | the requested-reminders surface (`hermes secretary reminders`) |
 | set up / tune / pause / troubleshoot proactive alerts | the onboarding and status commands (`/secretary setup`, `/secretary status`, `secretary_onboarding`) |
 | anything else that sounds like a recurring check | **never a cron job** — cron is not the secretary's API |

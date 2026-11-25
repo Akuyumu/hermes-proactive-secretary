@@ -13,6 +13,7 @@ from pathlib import Path
 _MODEL_REGISTRATION: dict = {}
 _CONVERSATION_REGISTRATION: dict = {}
 _PORTAL_NOTICE_REGISTRATION: dict = {}
+_GUIDANCE_REGISTRATION: dict = {}
 
 
 def _plugin_root() -> Path:
@@ -131,6 +132,17 @@ def register(ctx) -> None:
         _PORTAL_NOTICE_REGISTRATION.update({
             "portal_notice_tool": False,
             "portal_notice_tool_error": f"{type(exc).__name__}: {exc}",
+        })
+
+    # Owner guidance is deterministic state; the tool is optional so an older
+    # host without this surface still loads everything else.
+    try:
+        from .secretary.secretary_guidance_tool import register_tool as register_guidance_tool
+        _GUIDANCE_REGISTRATION.update(register_guidance_tool(ctx))
+    except Exception as exc:  # noqa: BLE001 - registration stays optional
+        _GUIDANCE_REGISTRATION.update({
+            "guidance_tool": False,
+            "guidance_tool_error": f"{type(exc).__name__}: {exc}",
         })
 
     ctx.register_cli_command(

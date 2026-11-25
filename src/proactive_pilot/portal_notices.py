@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from . import ownerpaths as _ownerpaths
+from . import guidance
 from .evaluator import EvaluatorResult
 from .gates import decide as gates_decide
 from .gates import record_delivery as gates_record_delivery
@@ -405,6 +406,21 @@ def submit_notice(
     event_key = clean_proposal["event_key"]
     expiry = clean_proposal["expiry"]
     notice_id = _notice_id(clean_identity["execution_id"], event_key)
+
+    # Deterministic owner guidance: a closed topic is refused before anything is
+    # queued, so a changed countdown or a fresh event key cannot slip past it.
+    blocked = guidance.suppressed(
+        getattr(store, "root", None),
+        labels=[clean_proposal.get("topic")],
+        keys=[event_key, *clean_proposal.get("evidence_refs", [])],
+        now=now,
+    )
+    if blocked:
+        return _receipt(
+            ok=False, accepted=False, status="suppressed",
+            reason="the owner closed this topic", event_key=event_key,
+            notice_id=notice_id, expiry=expiry,
+        )
 
     with store.lock() as acquired:
         if not acquired:
@@ -805,6 +821,17 @@ def dispatch_notice(
             continue
 
         event_key = item["event_key"]
+        # Re-check at emission: a topic closed after it was queued must not go out.
+        blocked = guidance.suppressed(
+            getattr(store, "root", None),
+            labels=[item.get("topic")],
+            keys=[event_key, *(item.get("evidence_refs") or [])],
+            now=now,
+        )
+        if blocked:
+            _terminal(queue, item, "suppressed", now)
+            changed = True
+            continue
         _parsed, expiry_error = _parse_expiry(item.get("expiry"), now)
         if expiry_error in {"expired", "invalid_expiry", "naive_expiry"}:
             _terminal(

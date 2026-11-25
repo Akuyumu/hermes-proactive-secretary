@@ -97,6 +97,8 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
                       "(preview | enable | status | pause | resume | remove)"),
              ("cadence", "Portal cadence gate (status | set | apply): plugin-owned "
                          "interval, no scheduler rewrite"),
+             ("guidance", "Owner topic guidance: close | list | reopen (deterministic "
+                          "notice suppression)"),
               ("pause", "Global pause: stop collection and delivery"),
              ("resume", "Clear the global pause"),
              ("disable", "Pause and remove this plugin's own cron jobs"),
@@ -132,12 +134,24 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
     job.add_argument("--workdir", default="")
     cadence = p["cadence"]
     cadence.add_argument("cadence_action", nargs="?",
-                         choices=("status", "set", "apply"), default="status",
+                         choices=("status", "set", "apply"), default=None,
                          help="status (default) | set | apply")
     cadence.add_argument("--set", dest="cadence_value", default="",
                          help="interval in minutes or a duration like 6h (30-1440)")
     cadence.add_argument("--apply", action="store_true", dest="apply_gate",
                          help="convert the Portal job to the gated tick and arm it")
+    guide = p["guidance"]
+    guide.add_argument("guidance_action", nargs="?",
+                       choices=("close", "list", "reopen"), default="list")
+    guide.add_argument("--topic", action="append", default=[],
+                       help="topic label to close (repeatable; exact match after normalising)")
+    guide.add_argument("--key", action="append", default=[],
+                       help="stable key to close (event/follow-up/observation id; repeatable)")
+    guide.add_argument("--until", default="",
+                       help="ISO date/time or number of days; default 7 days")
+    guide.add_argument("--permanent", action="store_true",
+                       help="close until reopened (must be explicit)")
+    guide.add_argument("--id", default="", help="entry id for reopen")
     p["setup"].add_argument("--force", action="store_true",
                             help="overwrite an existing policy file (default: keep it)")
     p["setup"].add_argument("--no-cron", action="store_true",
@@ -2226,6 +2240,67 @@ def deliveries_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def guidance_command(args: argparse.Namespace) -> int:
+    """Owner-facing control of the deterministic topic-closure register.
+
+    ``close`` needs at least one ``--topic`` label or ``--key``. Closure is
+    finite by default (7 days) and ``--permanent`` must be explicit. ``reopen``
+    removes the closure; neither action grants authority or adds a watch.
+    """
+    as_json = bool(getattr(args, "json", False) or getattr(args, "as_json", False))
+    action = str(getattr(args, "guidance_action", "") or "list").lower()
+    _ensure_src()
+    from proactive_pilot import guidance
+
+    def emit(payload: dict[str, Any], code: int) -> int:
+        if as_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        elif payload.get("ok"):
+            entries = payload.get("entries") or []
+            if action == "list":
+                print(f"active guidance topics: {payload.get('count', len(entries))}")
+                for entry in entries:
+                    when = "permanent" if entry.get("permanent") else f"until {entry.get('until')}"
+                    print(f"  {entry.get('id')}  {', '.join(entry.get('labels') or []) or '-'}"
+                          f"  [{when}]")
+            else:
+                print(f"guidance: {payload.get('status')} "
+                      f"{payload.get('id') or (payload.get('entry') or {}).get('id') or ''}".rstrip())
+        else:
+            print(f"guidance: {payload.get('status', 'error')} - "
+                  f"{payload.get('error', 'unknown error')}", file=sys.stderr)
+        return code
+
+    root = Path(paths.data_root())
+    try:
+        if action == "list":
+            result = guidance.list_active(root)
+            return emit(result, 0 if result.get("ok") else 1)
+        if action == "reopen":
+            entry_id = str(getattr(args, "id", "") or "").strip()
+            if not entry_id:
+                return emit({"ok": False, "status": "refused",
+                             "error": "--id is required for reopen"}, 2)
+            result = guidance.reopen(root, entry_id)
+            return emit(result, 0 if result.get("ok") else 1)
+        if action == "close":
+            until_raw = getattr(args, "until", "")
+            until: Any = until_raw
+            if isinstance(until_raw, str) and until_raw.strip().isdigit():
+                until = int(until_raw.strip())
+            result = guidance.close(
+                root, getattr(args, "topic", []), keys=getattr(args, "key", []),
+                until=until, permanent=bool(getattr(args, "permanent", False)),
+                source="foreground",
+            )
+            return emit(result, 0 if result.get("ok") else 2)
+        return emit({"ok": False, "status": "refused",
+                     "error": f"unknown guidance action {action!r}"}, 2)
+    except Exception as exc:  # noqa: BLE001 - never claim success on a surprise
+        return emit({"ok": False, "status": "error",
+                     "error": f"{type(exc).__name__}: {exc}"}, 1)
+
+
 def cadence_command(args: argparse.Namespace, *, backend: Any = None) -> int:
     """Owner-facing surface for the plugin-owned Portal cadence.
 
@@ -2235,11 +2310,20 @@ def cadence_command(args: argparse.Namespace, *, backend: Any = None) -> int:
     scheduled or retry state would be discarded.
     """
     as_json = bool(getattr(args, "as_json", False) or getattr(args, "json", False))
-    action = str(getattr(args, "cadence_action", "") or "status").lower()
-    try:
-        from . import secretary_cadence as cadence
-    except ImportError:  # direct/standalone import
-        from secretary import secretary_cadence as cadence  # type: ignore
+    raw = str(getattr(args, "cadence_value", "") or "").strip()
+    apply_gate = bool(getattr(args, "apply_gate", False))
+    explicit = getattr(args, "cadence_action", None)
+    if explicit is None:
+        # Omitted action: infer from the flags, so `--set 6h` stores and
+        # `--set 6h --apply` converts.
+        action = "apply" if apply_gate else ("set" if raw else "status")
+    else:
+        action = str(explicit).lower()
+        if action == "status" and (apply_gate or raw):
+            # An explicit `status` is read-only; mutation flags must not sneak in.
+            return 2 if not as_json else 2
+    if action == "apply":
+        apply_gate = True
 
     def emit(payload: dict[str, Any], code: int) -> int:
         if as_json:
@@ -2259,12 +2343,15 @@ def cadence_command(args: argparse.Namespace, *, backend: Any = None) -> int:
                   f"{payload.get('error', 'unknown error')}", file=sys.stderr)
         return code
 
-    raw = str(getattr(args, "cadence_value", "") or "").strip()
-    apply_gate = bool(getattr(args, "apply_gate", False)) or action == "apply"
-    if apply_gate and action == "status":
-        # ``--apply`` is the flag form of the ``apply`` action; without this the
-        # default status branch would answer first and silently do nothing.
-        action = "apply"
+    try:
+        from . import secretary_cadence as cadence
+    except ImportError:  # direct/standalone import
+        from secretary import secretary_cadence as cadence  # type: ignore
+
+    if action == "status" and (apply_gate or raw):
+        # An explicit `status` is read-only; mutation flags must not sneak in.
+        return emit({"ok": False, "status": "refused",
+                     "error": "`status` is read-only; drop --set/--apply"}, 2)
     if backend is None:
         backend = _backend()
     try:
@@ -2317,6 +2404,7 @@ _DISPATCH = {
     "status": status_command,
     "job": portal_command,
     "cadence": cadence_command,
+    "guidance": guidance_command,
     "pause": pause_command,
     "resume": resume_command,
     "disable": disable_command,

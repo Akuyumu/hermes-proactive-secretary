@@ -302,24 +302,23 @@ class CliApplyFlagTests(_Isolated):
 
 
 class PromptGuidanceTests(unittest.TestCase):
-    """The wake must treat its own history as evidence, not as an agenda."""
+    """The prompt only points at guidance; enforcement lives in the store."""
 
     def setUp(self):
         self.portal = importlib.import_module(f"{_PKG.__name__}.secretary.secretary_portal")
 
-    def test_earlier_answer_is_not_an_agenda(self):
+    def test_prompt_points_at_guidance(self):
         text = self.portal.PROMPT
-        self.assertIn("never an agenda", text)
-        self.assertIn("outranks that earlier answer", text)
+        self.assertIn("Consult active owner guidance", text)
+        self.assertIn("history, not new evidence", text)
 
-    def test_closed_topics_do_not_return(self):
-        text = self.portal.PROMPT
-        self.assertIn("signals that a topic is finished", text)
-        self.assertIn("do not restate countdowns", text)
-        self.assertIn("Keep continuity for useful state", text)
+    def test_prompt_stays_short(self):
+        # Deterministic structures carry the behaviour; the prompt must not grow
+        # another behavioural essay.
+        self.assertNotIn("never an agenda", self.portal.PROMPT)
+        self.assertLess(len(self.portal.PROMPT.split()), 950)
 
     def test_prompt_has_no_exam_specific_rule(self):
-        # The guidance must stay general: no per-topic hardcoding in the wake.
         for word in ("exam", "MA3005", "MA3002", "notes"):
             self.assertNotIn(word.lower(), self.portal.PROMPT.lower())
 
