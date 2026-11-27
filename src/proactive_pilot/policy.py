@@ -410,14 +410,46 @@ def in_quiet_hours(policy: dict[str, Any], now: datetime) -> bool:
     return hour >= start or hour < end
 
 
+def _target_values(row: dict[str, Any]) -> list[str]:
+    """Every stored identity for a scoped snooze, normalised for comparison."""
+    if not str(row.get("target_id") or "").strip():
+        # Legacy rows carry no target id; they keep their old text matcher.
+        return []
+    values: list[str] = []
+    raw = [row.get("target_id"), *(row.get("target_keys") or [])]
+    for value in raw:
+        text = str(value or "").strip().lower()
+        if text and text not in values:
+            values.append(text)
+    return values
+
+
+def _target_matches(stored: list[str], wanted: str) -> bool:
+    """True when the item id is one of the stored canonical delivery keys.
+
+    Follow-up notices carry the durable follow-up id in both namespaces
+    (``followup:<id>`` and ``portal:followup-notice:<id>[:digest]``). Either
+    exact key matches; a colon-bounded digest suffix matches its base key.
+    """
+    if not stored or not wanted:
+        return False
+    for value in stored:
+        if value == wanted:
+            return True
+        if wanted.startswith(value + ":") or value.startswith(wanted + ":"):
+            return True
+    return False
+
+
 def active_snooze(prefs: dict[str, Any], now: datetime,
                   target_id: Any = None) -> bool:
     """True for a global pause or an unscoped active snooze.
 
-    Scoped snoozes (kind/match/target_id) are enforced per-item in
+    Scoped snoozes (kind/match/target_id/target_keys) are enforced per-item in
     ``preference_blocks``; a global pause is intentionally total and reversible
     via ``resume``. An id-only snooze is scoped even when its matcher is empty,
-    and only matches when the caller supplies the same target id.
+    and only matches when the caller supplies the same target id or one of its
+    canonical delivery keys.
     """
     paused = prefs.get("paused") or {}
     if isinstance(paused, dict) and paused.get("active"):
@@ -431,9 +463,9 @@ def active_snooze(prefs: dict[str, Any], now: datetime,
             return True  # malformed pause: stay paused (fail closed)
     wanted = str(target_id or "").strip().lower()
     for row in prefs.get("snoozes", []):
-        row_target = str(row.get("target_id") or "").strip().lower()
-        if row_target:
-            if not wanted or row_target != wanted:
+        row_targets = _target_values(row)
+        if row_targets:
+            if not wanted or not _target_matches(row_targets, wanted):
                 continue
         elif row.get("kind") or row.get("match"):
             continue  # scoped: handled per item
@@ -481,14 +513,15 @@ def preference_blocks(item: dict[str, Any], prefs: dict[str, Any], now: datetime
     text = f"{item.get('subject','')} {item.get('message','')}".lower()
     item_target = str(item.get("target_id") or "").strip().lower()
     for row in prefs.get("snoozes", []):
-        if not (row.get("kind") or row.get("match") or row.get("target_id")):
+        row_targets = _target_values(row)
+        if not (row.get("kind") or row.get("match") or row_targets):
             continue
-        row_target = str(row.get("target_id") or "").strip().lower()
-        if row_target:
-            # A target-scoped snooze only matches the same target id. Without
-            # an id to compare it must fail open to delivery, never suppress a
-            # sibling by text. The id is the matcher; kind/label are not.
-            if not item_target or row_target != item_target:
+        if row_targets:
+            # A target-scoped snooze only matches the same target id or one of
+            # its canonical delivery keys. Without an id to compare it must
+            # fail open to delivery, never suppress a sibling by text. The id
+            # is the matcher; kind/label are not.
+            if not item_target or not _target_matches(row_targets, item_target):
                 continue
         else:
             row_kind = str(row.get("kind") or "")

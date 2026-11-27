@@ -124,6 +124,7 @@ _CODE_SENTENCES = {
     "no_pending": "There is no confirmation waiting for this conversation.",
     "target_mismatch": "That item does not match what the owner replied to; nothing changed.",
     "deadline_unrenderable": "The proposed deadline could not be rendered exactly; nothing changed.",
+    "label_unavailable": "That item has no safe public label; reply to the notice itself and try again.",
     "notice_not_supported": "This stage cannot close that notice; nothing changed.",
     "quote_invalid": "The quoted words are not in the owner's current message.",
     "not_instruction": "That sentence cannot be proposed as an acknowledgement.",
@@ -163,16 +164,26 @@ def _public_text(value: Any, fallback: str = "") -> str:
     except Exception:  # noqa: BLE001 - the shaper itself must stay safe
         text = " ".join(str(value or "").split())
         return text[:240] or fallback
-    text = voice._notice_fragment(str(value or ""), 240)
+    # Sanitise identifiers without the notice fragment's end-strip, which would
+    # remove a closing curly quote and leave the sentence unbalanced.
+    text = str(value or "")
+    text = voice._CITATION.sub(" ", text)
+    text = voice._URL.sub(" ", text)
+    text = voice._REF_TOKEN.sub(" ", text)
+    text = voice._NOTICE_ARTIFACT.sub(" ", text)
+    text = voice._NOTICE_PATH.sub(" ", text)
+    text = voice._NOTICE_LONG_TOKEN.sub(" ", text)
+    text = voice._NOTICE_OPAQUE_ID.sub(" ", text)
+    text = voice._NOTICE_HEX.sub(" ", text)
+    text = voice._CONTROL.sub(" ", text)
     text = ack._EMAIL.sub(" ", text)
     text = ack._PLUGIN_HANDLE.sub(" ", text)
     text = voice._ABSOLUTE_PATH_RE.sub(" ", text)
     text = _SAFE_ID_RE.sub(" ", text)
-    text = " ".join(text.split()).strip()
-    while len(text) > 1 and text[-1] in ".,;:-":
-        text = text[:-1].rstrip()
+    text = " ".join(text.replace("<", " ").replace(">", " ").split())
+    text = text.strip(".,;:-| ")
     if len(text) > 200:
-        text = text[:200].rstrip(" ,;:-") + "..."
+        text = text[:197].rstrip(" ,;:-") + "..."
     if not text:
         return fallback
     if text[-1:] not in ".?!":
@@ -185,10 +196,10 @@ def _public_label(value: Any) -> str:
         ack, _voice = _public_modules()
         text = ack._safe_label(value)
     except Exception:  # noqa: BLE001
-        text = " ".join(str(value or "").split())[:140]
+        text = " ".join(str(value or "").split())[:60]
     text = _SAFE_ID_RE.sub(" ", text)
     text = " ".join(text.split()).strip(" \"'“”‘’.,;:-")
-    return text[:140] or "the item you replied to"
+    return text[:60].rstrip(" ,;:-") or "the item you replied to"
 
 
 def _public_deadline(values: Any) -> str:
@@ -525,9 +536,48 @@ def tool_handler(ctx: Any = None):
             try:
                 pending_ack.record_question(
                     conversation=conversation, owner=owner, labels=labels,
-                    question=question, effect=effect, now=now, store=store)
+                    question=question,
+                    choices=list(refusal.get("choices") or ()),
+                    effect=effect, now=now, store=store)
             except pending_ack.PendingAckError:
                 pass
+
+        try:
+            live_question = pending_ack.find_question(
+                store, conversation=conversation, owner=owner, now=now)
+        except pending_ack.PendingAckError:
+            live_question = None
+        if live_question is not None:
+            # The next owner message answers the outstanding question; it is
+            # never reinterpreted as a fresh command, whatever mode the model
+            # asked for.
+            try:
+                candidates = acknowledgements.target_candidates(store, now=now)
+            except ValueError:
+                return json.dumps(_public_refusal("store_unreadable"),
+                                  ensure_ascii=False, sort_keys=True)
+            target, refusal = acknowledgements.resolve_question_answer(
+                live_question, spoken_text, candidates)
+            if target is None:
+                return json.dumps(_public_failure(refusal),
+                                  ensure_ascii=False, sort_keys=True)
+            stored_effect = dict(live_question.get("effect") or {})
+            if not stored_effect:
+                return json.dumps(_public_failure({
+                    "ok": False,
+                    "status": "needs_clarification",
+                    "reason": str(live_question.get("question") or ""),
+                    "reason_code": "question_unbound",
+                }), ensure_ascii=False, sort_keys=True)
+            problem = _target_refusal(body, target)
+            if problem is not None:
+                return json.dumps(_public_failure(problem),
+                                  ensure_ascii=False, sort_keys=True)
+            result = acknowledgements.propose_target(
+                target, stored_effect, store=store,
+                conversation=conversation, owner=owner, turn=turn, now=now)
+            return json.dumps(_public_proposal(result),
+                              ensure_ascii=False, sort_keys=True)
 
         if mode == "propose":
             try:
@@ -565,6 +615,43 @@ def tool_handler(ctx: Any = None):
             except Exception:  # noqa: BLE001 - public errors never leak text
                 return json.dumps(_public_refusal("internal_error"),
                                   ensure_ascii=False, sort_keys=True)
+
+        try:
+            live_rows = pending_ack.live_for(
+                store, conversation=conversation, owner=owner, now=now)
+        except pending_ack.PendingAckError:
+            live_rows = []
+        if len(live_rows) > 1:
+            return json.dumps(_public_refusal("ambiguous_pending"),
+                              ensure_ascii=False, sort_keys=True)
+        if len(live_rows) == 1:
+            # A live proposal owns the next message. A bare yes is its offered
+            # confirmation; a command may only repeat that same frozen effect
+            # (the pre-existing direct-apply path); anything else re-asks and
+            # changes nothing.
+            live_effect = dict(live_rows[0].get("effect") or {})
+            spoken_action = acknowledgements.parse(spoken_text, now=now)
+            repeats = (
+                spoken_action.get("action") not in {None, "refused"}
+                and spoken_action.get("action") == live_effect.get("action")
+                and spoken_action.get("minutes") == live_effect.get("minutes")
+                and spoken_action.get("until") == live_effect.get("until")
+            )
+            if acknowledgements.is_bare_affirmative(spoken_text):
+                result = acknowledgements.confirm(
+                    store=store, conversation=conversation, owner=owner,
+                    turn=turn, target_id=_model_targets(body), now=now,
+                    preferences_path=paths.preferences_path(),
+                    followup_store=store, guidance_root=Path(paths.data_root()))
+                return json.dumps(_public_confirmation(result),
+                                  ensure_ascii=False, sort_keys=True)
+            if not repeats:
+                return json.dumps(_public_failure({
+                    "ok": False,
+                    "status": "needs_clarification",
+                    "reason": str(live_rows[0].get("question") or ""),
+                    "reason_code": "not_offered",
+                }), ensure_ascii=False, sort_keys=True)
 
         # The action, the duration and the deadline all come from the whole
         # host-recorded owner message, never from the model's paraphrase.

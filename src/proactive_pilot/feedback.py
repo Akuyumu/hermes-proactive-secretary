@@ -188,6 +188,11 @@ def apply_action(prefs: dict[str, Any], action: dict[str, Any], now: datetime) -
             until = (now + timedelta(minutes=int(action["minutes"]))).isoformat()
         else:
             until = _parse_until(action["until"], now).isoformat()
+        target_keys = []
+        for value in action.get("target_keys") or []:
+            text = str(value or "").strip()
+            if text and text not in target_keys and len(target_keys) < 8:
+                target_keys.append(text[:240])
         result["snoozes"].append({
             "id": rid,
             "until": until,
@@ -195,6 +200,7 @@ def apply_action(prefs: dict[str, Any], action: dict[str, Any], now: datetime) -
             "match": str(action.get("match") or "").lower().strip(),
             "scope": str(action["scope"])[:200],
             "target_id": str(action.get("target_id") or "")[:240],
+            "target_keys": target_keys,
             "key": str(action.get("key") or "")[:128],
             "provenance": str(action["provenance"])[:200],
             "created_at": stamp,

@@ -96,6 +96,7 @@ def apply(
     provenance: str = "owner acknowledgement",
     item_kind: str = "",
     target_id: str = "",
+    target_keys: Iterable[str] = (),
     key: str = "",
 ) -> dict[str, Any]:
     """Apply one acknowledgement to the existing stores, or refuse cleanly."""
@@ -121,12 +122,20 @@ def apply(
             return {"ok": False, "status": "refused",
                     "reason": ("later needs the words it applies to; pass scope with the "
                                "notice's own subject so the snooze is not global")}
+        stored_keys: list[str] = []
+        derived_keys = (target_gate_keys({"target_id": clean_target})
+                        if clean_target else set())
+        for value in (clean_target, *list(target_keys or ()), *derived_keys):
+            text = str(value or "").strip()
+            if text and text not in stored_keys and len(stored_keys) < 8:
+                stored_keys.append(text[:240])
         request = {
             "action": "snooze",
             "kind": str(item_kind or "any"),
             "match": match[:200],
             "scope": display_scope[:200],
             "target_id": clean_target[:240],
+            "target_keys": stored_keys,
             "key": str(key or "")[:128],
             "provenance": str(provenance)[:200],
         }
@@ -206,8 +215,8 @@ def apply(
 __all__ = [
     "parse", "apply", "turn_key", "proposal_problem", "is_bare_affirmative",
     "build_effect", "render_question", "target_candidates", "target_aliases",
-    "resolve_target", "apply_target", "apply_effect", "propose",
-    "propose_target", "confirm",
+    "target_gate_keys", "resolve_target", "resolve_question_answer",
+    "apply_target", "apply_effect", "propose", "propose_target", "confirm",
 ]
 
 
@@ -243,6 +252,17 @@ _REPLY_KEYS = (
 )
 _REPLY_PARENTS = ("reply", "quoted", "quote", "reply_to_message", "reply_context")
 _REPLY_INNER = ("id", "message_id", "ref", "notice_id", "event_key")
+_LABEL_FALLBACK = "the item you replied to"
+_LABEL_MAX_CHARS = 60
+_LABEL_QUOTED = re.compile(
+    r"\"[^\"]*\"|'[^']*'|“[^”]*”|‘[^’]*’")
+_LABEL_PAREN = re.compile(r"\([^)]*\)|\[[^\]]*\]")
+_LABEL_CLAUSE = re.compile(
+    r"\s+(?:because|since|so\s+that|which|who|whom|whose|that|whereas|"
+    r"although|though|while|when|if|unless)\b.*$",
+    re.IGNORECASE,
+)
+_LABEL_SEPARATOR = re.compile(r"\s*(?:[;|]|[-–—]\s+)\s*")
 
 
 def _bounded(value: Any, name: str, limit: int, *, required: bool = False) -> str:
@@ -362,17 +382,44 @@ def build_effect(
     return effect
 
 
-def _safe_label(value: Any) -> str:
-    text = notice_voice._notice_fragment(value, 180)
+def _label_parts(value: Any) -> tuple[str, bool]:
+    """Derive one public label from a headline-like field, never stored prose.
+
+    The first headline/first sentence is used, quoted spans and trailing clauses
+    are removed, then identifiers, handles, emails and paths are stripped. The
+    result is capped at 60 characters. ``(fallback, False)`` means no safe label
+    exists and the caller must have a trusted reply pin to proceed.
+    """
+    raw = str(value or "")
+    text = raw.splitlines()[0] if raw.splitlines() else ""
+    text = _LABEL_QUOTED.sub(" ", text)
+    text = _LABEL_PAREN.sub(" ", text)
+    text = _EMAIL.sub(" ", text)
+    text = re.split(r"[.!?](?:\s|$)", text, maxsplit=1)[0]
+    text = text.split(":", 1)[0]
+    text = text.split(",", 1)[0]
+    text = _LABEL_SEPARATOR.split(text, maxsplit=1)[0]
+    text = _LABEL_CLAUSE.sub("", text)
+    text = notice_voice._notice_fragment(text, 180)
     text = _EMAIL.sub(" ", text)
     text = _PLUGIN_HANDLE.sub(" ", text)
     text = _TARGET_HANDLE.sub(" ", text)
     text = notice_voice._ABSOLUTE_PATH_RE.sub(" ", text)
     text = text.replace("?", " ")
-    text = " ".join(text.split()).strip(" \"'“”‘’.,;:-")
-    if len(text) > 140:
-        text = text[:140].rstrip(" ,;:-") + "..."
-    return text or "the item you replied to"
+    text = " ".join(text.split()).strip(" .,;:-|")
+    text = text.replace("\"", "").replace("'", "")
+    text = text.replace("“", "").replace("”", "")
+    text = text.replace("‘", "").replace("’", "")
+    text = " ".join(text.split())
+    if not text:
+        return _LABEL_FALLBACK, False
+    if len(text) > _LABEL_MAX_CHARS:
+        text = text[:_LABEL_MAX_CHARS - 3].rstrip(" ,;:-") + "..."
+    return text, True
+
+
+def _safe_label(value: Any) -> str:
+    return _label_parts(value)[0]
 
 
 def _human_until(value: Any) -> str:
@@ -416,17 +463,27 @@ def render_question(effect: Mapping[str, Any], target_label: Any) -> str:
 
 def _candidate(target_id: str, target_type: str, label: Any, *,
                aliases: Iterable[Any] = (), at: Any = "",
+               delivery_keys: Iterable[Any] = (),
                **extra: Any) -> dict[str, Any]:
     clean_aliases = {target_id}
     for alias in aliases:
         text = str(alias or "").strip()
         if text:
             clean_aliases.add(text)
+    clean_keys = set()
+    for key in delivery_keys:
+        text = str(key or "").strip()
+        if text:
+            clean_keys.add(text)
+            clean_aliases.add(text)
+    label_text, label_safe = _label_parts(label)
     row = {
         "target_id": target_id,
         "target_type": target_type,
-        "target_label": _safe_label(label),
+        "target_label": label_text,
+        "label_safe": label_safe,
         "aliases": clean_aliases,
+        "delivery_keys": clean_keys,
         "at": str(at or ""),
     }
     row.update({key: value for key, value in extra.items() if value not in (None, "")})
@@ -439,8 +496,12 @@ def _add_candidate(found: dict[str, dict[str, Any]], row: dict[str, Any]) -> Non
         found[row["target_id"]] = row
         return
     existing["aliases"] = set(existing.get("aliases") or ()) | set(row.get("aliases") or ())
+    existing["delivery_keys"] = (
+        set(existing.get("delivery_keys") or ())
+        | set(row.get("delivery_keys") or ()))
     if not existing.get("target_label") and row.get("target_label"):
         existing["target_label"] = row["target_label"]
+        existing["label_safe"] = row.get("label_safe", False)
 
 
 def target_candidates(store: Any, *, now: datetime | None = None) -> list[dict[str, Any]]:
@@ -461,12 +522,29 @@ def target_candidates(store: Any, *, now: datetime | None = None) -> list[dict[s
         source_ref = str(entry.get("source_ref") or "")
         rid = source_ref[len("reminder:"):] if source_ref.startswith("reminder:") else ""
         aliases = [fid, f"followup:{fid}"]
+        delivery_keys = set()
+        try:
+            base_event = followups.notice_event_key(fid)
+        except Exception:  # noqa: BLE001 - malformed local id cannot be gated
+            base_event = ""
+        if base_event:
+            delivery_keys.add("portal:" + base_event)
+        queued_event = str(entry.get("notice_event_key") or "")
+        if queued_event:
+            delivery_keys.add("portal:" + queued_event)
+        for reservation in entry.get("notice_reservations") or []:
+            if isinstance(reservation, Mapping):
+                event_key = str(reservation.get("event_key") or "")
+                if event_key:
+                    delivery_keys.add("portal:" + event_key)
         if rid:
             aliases.extend([rid, f"reminder:{rid}"])
+            aliases.extend(delivery_keys)
             reminder_to_followup[rid] = fid
         _add_candidate(found, _candidate(
             f"followup:{fid}", "followup", entry.get("text"), aliases=aliases,
             at=entry.get("created_at") or entry.get("updated_at"),
+            delivery_keys=delivery_keys,
             followup_id=fid, reminder_id=rid, kind=entry.get("kind")))
 
     try:
@@ -497,13 +575,16 @@ def target_candidates(store: Any, *, now: datetime | None = None) -> list[dict[s
     for delivery in delivery_rows:
         event_key = str(delivery.get("event_key") or "")
         notice_id = str(delivery.get("notice_id") or "")
+        delivery_keys = {"portal:" + event_key} if event_key else set()
         target_followup = ""
         if event_key.startswith("followup-notice:"):
             target_followup = event_key[len("followup-notice:"):].split(":", 1)[0]
         if target_followup and f"followup:{target_followup}" in found:
             row = found[f"followup:{target_followup}"]
             row["aliases"] = set(row["aliases"]) | {
-                alias for alias in (event_key, notice_id) if alias}
+                alias for alias in (event_key, notice_id, *delivery_keys) if alias}
+            row["delivery_keys"] = (
+                set(row.get("delivery_keys") or ()) | delivery_keys)
             continue
         candidate_id = notice_id or event_key
         if not candidate_id:
@@ -511,6 +592,7 @@ def target_candidates(store: Any, *, now: datetime | None = None) -> list[dict[s
         _add_candidate(found, _candidate(
             f"notice:{candidate_id}", "notice", delivery.get("message"),
             aliases=[notice_id, event_key], at=delivery.get("at"),
+            delivery_keys=delivery_keys,
             notice_id=candidate_id))
 
     rows = list(found.values())
@@ -545,12 +627,44 @@ def _reply_ids(turn: Mapping[str, Any]) -> list[str]:
 
 def target_aliases(target: Mapping[str, Any]) -> set[str]:
     aliases = {str(alias) for alias in target.get("aliases") or () if str(alias)}
+    aliases.update(
+        str(key) for key in target.get("delivery_keys") or () if str(key))
     aliases.add(str(target.get("target_id") or ""))
     for key in ("followup_id", "reminder_id", "notice_id"):
         value = str(target.get(key) or "")
         if value:
             aliases.add(value)
     return {alias for alias in aliases if alias}
+
+
+def target_gate_keys(target: Mapping[str, Any]) -> set[str]:
+    """Canonical keys the delivery gate may use for this exact item."""
+    keys = {str(key) for key in target.get("delivery_keys") or () if str(key)}
+    target_id = str(target.get("target_id") or "").strip()
+    if target_id:
+        keys.add(target_id)
+    followup_id = str(target.get("followup_id") or "")
+    if not followup_id and target_id.startswith("followup:"):
+        followup_id = target_id[len("followup:"):]
+    if followup_id:
+        keys.add(f"followup:{followup_id}")
+        try:
+            event_key = followups.notice_event_key(followup_id)
+        except Exception:  # noqa: BLE001 - a malformed id cannot be gated
+            event_key = ""
+        if event_key:
+            keys.add("portal:" + event_key)
+    reminder_id = str(target.get("reminder_id") or "")
+    if not reminder_id and target_id.startswith("reminder:"):
+        reminder_id = target_id[len("reminder:"):]
+    if reminder_id:
+        keys.add(f"reminder:{reminder_id}")
+    notice_id = str(target.get("notice_id") or "")
+    if not notice_id and target_id.startswith("notice:"):
+        notice_id = target_id[len("notice:"):]
+    if notice_id:
+        keys.add(f"notice:{notice_id}")
+    return {key for key in keys if key}
 
 
 def _matches_reply(candidates: Iterable[Mapping[str, Any]], reply_ids: Iterable[str]):
@@ -580,6 +694,8 @@ def _target_from_pending(row: Mapping[str, Any]) -> dict[str, Any]:
         "target_type": target_type,
         "target_label": _safe_label(row.get("target_label")),
         "aliases": {target_id},
+        "delivery_keys": set(row.get("target_keys") or ()),
+        "label_safe": _safe_label(row.get("target_label")) != _LABEL_FALLBACK,
         **extra,
     }
 
@@ -614,15 +730,33 @@ def select_by_label(candidates: Iterable[Mapping[str, Any]], message: Any
     return None, []
 
 
-def _question_labels(candidates: Iterable[Mapping[str, Any]]) -> list[str]:
+def _question_choices(candidates: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    choices: list[dict[str, Any]] = []
     labels: list[str] = []
     for candidate in candidates:
+        if candidate.get("label_safe") is False:
+            # No safe public label exists; the owner must use a trusted reply
+            # pin rather than being shown stored prose.
+            continue
         label = _safe_label(candidate.get("target_label"))
-        if label and label not in labels:
-            labels.append(label)
-        if len(labels) >= 3:
+        if not label or label in labels:
+            continue
+        target_id = str(candidate.get("target_id") or "")
+        choice: dict[str, Any] = {
+            "position": len(choices) + 1,
+            "label": label,
+        }
+        if target_id:
+            choice["target_id"] = target_id
+        choices.append(choice)
+        labels.append(label)
+        if len(choices) >= 3:
             break
-    return labels
+    return choices
+
+
+def _question_labels(candidates: Iterable[Mapping[str, Any]]) -> list[str]:
+    return [choice["label"] for choice in _question_choices(candidates)]
 
 
 def _question_from_labels(labels: list[str]) -> str:
@@ -641,12 +775,14 @@ def _no_pin_question(candidates: Iterable[Mapping[str, Any]]) -> str:
 def _clarify(candidates: Iterable[Mapping[str, Any]], code: str) -> dict[str, Any]:
     rows = list(candidates)
     labels = _question_labels(rows)
+    choices = _question_choices(rows)
     return {
         "ok": False,
         "status": "needs_clarification",
         "reason": _question_from_labels(labels),
         "reason_code": code,
         "labels": labels,
+        "choices": choices,
         "candidates": [dict(row) for row in rows],
     }
 
@@ -672,15 +808,112 @@ def _select_by_position(candidates: Iterable[Mapping[str, Any]],
 def _record_clarification(store: Any, *, conversation: Any, owner: Any,
                           labels: list[str], question: str,
                           now: datetime | None,
-                          effect: Any = None) -> None:
+                          effect: Any = None,
+                          choices: Iterable[Mapping[str, Any]] = ()) -> None:
     if not labels:
         return
     try:
         pending_ack.record_question(
             conversation=conversation, owner=owner, labels=labels,
-            question=question, effect=effect, now=now, store=store)
+            question=question, choices=list(choices or ()), effect=effect,
+            now=now, store=store)
     except pending_ack.PendingAckError:
         pass
+
+
+def _question_row_choices(question: Mapping[str, Any]) -> list[dict[str, Any]]:
+    raw = question.get("choices")
+    choices: list[dict[str, Any]] = []
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, Mapping):
+                continue
+            label = _safe_label(item.get("label"))
+            if not label:
+                continue
+            choice: dict[str, Any] = {
+                "position": int(item.get("position") or len(choices) + 1),
+                "label": label,
+            }
+            target_id = str(item.get("target_id") or "")
+            if target_id:
+                choice["target_id"] = target_id
+            choices.append(choice)
+    if choices:
+        return choices
+    return [
+        {"position": index + 1, "label": _safe_label(label)}
+        for index, label in enumerate(question.get("labels") or [])
+        if _safe_label(label)
+    ]
+
+
+def _question_refusal(question: Mapping[str, Any], choices: list[dict[str, Any]],
+                      code: str) -> dict[str, Any]:
+    labels = [choice["label"] for choice in choices]
+    text = str(question.get("question") or "").strip()
+    if not text:
+        text = _question_from_labels(labels)
+    return {
+        "ok": False,
+        "status": "needs_clarification",
+        "reason": text,
+        "reason_code": code,
+        "labels": labels,
+        "choices": choices,
+        "candidates": [],
+    }
+
+
+def _choice_target(choice: Mapping[str, Any],
+                   candidates: Iterable[Mapping[str, Any]]
+                   ) -> tuple[dict[str, Any] | None, str]:
+    wanted_id = str(choice.get("target_id") or "")
+    rows = [dict(candidate) for candidate in candidates]
+    if wanted_id:
+        for candidate in rows:
+            if str(candidate.get("target_id") or "") == wanted_id:
+                return candidate, ""
+        return None, "choice_unavailable"
+    wanted_label = _normalise_label(choice.get("label"))
+    matching = [candidate for candidate in rows
+                if _normalise_label(_safe_label(candidate.get("target_label")))
+                == wanted_label]
+    if len(matching) == 1:
+        return matching[0], ""
+    return None, ("choice_unavailable" if not matching else "ambiguous_position")
+
+
+def resolve_question_answer(
+    question: Mapping[str, Any],
+    message: Any,
+    candidates: Iterable[Mapping[str, Any]],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Resolve one owner message against exactly the choices a question offered."""
+    choices = _question_row_choices(question)
+    if not choices:
+        return None, _question_refusal(question, choices, "not_offered")
+    spoken = str(message or "").strip()
+    chosen: dict[str, Any] | None = None
+    position = re.match(r"^\s*(\d{1,2})\s*[.)]?\s*$", spoken)
+    if position:
+        index = int(position.group(1)) - 1
+        if 0 <= index < len(choices):
+            chosen = choices[index]
+    else:
+        wanted = _normalise_label(spoken)
+        matches = [choice for choice in choices
+                   if _normalise_label(choice.get("label")) == wanted]
+        if len(matches) == 1:
+            chosen = matches[0]
+    if chosen is None:
+        return None, _question_refusal(question, choices, "not_offered")
+    target, problem = _choice_target(chosen, candidates)
+    if target is None:
+        return None, _question_refusal(question, choices, problem or "not_offered")
+    target["pinned_by"] = "question"
+    target["aliases"] = target_aliases(target)
+    return target, None
 
 
 def resolve_target(
@@ -712,6 +945,21 @@ def resolve_target(
         return target, None
 
     spoken = message or turn.get("text")
+    try:
+        question = pending_ack.find_question(
+            store, conversation=conversation, owner=owner, now=now)
+    except pending_ack.PendingAckError:
+        return None, {"ok": False, "status": "refused",
+                      "reason": "the pending question could not be read",
+                      "reason_code": "pending_unreadable"}
+    if question is not None:
+        # A live question owns the next owner message. Only its exact offered
+        # choices are selectable; anything else re-asks and changes nothing.
+        chosen, refusal = resolve_question_answer(question, spoken, candidates)
+        if chosen is not None:
+            return selected_target(chosen)
+        return None, refusal
+
     replies = _reply_ids(turn)
     if replies:
         # An explicit host reply is authoritative. If it names no current item,
@@ -719,7 +967,9 @@ def resolve_target(
         matches = _matches_reply(candidates, replies)
         distinct = {str(row.get("target_id") or ""): row for row in matches}
         if len(distinct) == 1:
-            return selected_target(next(iter(distinct.values())))
+            source = dict(next(iter(distinct.values())))
+            source["pinned_by"] = "reply"
+            return selected_target(source)
         if len(distinct) > 1:
             refusal = _clarify(distinct.values(), "ambiguous_reply")
             _record_clarification(store, conversation=conversation, owner=owner,
@@ -738,6 +988,7 @@ def resolve_target(
     # That selection is owner-authored and must name exactly one item.
     selected, ambiguous = select_by_label(candidates, spoken)
     if selected is not None:
+        selected["pinned_by"] = "label"
         return selected_target(selected)
     if ambiguous:
         refusal = _clarify(ambiguous, "ambiguous_label")
@@ -746,28 +997,6 @@ def resolve_target(
                               question=refusal["reason"], now=now,
                               effect=question_effect)
         return None, refusal
-
-    # A bare list position is only a selection when it answers the exact list
-    # this conversation was actually shown.
-    try:
-        question = pending_ack.find_question(
-            store, conversation=conversation, owner=owner, now=now)
-    except pending_ack.PendingAckError as exc:
-        return None, {"ok": False, "status": "refused",
-                      "reason": "the pending question could not be read",
-                      "reason_code": "pending_unreadable"}
-    if question:
-        chosen, shared = _select_by_position(
-            candidates, list(question.get("labels") or []), spoken)
-        if chosen is not None:
-            return selected_target(chosen)
-        if shared:
-            refusal = _clarify(shared, "ambiguous_position")
-            _record_clarification(store, conversation=conversation, owner=owner,
-                                  labels=refusal["labels"],
-                                  question=refusal["reason"], now=now,
-                                  effect=question_effect)
-            return None, refusal
 
     if allow_pending:
         try:
@@ -785,7 +1014,9 @@ def resolve_target(
                 "reason_code": "ambiguous_pending",
             }
         if len(live) == 1:
-            return selected_target(_target_from_pending(live[0]))
+            source = _target_from_pending(live[0])
+            source["pinned_by"] = "pending"
+            return selected_target(source)
 
     refusal = _clarify(candidates, "clarify_target")
     _record_clarification(store, conversation=conversation, owner=owner,
@@ -875,6 +1106,7 @@ def apply_target(
             item_kind=str(item_kind or target.get("kind") or ""),
             provenance=provenance,
             target_id=target_id,
+            target_keys=target_gate_keys(target),
             key=idempotency_key,
         )
         return finish(result)
@@ -1053,6 +1285,17 @@ def propose_target(
 ) -> dict[str, Any]:
     """Store one proposal for an already-pinned target and parsed intent."""
     target_label = _safe_label(target.get("target_label"))
+    label_safe = target.get("label_safe")
+    if label_safe is None:
+        label_safe = _label_parts(target.get("target_label"))[1]
+    if not label_safe and str(target.get("pinned_by") or "") != "reply":
+        return {
+            "ok": False,
+            "status": "refused",
+            "reason": ("that item has no safe public label; reply to the notice "
+                       "itself and try again"),
+            "reason_code": "label_unavailable",
+        }
     # Freeze the effect from server-side target facts. The model's scope may
     # narrow which item was chosen; it can never become the stored matcher.
     frozen = dict(effect)
@@ -1067,6 +1310,7 @@ def propose_target(
         conversation=conversation, owner=owner,
         target_id=target.get("target_id"),
         target_label=target_label,
+        target_keys=sorted(target_gate_keys(target)),
         effect=frozen, question=question,
         turn_id=turn_key(conversation, owner, turn),
         turn_ref=turn_ref(turn),

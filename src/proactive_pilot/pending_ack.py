@@ -40,6 +40,7 @@ MAX_QUESTION_CHARS = 480
 MAX_KIND_CHARS = 64
 MAX_SCOPE_CHARS = 240
 MAX_TURN_CHARS = 128
+MAX_TARGET_KEYS = 8
 MAX_DISPOSITIONS = 200
 MAX_QUESTION_LABELS = 3
 
@@ -53,12 +54,15 @@ DISPOSITION_FIELDS = frozenset({
 })
 _EFFECT_FIELDS = frozenset({"action", "minutes", "until", "kind", "scope"})
 _ROW_FIELDS = frozenset({
-    "id", "conversation", "owner", "target_id", "target_label", "effect",
-    "question", "created_at", "expires_at", "consumed_at", "receipt", "turn_id",
-    "key", "turn_ref", "turn_at", "intent_at", "intent_turn_id",
+    "id", "conversation", "owner", "target_id", "target_label", "target_keys",
+    "effect", "question", "created_at", "expires_at", "consumed_at", "receipt",
+    "turn_id", "key", "turn_ref", "turn_at", "intent_at", "intent_turn_id",
 })
 _TURN_FIELDS = frozenset({"mode", "at", "target_id", "key"})
-_QUESTION_FIELDS = frozenset({"labels", "question", "at", "expires_at", "effect"})
+_QUESTION_FIELDS = frozenset({
+    "labels", "choices", "question", "at", "expires_at", "effect",
+})
+_CHOICE_FIELDS = frozenset({"position", "label", "target_id"})
 _ACTIONS = frozenset({"done", "snooze", "stop"})
 _STORE_FIELDS = frozenset({
     "schema", "version", "updated_at", "rows", "dispositions", "turns",
@@ -177,6 +181,7 @@ def _upgrade_row(row: Any) -> Any:
     if isinstance(row, dict):
         for key in ("key", "turn_ref", "turn_at", "intent_at", "intent_turn_id"):
             row.setdefault(key, "")
+        row.setdefault("target_keys", [])
     return row
 
 
@@ -189,6 +194,11 @@ def _validate_row(row: Any) -> None:
     _text(row.get("owner"), "owner", MAX_OWNER_CHARS)
     _text(row.get("target_id"), "target_id", MAX_TARGET_ID_CHARS, required=True)
     _text(row.get("target_label"), "target_label", MAX_LABEL_CHARS, required=True)
+    target_keys = row.get("target_keys")
+    if not isinstance(target_keys, list) or len(target_keys) > MAX_TARGET_KEYS:
+        raise PendingAckError("pending row target_keys are malformed")
+    for key in target_keys:
+        _text(key, "target_keys", MAX_TARGET_ID_CHARS, required=True)
     _validate_effect(row.get("effect"))
     _text(row.get("question"), "question", MAX_QUESTION_CHARS, required=True)
     _parse_iso(row.get("created_at"), "created_at")
@@ -212,6 +222,17 @@ def _validate_turn_mark(value: Any) -> None:
     _text(value.get("key", ""), "turn.key", MAX_TURN_CHARS)
 
 
+def _upgrade_question(value: Any) -> Any:
+    """Accept question rows written before the offered choices were persisted."""
+    if isinstance(value, dict):
+        if "choices" not in value:
+            value["choices"] = [
+                {"position": index + 1, "label": label}
+                for index, label in enumerate(value.get("labels") or [])
+            ]
+    return value
+
+
 def _validate_question(value: Any) -> None:
     if not isinstance(value, dict) or set(value) - _QUESTION_FIELDS:
         raise PendingAckError("pending question is malformed")
@@ -220,6 +241,23 @@ def _validate_question(value: Any) -> None:
         raise PendingAckError("pending question labels are malformed")
     for label in labels:
         _text(label, "question.label", MAX_LABEL_CHARS, required=True)
+    choices = value.get("choices")
+    if not isinstance(choices, list) or len(choices) > MAX_QUESTION_LABELS:
+        raise PendingAckError("pending question choices are malformed")
+    positions: set[int] = set()
+    for choice in choices:
+        if (not isinstance(choice, dict)
+                or set(choice) - _CHOICE_FIELDS):
+            raise PendingAckError("pending question choice is malformed")
+        position = choice.get("position")
+        if (not isinstance(position, int) or isinstance(position, bool)
+                or position < 1 or position in positions):
+            raise PendingAckError("pending question choice position is invalid")
+        positions.add(position)
+        _text(choice.get("label"), "question.choice.label",
+              MAX_LABEL_CHARS, required=True)
+        _text(choice.get("target_id", ""), "question.choice.target_id",
+              MAX_TARGET_ID_CHARS)
     _text(value.get("question"), "question", MAX_QUESTION_CHARS, required=True)
     _parse_iso(value.get("at"), "question.at")
     _parse_iso(value.get("expires_at"), "question.expires_at")
@@ -270,7 +308,7 @@ def _validate_store(data: Any) -> dict[str, Any]:
         raise PendingAckError("pending_ack.json questions are malformed or oversized")
     for key, value in questions.items():
         _text(key, "question key", MAX_CONVERSATION_CHARS * 2, required=True)
-        _validate_question(value)
+        _validate_question(_upgrade_question(value))
     if not isinstance(data.get("updated_at", ""), str):
         raise PendingAckError("pending_ack.json has an invalid timestamp")
     data.setdefault("dispositions", {})
@@ -337,6 +375,11 @@ def _row_consumed(row: Mapping[str, Any]) -> bool:
 def _same_owner(row: Mapping[str, Any], conversation: str, owner: str) -> bool:
     return (str(row.get("conversation") or "") == conversation
             and str(row.get("owner") or "") == owner)
+
+
+def _question_key(conversation: Any, owner: Any) -> str:
+    return (f"{str(conversation or '')}|{str(owner or '')}"
+            [:MAX_CONVERSATION_CHARS * 2])
 
 
 def rows(store: Any = None, *, now: datetime | None = None) -> list[dict[str, Any]]:
@@ -417,20 +460,29 @@ def create(
     target_label: Any,
     effect: Any,
     question: Any,
+    target_keys: Any = (),
     turn_id: Any,
     turn_ref: Any = "",
     turn_at: Any = "",
     now: datetime | None = None,
     ttl_seconds: int = DEFAULT_TTL_SECONDS,
     store: Any = None,
+    consume_question: bool = True,
 ) -> dict[str, Any]:
     """Store one bounded proposal. Writes no acknowledgement state.
 
     A conversation may have only one live proposal. The effect is copied once at
     creation and never rewritten; a second proposal while one is live refuses.
+    When ``consume_question`` is true the clarification question this proposal
+    answered is removed in the same locked write, so it cannot be reopened.
     """
     target = _coerce_store(store)
     moment = _now(target, now)
+    clean_target_keys = []
+    for value in list(target_keys or ())[:MAX_TARGET_KEYS]:
+        text = _text(value, "target_keys", MAX_TARGET_ID_CHARS, required=True)
+        if text not in clean_target_keys:
+            clean_target_keys.append(text)
     try:
         row = {
             "id": "",
@@ -441,6 +493,7 @@ def create(
                                required=True),
             "target_label": _text(target_label, "target_label", MAX_LABEL_CHARS,
                                   required=True),
+            "target_keys": clean_target_keys,
             "effect": deepcopy(dict(effect or {})),
             "question": _text(question, "question", MAX_QUESTION_CHARS,
                               required=True),
@@ -486,6 +539,9 @@ def create(
             }
             while len(data["turns"]) > MAX_TURN_MARKS:
                 data["turns"].pop(next(iter(data["turns"])))
+            if consume_question:
+                data["questions"].pop(
+                    _question_key(row["conversation"], row["owner"]), None)
             _save(target, data, moment)
     except (PendingAckError, CorruptStateError) as exc:
         return {"ok": False, "status": "refused",
@@ -657,15 +713,17 @@ def mark_turn(store: Any = None, *, turn_id: Any, mode: str,
 
 
 def record_question(*, conversation: Any, owner: Any, labels: Any,
-                    question: Any, effect: Any = None,
+                    question: Any, choices: Any = None, effect: Any = None,
                     now: datetime | None = None,
                     ttl_seconds: int = DEFAULT_TTL_SECONDS,
                     store: Any = None) -> dict[str, Any]:
     """Keep the exact choice list printed by one clarification question.
 
-    The optional ``effect`` remembers the verb the owner already supplied, so a
-    later turn that names one full label can be answered with the same exact
-    confirmation question instead of an immediate write.
+    The optional ``choices`` bind each printed label and its list position to the
+    exact target id that was offered. The optional ``effect`` remembers the verb
+    the owner already supplied, so a later turn that names one full label can be
+    answered with the same exact confirmation question instead of an immediate
+    write.
     """
     target = _coerce_store(store)
     moment = _now(target, now)
@@ -677,10 +735,35 @@ def record_question(*, conversation: Any, owner: Any, labels: Any,
         text = _text(label, "question.label", MAX_LABEL_CHARS, required=True)
         if text not in clean_labels:
             clean_labels.append(text)
+    clean_choices = []
+    for raw in list(choices or [])[:MAX_QUESTION_LABELS]:
+        if not isinstance(raw, Mapping):
+            continue
+        label = _text(raw.get("label"), "question.choice.label",
+                      MAX_LABEL_CHARS, required=True)
+        if label not in clean_labels:
+            continue
+        position = raw.get("position")
+        if not isinstance(position, int) or isinstance(position, bool):
+            position = clean_labels.index(label) + 1
+        choice = {"position": position, "label": label}
+        target_id = _text(raw.get("target_id", ""),
+                          "question.choice.target_id", MAX_TARGET_ID_CHARS)
+        if target_id:
+            choice["target_id"] = target_id
+        clean_choices.append(choice)
+    if not clean_labels:
+        clean_labels = [choice["label"] for choice in clean_choices]
     if not clean_labels:
         raise PendingAckError("question labels are required")
+    if not clean_choices:
+        clean_choices = [
+            {"position": index + 1, "label": label}
+            for index, label in enumerate(clean_labels)
+        ]
     row = {
         "labels": clean_labels,
+        "choices": clean_choices,
         "question": _text(question, "question", MAX_QUESTION_CHARS,
                           required=True),
         "at": moment.isoformat(),
@@ -690,7 +773,7 @@ def record_question(*, conversation: Any, owner: Any, labels: Any,
     if effect not in (None, {}, ""):
         row["effect"] = deepcopy(dict(effect))
     _validate_question(row)
-    key = f"{conversation_text}|{owner_text}"[:MAX_CONVERSATION_CHARS * 2]
+    key = _question_key(conversation_text, owner_text)
     try:
         with _locked(target):
             data = _load(target)
@@ -708,7 +791,7 @@ def find_question(store: Any = None, *, conversation: Any, owner: Any,
     """The unexpired clarification question for this conversation, if any."""
     target = _coerce_store(store)
     moment = _now(target, now)
-    key = f"{str(conversation or '')}|{str(owner or '')}"[:MAX_CONVERSATION_CHARS * 2]
+    key = _question_key(conversation, owner)
     database = _load(target)
     row = (database.get("questions") or {}).get(key)
     if not isinstance(row, Mapping):
