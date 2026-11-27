@@ -63,6 +63,18 @@ class DegradedConfigurationNoticeTests(unittest.TestCase):
         message = gates.configuration_notice(state, _policy(), now=NOW)
         self.assertIn("no source is consented", message.lower())
 
+    def test_a_wider_consent_key_suppresses_the_notice(self):
+        for overrides in ({"obligations_enabled": True},
+                          {"preparation_source_consent": True},
+                          {"mail_enabled": True},
+                          {"task_adapter": "todoist"},
+                          {"calendar_ids": ["primary"]}):
+            with self.subTest(overrides=overrides):
+                state: dict = {}
+                message = gates.coverage_notice(
+                    [], state, _policy(**overrides), now=NOW, commit=True)
+                self.assertIsNone(message, overrides)
+                self.assertEqual(state, {})
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

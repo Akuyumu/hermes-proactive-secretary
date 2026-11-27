@@ -31,7 +31,7 @@ def _configured_source_labels(policy: dict[str, Any]) -> list[str]:
     """
     labels: list[str] = []
     consent = (
-        ("mail", ("mail_enabled", "source_consent"), ("mail_accounts", "mail_account_aliases")),
+        ("mail", ("mail_enabled", "preparation_source_consent"), ("mail_accounts", "mail_account_aliases")),
         ("calendar", ("calendar_enabled",), ("calendar_accounts", "calendar_ids")),
         ("tasks", ("tasks_enabled",), ("task_accounts", "task_lists", "task_adapter")),
     )

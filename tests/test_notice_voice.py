@@ -64,7 +64,8 @@ class NoticeVoiceRuleTests(unittest.TestCase):
                 self.assertEqual(rule, "plugin_id")
 
     def test_bare_unix_root_is_an_absolute_path(self):
-        for value in ("/etc", "/etc/passwd", "/home/owner/file.txt"):
+        for value in ("/etc", "/etc/passwd", "/home/owner/file.txt",
+                      "/boot", "/private", "C:/config", "D:\\data\\x"):
             with self.subTest(value=value):
                 ok, rule = check_notice_text(f"Saved at {value} earlier.")
                 self.assertFalse(ok)

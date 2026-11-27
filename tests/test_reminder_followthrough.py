@@ -91,26 +91,29 @@ class ReminderFollowthroughTests(unittest.TestCase):
                          "reminder:rem-1")
         self.assertEqual(F.portal_rows(reloaded, now=self.now), [row])
 
-    def test_reminder_marker_survives_ordinary_dedupe_churn(self):
-        data = {"dedupe": []}
-        F._add_dedupe(data, "reminder-followthrough:rem-1")
-        for i in range(200):
-            F._add_dedupe(data, f"ordinary-key-{i}")
-        self.assertIn("reminder-followthrough:rem-1", data["dedupe"])
-        self.assertLessEqual(len(data["dedupe"]), F.MAX_DEDUPE)
-
     def test_closed_followup_is_not_reseeded_after_pruning(self):
         self._emitted()
         row = F.portal_rows(self.store, now=self.now)[0]
         F.close(self.store, row["id"], "owner_confirmed", now=self.now)
-        # Past both retention limits: many closed rows and a full dedupe list.
+        # Cross both retention limits: a full dedupe list and many closed rows.
         data = self.store.load("followups.json", {})
-        data["dedupe"] = [f"ordinary-{i}" for i in range(F.MAX_DEDUPE)] + list(
-            data.get("dedupe") or [])
-        data["dedupe"] = data["dedupe"][-F.MAX_DEDUPE:]
+        data["dedupe"] = [f"ordinary-{i}" for i in range(F.MAX_DEDUPE)]
+        for i in range(F.MAX_CLOSED + 5):
+            data["entries"][f"closed-{i}"] = dict(data["entries"][row["id"]],
+                                                  id=f"closed-{i}", status="done")
         self.store.save("followups.json", data)
-        rows = F.portal_rows(self.store, now=self.now + timedelta(minutes=10))
+        # The store must reload and queue cleanly, not raise a corrupt-state error.
+        reloaded = StateStore(self.root, Clock())
+        rows = F.portal_rows(reloaded, now=self.now + timedelta(minutes=10))
         self.assertEqual([r for r in rows if r.get("source_ref") == "reminder:rem-1"], [])
+        self.assertEqual(F.summary(reloaded)["total"], F.MAX_CLOSED + 6)
+
+    def test_the_seeded_marker_does_not_consume_the_dedupe_budget(self):
+        self._emitted()
+        F.portal_rows(self.store, now=self.now)
+        data = self.store.load("followups.json", {})
+        self.assertIn("rem-1", data.get("reminder_followthroughs") or {})
+        self.assertNotIn("reminder-followthrough:rem-1", data.get("dedupe") or [])
 
     def test_a_long_reminder_still_gets_its_followup(self):
         self._emitted()

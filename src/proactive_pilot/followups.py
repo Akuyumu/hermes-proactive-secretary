@@ -262,6 +262,15 @@ def _load(store: Any) -> dict[str, Any]:
     for item in dedupe:
         if not isinstance(item, str) or len(item) > MAX_EVENT_KEY_CHARS:
             raise _corrupt("dedupe list contains an invalid key")
+    seeded_map = data.get("reminder_followthroughs", {})
+    if not isinstance(seeded_map, dict):
+        raise _corrupt("reminder follow-through map is malformed")
+    for rid, fid in seeded_map.items():
+        if (not isinstance(rid, str) or len(rid) > MAX_SOURCE_REF_CHARS
+                or not isinstance(fid, str) or len(fid) > MAX_SOURCE_REF_CHARS
+                or _CONTROL_RE.search(rid) or _CONTROL_RE.search(fid)):
+            raise _corrupt("reminder follow-through map contains an invalid marker")
+    data["reminder_followthroughs"] = seeded_map
     for followup_id, entry in entries.items():
         _validate_entry(followup_id, entry)
     data.setdefault("version", 0)
@@ -382,13 +391,7 @@ def _add_dedupe(data: dict[str, Any], value: Any) -> None:
     if text not in dedupe:
         dedupe.append(text)
     if len(dedupe) > MAX_DEDUPE:
-        # A reminder follow-through marker must outlive its closed entry, or the
-        # same reminder is seeded again once the entry is pruned. Protect that
-        # class and spend the budget on ordinary keys only.
-        durable = [k for k in dedupe if str(k).startswith("reminder-followthrough:")]
-        ordinary = [k for k in dedupe if not str(k).startswith("reminder-followthrough:")]
-        budget = max(0, MAX_DEDUPE - len(durable))
-        dedupe[:] = ordinary[len(ordinary) - budget:] + durable if budget else durable
+        del dedupe[: len(dedupe) - MAX_DEDUPE]
 
 
 def _prune_closed(data: dict[str, Any]) -> None:
@@ -995,14 +998,13 @@ def _seed_reminder_followthroughs_locked(store: Any, data: dict[str, Any],
     for rid, rem in sorted(reminders.items()):
         if not isinstance(rem, dict) or rem.get("status") != "emitted":
             continue
-        key = f"reminder-followthrough:{rid}"[:MAX_EVENT_KEY_CHARS]
-        if key in (data.get("dedupe") or []):
+        seeded_map = data.setdefault("reminder_followthroughs", {})
+        if rid in seeded_map:
             continue
         source_ref = f"reminder:{rid}"[:MAX_SOURCE_REF_CHARS]
         if source_ref in existing_refs:
-            if key not in (data.get("dedupe") or []):
-                _add_dedupe(data, key)
-                touched = True
+            seeded_map[rid] = ""
+            touched = True
             continue
         window_end = _reminder_window_end(rem, stamp)
         if window_end is not None and stamp <= window_end:
@@ -1052,10 +1054,17 @@ def _seed_reminder_followthroughs_locked(store: Any, data: dict[str, Any],
             "close_reason": "",
         }
         data["entries"][fid] = entry
-        _add_dedupe(data, key)
+        seeded_map[rid] = fid
         existing_refs.add(source_ref)
         created.append(fid)
         touched = True
+    seeded_map = data.get("reminder_followthroughs")
+    if isinstance(seeded_map, dict):
+        stale = [rid for rid in seeded_map if rid not in reminders]
+        for rid in stale:
+            seeded_map.pop(rid, None)
+        if stale:
+            touched = True
     return created, touched
 
 

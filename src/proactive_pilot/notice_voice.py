@@ -40,10 +40,11 @@ _OPAQUE_ID_RE = re.compile(
     r"\b0x[0-9a-fA-F]{6,}\b|"
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b", re.IGNORECASE)
+# Any path-shaped token, not a list of directory names: URLs are stripped
+# before this runs, and the lookbehind keeps "and/or", "24/7" and "s://" out.
 _ABSOLUTE_PATH_RE = re.compile(
-    r"(?<![\w.~-])(?:/[\w.~-]+){2,}"
-    r"|(?<![\w:/])[A-Za-z]:\\+[\w.\\-]+"
-    r"|(?<![\w.~-])/(?:etc|home|var|usr|tmp|opt|root|srv|proc|sys|dev|bin|sbin|lib|mnt|media)\b")
+    r"(?<![\w.~-])/[\w.~-]+"
+    r"|(?<![\w:/])[A-Za-z]:[\\/][\w.\\/-]+")
 # The plugin's own record ids are shapes a reader can never use; a bare prefix
 # such as resp_ab12cd34 or fu_9f2c1a is an internal handle even at 11 chars.
 _PLUGIN_ID_RE = re.compile(
