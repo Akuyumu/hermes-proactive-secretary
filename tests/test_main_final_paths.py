@@ -460,7 +460,7 @@ class PackagingTests(Workspace):
         out = self.root / "portal-1.1.11.tar.gz"
         result = release_export.build_package(out, root=ROOT)
         self.assertTrue(result["ok"])
-        self.assertEqual(result["version"], "1.2.0")
+        self.assertEqual(result["version"], "1.2.1")
         with tarfile.open(out) as archive:
             names = archive.getnames()
             self.assertTrue(any(name.endswith("plugin.yaml") for name in names))
@@ -471,7 +471,7 @@ class PackagingTests(Workspace):
             archive.extractall(install)
         doctor = release_export.doctor(install)
         self.assertTrue(doctor["ok"], doctor)
-        self.assertEqual(doctor["version"], "1.2.0")
+        self.assertEqual(doctor["version"], "1.2.1")
         self.assertEqual(doctor["identity"], "hermes-proactive-secretary")
 
 

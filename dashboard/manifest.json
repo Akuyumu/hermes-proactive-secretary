@@ -3,6 +3,6 @@
   "label": "Proactive Secretary",
   "description": "Setup status, non-destructive onboarding continuation and an owner-confirmed reset for the proactive secretary.",
   "icon": "Checklist",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "api": "plugin_api.py"
 }

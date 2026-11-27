@@ -275,7 +275,7 @@ Maintainer commands from the source tree, using a Python environment with the He
 PYTHONPATH=src python3 -m unittest discover -s tests
 PYTHONPATH=src python3 -m proactive_pilot.selftest
 python3 scripts/release_export.py scan
-python3 scripts/release_export.py build --output ./dist/hermes-proactive-secretary-1.2.0.tar.gz
+python3 scripts/release_export.py build --output ./dist/hermes-proactive-secretary-1.2.1.tar.gz
 python3 scripts/release_export.py doctor --installed /path/to/extracted-package
 ```
 

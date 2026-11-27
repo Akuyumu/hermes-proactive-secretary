@@ -1,4 +1,4 @@
-"""Reproducible code-only 1.2.0 export builder and installed-candidate doctor.
+"""Reproducible code-only 1.2.1 export builder and installed-candidate doctor.
 
 This is not a new package manager. It uses the plugin's existing manifest and
 Python modules, applies the same export rules the release review requires, and
@@ -10,7 +10,7 @@ Rules enforced by :func:`build_package`:
 * every shipped file comes from an explicit allowlist of code/docs/policy/skill/
   runner trees (no ``.build-context``, tests, git metadata, caches, private
   runtime state or scratch files);
-* the manifest and ``src/proactive_pilot/__init__.py`` both say 1.2.0;
+* the manifest and ``src/proactive_pilot/__init__.py`` both say 1.2.1;
 * sanitisation terms and absolute personal home paths are rejected;
 * file order, timestamps and hashes are deterministic.
 """
@@ -39,7 +39,7 @@ _SRC = ROOT / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 from proactive_pilot.layout import legacy_artifacts, legacy_shadows  # noqa: E402
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 SHIPPED_DIRS = ("src", "policy", "skills", "runners", "secretary", "public_samples",
                 "fixtures", "desktop", "dashboard", "docs")
 # Nested trees contain executable/assets as well as docs. Keep the same

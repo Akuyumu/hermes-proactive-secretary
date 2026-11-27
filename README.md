@@ -2,7 +2,7 @@
 
 A plugin for an existing Hermes profile. It reads the sources you authorise, sends a short notice when something needs you, and delivers reminders you asked for. An opt-in adds a scheduled copy of your ordinary agent that investigates, keeps follow-ups and stages drafts. Same profile, tools, memory and permissions.
 
-Version 1.2.0, for Linux or macOS with `hermes cron`.
+Version 1.2.1, for Linux or macOS with `hermes cron`.
 
 ```bash
 hermes plugins install Akuyumu/hermes-proactive-secretary --no-enable
