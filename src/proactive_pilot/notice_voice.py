@@ -39,7 +39,7 @@ _HASH_TOKEN_RE = re.compile(
 _OPAQUE_ID_RE = re.compile(
     r"\b0x[0-9a-fA-F]{6,}\b|"
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b", re.IGNORECASE)
 _ABSOLUTE_PATH_RE = re.compile(
     r"(?<![\w.~-])(?:/[\w.~-]+){2,}|[A-Za-z]:[\\/][\w.\\/-]+")
 _LEADING_TIMESTAMP_RE = re.compile(
@@ -106,7 +106,10 @@ def check_notice_text(text: str) -> tuple[bool, str | None]:
         return False, "hex_blob"
     if _OPAQUE_ID_RE.search(value):
         return False, "opaque_id"
-    if _ABSOLUTE_PATH_RE.search(value):
+    # URLs are legitimate notice content ("join at https://…"), so remove them
+    # before looking for filesystem paths — the drive-letter branch otherwise
+    # matches the "s://" tail of every https link.
+    if _ABSOLUTE_PATH_RE.search(_URL.sub(" ", value)):
         return False, "absolute_path"
     if _LEADING_TIMESTAMP_RE.search(value):
         return False, "leading_timestamp"

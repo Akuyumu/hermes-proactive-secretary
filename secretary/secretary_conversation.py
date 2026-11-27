@@ -168,7 +168,7 @@ def _invitation_context(service: OnboardingService, *, resuming: bool = False) -
     else:
         lead = ("This is the first eligible conversation on this profile and secretary setup "
                 "is incomplete. The one next step is to set up what to watch. "
-                "To decline, say stop setup.")
+                "If the user declines, do not offer setup again in this conversation or later.")
     return (
         "[Proactive Secretary onboarding]\n"
         f"{lead} Current status: {status}; next step: {step}.\n"

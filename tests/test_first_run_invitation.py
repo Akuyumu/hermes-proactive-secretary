@@ -58,7 +58,7 @@ class FirstRunInvitationTests(unittest.TestCase):
             self.assertIsNotNone(first)
             text = first["context"]
             self.assertIn("what to watch", text.lower())
-            self.assertIn("stop setup", text.lower())
+            self.assertIn("do not offer setup again", text.lower())
             for provider in ("mail", "calendar", "inbox", "tasks"):
                 self.assertNotIn(provider, text.lower())
 

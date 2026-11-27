@@ -25,10 +25,13 @@ from .state import parse_iso
 def _configured_source_labels(policy: dict[str, Any]) -> list[str]:
     """Source labels the owner explicitly consented to (accounts/feeds only)."""
     labels: list[str] = []
-    for key, label in (("mail_accounts", "mail"),
-                       ("calendar_accounts", "calendar"),
-                       ("task_accounts", "tasks")):
-        if policy.get(key):
+    consent = (
+        ("mail", ("mail_accounts", "mail_account_aliases")),
+        ("calendar", ("calendar_accounts", "calendar_ids")),
+        ("tasks", ("task_accounts", "task_lists")),
+    )
+    for label, keys in consent:
+        if any(policy.get(key) for key in keys):
             labels.append(label)
     if policy.get("feeds_enabled") and (
             policy.get("public_sources") or policy.get("feed_seed_sources")):

@@ -16,6 +16,7 @@ Anything unrecognised is refused with a reason and changes nothing.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -25,9 +26,11 @@ except ImportError:  # direct/standalone import
     import paths  # type: ignore
 
 try:  # reuse the guidance tool's attested-foreground gate verbatim
-    from .secretary_guidance_tool import _ensure_src, _foreground_authority
+    from .secretary_guidance_tool import (
+        _NEGATION_ANY, _attested_owner_turn, _ensure_src)
 except ImportError:  # direct/standalone import
-    from secretary_guidance_tool import _ensure_src, _foreground_authority  # type: ignore
+    from secretary_guidance_tool import (  # type: ignore
+        _NEGATION_ANY, _attested_owner_turn, _ensure_src)
 
 TOOL_NAME = "secretary_acknowledge"
 TOOL_DESCRIPTION = (
@@ -68,9 +71,9 @@ def _refusal(status: str, reason: str) -> dict[str, Any]:
     return {"ok": False, "status": status, "reason": str(reason)[:300]}
 
 
-def dispatch(payload: dict[str, Any] | None = None, *,
-             now: Any = None) -> dict[str, Any]:
-    """Apply one acknowledgement without host authority (unit-test seam)."""
+def _apply_unattested(payload: dict[str, Any] | None = None, *,
+                      now: Any = None) -> dict[str, Any]:
+    """Apply one acknowledgement. Private: the handler attests the turn first."""
     body = payload or {}
     _ensure_src()
     from proactive_pilot import acknowledgements, followups, state
@@ -96,21 +99,62 @@ def dispatch(payload: dict[str, Any] | None = None, *,
         return _refusal("error", f"{type(exc).__name__}: {exc}")
 
 
+def _names_label(quote: str, label: str) -> bool:
+    """True when the owner's own words name this label (plural tolerant)."""
+    stem = r"(?<![\w])" + re.escape(str(label).strip()) + r"(?:s)?(?![\w])"
+    return bool(re.search(stem, quote, re.IGNORECASE))
+
+
+def _negated_before(quote: str, word: str) -> bool:
+    """True when a negation precedes the acknowledgement word."""
+    found = re.search(r"(?<![\w])" + re.escape(word) + r"(?![\w])", quote, re.IGNORECASE)
+    if not found:
+        return False
+    return bool(_NEGATION_ANY.search(quote[:found.start()]))
+
+
 def tool_handler(ctx: Any = None):
     def handler(args: dict[str, Any] | None = None, session_id: Any = None,
                 task_id: Any = None, **_kwargs: Any) -> str:
         body = args or {}
-        if not str(body.get("text") or "").strip():
+        text = str(body.get("text") or "").strip()
+        if not text:
             return json.dumps(_refusal("refused", "no acknowledgement text was given"),
                               ensure_ascii=False, sort_keys=True)
         details: dict[str, Any] = {}
-        ok, status, why = _foreground_authority(
-            ctx, body, host_session_id=session_id, details=details)
+        ok, status, why, turn, quote = _attested_owner_turn(
+            ctx, body, host_session_id=session_id)
         if not ok:
             return json.dumps(_refusal(status, why), ensure_ascii=False, sort_keys=True)
-        result = dispatch(body)
+
+        # The action comes from the host-recorded owner message, never from the
+        # model's paraphrase: parse both and refuse any disagreement.
+        _ensure_src()
+        from proactive_pilot import acknowledgements
+        from proactive_pilot.clock import Clock
+        declared = acknowledgements.parse(text, now=Clock().now())
+        spoken = acknowledgements.parse(quote, now=Clock().now())
+        if spoken.get("action") != declared.get("action"):
+            return json.dumps(
+                _refusal("refused", "the owner's words do not match that acknowledgement"),
+                ensure_ascii=False, sort_keys=True)
+        if spoken.get("action") == "refused":
+            return json.dumps(_refusal("refused", str(spoken.get("reason") or "")),
+                              ensure_ascii=False, sort_keys=True)
+        if _negated_before(quote, str(spoken.get("word") or "")):
+            return json.dumps(_refusal("refused", "a negated answer is not an acknowledgement"),
+                              ensure_ascii=False, sort_keys=True)
+
+        topic = str(body.get("topic") or "").strip()
+        if topic and not _names_label(quote, topic):
+            return json.dumps(
+                _refusal("refused", "the owner's words do not name that topic"),
+                ensure_ascii=False, sort_keys=True)
+
+        result = _apply_unattested(body)
         if details:
             result = {**result, "authority": details}
+        result["from_owner_turn"] = True
         return json.dumps(result, ensure_ascii=False, sort_keys=True)
 
     return handler
@@ -130,5 +174,5 @@ def register_tool(ctx: Any, *, register_tool: Any = None) -> dict[str, Any]:
                 "acknowledge_tool_error": f"{type(exc).__name__}: {exc}"}
 
 
-__all__ = ["TOOL_NAME", "TOOL_SCHEMA", "TOOL_DESCRIPTION", "dispatch", "tool_handler",
+__all__ = ["TOOL_NAME", "TOOL_SCHEMA", "TOOL_DESCRIPTION", "tool_handler",
            "register_tool"]

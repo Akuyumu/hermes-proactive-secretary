@@ -194,44 +194,53 @@ def _apply_mutation(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     return result
 
 
+def _attested_owner_turn(ctx: Any, payload: dict[str, Any], *,
+                         host_session_id: Any = None) -> tuple[bool, str, str, Any, str]:
+    """Host-attested proof of the owner's current private turn.
+
+    Shared by every tool that writes owner-authored state. A null execution, a
+    TTY or an environment variable is not proof — delegated children of a
+    scheduled run also report "not cron". The recorded turn plus the host session
+    id is what we require, and the quote must appear in that turn.
+
+    Returns ``(ok, status, why, turn, quote)``; ``turn`` is None when not ok.
+    """
+    if ctx is None:
+        return False, "refused", "a foreground conversation context is required", None, ""
+    session_id = str(host_session_id or payload.get("session_id") or "").strip()
+    if not session_id:
+        return False, "refused", "session_id is required to prove an owner turn", None, ""
+    try:
+        from .secretary_responsibilities import latest_turn, _quote_matches
+        from .secretary_followups import _turn_is_private_human
+    except Exception:  # noqa: BLE001 - unavailable authority proof means refuse
+        return False, "refused", "owner authority could not be checked", None, ""
+    try:
+        turn = latest_turn(ctx, session_id=session_id)
+    except Exception:  # noqa: BLE001
+        return False, "refused", "owner authority could not be checked", None, ""
+    if turn is None:
+        return False, "refused", "no current human conversation turn for this session", None, ""
+    if not _turn_is_private_human(turn):
+        return False, "refused", "a background or shared turn cannot change guidance", None, ""
+    if not _quote_matches(payload.get("evidence_quote"), turn):
+        return False, "refused", "evidence_quote must quote the owner's current message", None, ""
+    return True, "", "", turn, str(payload.get("evidence_quote") or "")
+
+
 def _foreground_authority(ctx: Any, payload: dict[str, Any], *,
                          host_session_id: Any = None,
                          details: dict[str, Any] | None = None) -> tuple[bool, str, str]:
     """Positive host-attested proof bound to the requested change.
 
-    A null execution, a TTY or an environment variable is not proof — delegated
-    children of a scheduled run also report "not cron". The authoritative turn
-    record the host keeps for a session is what we require, exactly as follow-ups
-    and responsibilities do. The quote itself must name the action, target and
-    duration being changed; when it does not, the caller must ask the owner to
-    confirm in their own words.
+    The quote itself must name the action, target and duration being changed;
+    when it does not, the caller must ask the owner to confirm in their own words.
     """
-    if ctx is None:
-        return False, "refused", "a foreground conversation context is required"
-    # No task-id gate: Hermes mints an effective task id for every foreground
-    # turn (agent/turn_context.py:641), so it identifies nothing. Foreground is
-    # proved by the recorded turn below, which the pre_llm hook writes only for
-    # an eligible human turn, plus the host-supplied session id.
-    session_id = str(host_session_id or payload.get("session_id") or "").strip()
-    if not session_id:
-        return False, "refused", "session_id is required to prove an owner turn"
-    try:
-        from .secretary_responsibilities import latest_turn, _quote_matches
-        from .secretary_followups import _turn_is_private_human
-    except Exception:  # noqa: BLE001 - unavailable authority proof means refuse
-        return False, "refused", "owner authority could not be checked"
-    try:
-        turn = latest_turn(ctx, session_id=session_id)
-    except Exception:  # noqa: BLE001
-        return False, "refused", "owner authority could not be checked"
-    if turn is None:
-        return False, "refused", "no current human conversation turn for this session"
-    if not _turn_is_private_human(turn):
-        return False, "refused", "a background or shared turn cannot change guidance"
-    if not _quote_matches(payload.get("evidence_quote"), turn):
-        return False, "refused", "evidence_quote must quote the owner's current message"
+    ok, status, why, turn, quote = _attested_owner_turn(
+        ctx, payload, host_session_id=host_session_id)
+    if not ok:
+        return False, status, why
 
-    quote = str(payload.get("evidence_quote") or "")
     action = str(payload.get("action") or "").strip().lower()
     turn_text = str(turn.get("text") or "")
     from .secretary_responsibilities import _QUOTED, _REPORTED

@@ -61,7 +61,7 @@ EXCLUDED_PATHS = {"docs/FINALIZATION_PREPARATION.md"}
 # Operator-supplied forbidden terms; none ship in the public repository.
 FORBIDDEN = tuple(filter(None, os.environ.get(
     "SECRETARY_FORBIDDEN_IDENTIFIERS", "").split(",")))
-HOME_RE = re.compile(r"/(?:home|Users)/[A-Za-z0-9._-]+")
+HOME_RE = re.compile(r"/(?:home|Users)/[A-Za-z0-9._-]+|[A-Za-z]:\\+Users\\+[A-Za-z0-9._-]+")
 # Built-in, user-agnostic checks that always run. These supplement the optional
 # operator list above; an empty environment can never make the scan a no-op.
 EMAIL_RE = re.compile(
@@ -80,7 +80,7 @@ TIMEZONE_LITERAL_EXEMPT = frozenset({
     "src/proactive_pilot/fixtures.py",
     "src/proactive_pilot/selftest.py",
 })
-CODE_TREES = ("src", "runners", "skills", "dashboard", "desktop", "policy")
+CODE_TREES = ("src", "secretary", "runners", "skills", "dashboard", "desktop", "policy")
 
 
 def _shipped_files(root: Path = ROOT) -> list[Path]:

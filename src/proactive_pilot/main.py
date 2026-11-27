@@ -1229,6 +1229,9 @@ def _run_deterministic_monitor(args: Any, store: Any, state: dict[str, Any],
         message = configuration_notice(
             state, policy, now=clock.now(), commit=False) if allowed else None
         if message:
+            # Emit first, then commit the cooldown: a failed write must not
+            # destroy a notice that was never delivered.
+            _emit(message)
             configuration_notice(state, policy, now=clock.now(), commit=True)
             state["last_delivery_at"] = clock.now().isoformat()
             state.setdefault("delivered", []).append({
@@ -1237,7 +1240,6 @@ def _run_deterministic_monitor(args: Any, store: Any, state: dict[str, Any],
                 "urgent": False,
             })
             store.save("notify_state.json", state)
-            _emit(message)
             return 0
     # Persist deterministic observations (health/coverage/cache) without
     # advancing the inference baseline.

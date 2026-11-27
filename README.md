@@ -246,10 +246,10 @@ state once; Desktop settings may need re-entering. See
 
 ### Upgrading from 1.1.x
 
-Run `hermes secretary setup --refresh-portal-prompt` to adopt the new notice
-voice in the stored portal prompt. It updates only that owned job's prompt and
-refuses on any identity or cadence mismatch. No state migration is needed: the
-1.2.0 acknowledgement and follow-through features use the existing stores.
+No state migration is needed: the acknowledgement, follow-through and
+first-run features use the existing stores, and the voice rules ship in the
+tool description and skill, so they take effect as soon as the new version
+loads. Nothing in your stored jobs has to be re-created.
 
 ## Learn more
 

@@ -46,6 +46,16 @@ class NoticeVoiceRuleTests(unittest.TestCase):
         ok, rule = check_notice_text("Print it before 27/11/2026.")
         self.assertTrue(ok, rule)
 
+    def test_https_url_is_not_an_absolute_path(self):
+        ok, rule = check_notice_text(
+            "Join at https://meet.example.com/abc-defg-hij when the room opens.")
+        self.assertTrue(ok, rule)
+
+    def test_uppercase_hex_prefixed_id_is_refused(self):
+        ok, rule = check_notice_text("Ref 0XDEADBEEF is attached to the case.")
+        self.assertFalse(ok)
+        self.assertEqual(rule, "opaque_id")
+
     def test_leading_timestamp_is_refused(self):
         ok, rule = check_notice_text("2026-11-27T09:00:00Z The draft is ready.")
         self.assertFalse(ok)

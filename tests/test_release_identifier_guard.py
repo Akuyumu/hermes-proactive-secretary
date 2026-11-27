@@ -73,6 +73,23 @@ class ReleaseIdentifierGuardTests(unittest.TestCase):
         report = release_export.scan(ROOT)
         self.assertTrue(report["ok"], report["problems"])
 
+    def test_email_in_secretary_package_is_rejected(self):
+        root = _synthetic_tree()
+        self._roots.append(root)
+        pkg = root / "secretary"
+        pkg.mkdir()
+        (pkg / "tool.py").write_text(
+            'CONTACT = "owner@corp-mail.example"\n', encoding="utf-8")
+        report = release_export.scan(root)
+        self.assertFalse(report["ok"])
+        self.assertIn("secretary/tool.py:1: [email]",
+                      "\n".join(report["problems"]))
+
+    def test_windows_home_path_is_rejected(self):
+        report = self._scan(home="C:\\\\Users\\\\realuser")
+        self.assertFalse(report["ok"])
+        self.assertIn("[home_path]", "\n".join(report["problems"]))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
