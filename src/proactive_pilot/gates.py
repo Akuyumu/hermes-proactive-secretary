@@ -22,6 +22,61 @@ from .policy import (
 from .state import parse_iso
 
 
+def _configured_source_labels(policy: dict[str, Any]) -> list[str]:
+    """Source labels the owner explicitly consented to (accounts/feeds only)."""
+    labels: list[str] = []
+    for key, label in (("mail_accounts", "mail"),
+                       ("calendar_accounts", "calendar"),
+                       ("task_accounts", "tasks")):
+        if policy.get(key):
+            labels.append(label)
+    if policy.get("feeds_enabled") and (
+            policy.get("public_sources") or policy.get("feed_seed_sources")):
+        labels.append("public")
+    return labels
+
+
+def configuration_notice(
+    state: dict[str, Any],
+    policy: dict[str, Any],
+    *,
+    now: Any = None,
+    commit: bool = True,
+) -> str | None:
+    """One deduped notice when no source is consented yet.
+
+    This is the "never configured" variant of :func:`coverage_notice`: it reuses
+    the same ``coverage_notified_at`` cooldown record (no second dedupe store)
+    and names only the missing piece plus the one-line fix. It never names a
+    provider the owner did not grant.
+    """
+    if _configured_source_labels(policy):
+        return None
+    now = now if now is not None else datetime.now()
+    last_notified = state.get("coverage_notified_at")
+    if not isinstance(last_notified, dict):
+        last_notified = {}
+    cooldown = timedelta(minutes=int(policy.get("coverage_notice_cooldown_minutes", 60)))
+    stamp = last_notified.get("configuration")
+    if stamp:
+        try:
+            last = datetime.fromisoformat(str(stamp))
+        except ValueError:
+            last = None
+        if last is not None:
+            if last.tzinfo is None and getattr(now, "tzinfo", None) is not None:
+                last = last.replace(tzinfo=now.tzinfo)
+            if now - last < cooldown:
+                return None
+    if commit:
+        last_notified["configuration"] = now.isoformat()
+        state["coverage_notified_at"] = last_notified
+    return (
+        "Nothing is set up to watch yet: no source is consented. "
+        "Run `hermes secretary setup` and choose one source to watch."
+    )
+
+
 def coverage_notice(
     results: list[Any],
     state: dict[str, Any],
@@ -44,6 +99,8 @@ def coverage_notice(
     same source still surfaces once the window lapses; it is never permanently
     suppressed.
     """
+    if not results:
+        return configuration_notice(state, policy, now=now, commit=commit)
     failed = sorted(r.name for r in results if not r.healthy)
     # A positive healthy read ends a failure episode. Observe recovery even
     # when notification is deferred; absence/truncation is not recovery and no

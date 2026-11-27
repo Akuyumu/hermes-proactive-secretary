@@ -37,6 +37,7 @@ from .feedback import (
 )
 from .gates import (
     commit_coverage_notice,
+    configuration_notice,
     decide,
     deferred_coverage_notice,
     needs_evaluator_notice,
@@ -1220,6 +1221,24 @@ def _run_deterministic_monitor(args: Any, store: Any, state: dict[str, Any],
         args, store, state, policy, prefs, clock)
     if health_rc is not None:
         return health_rc
+    # One honest notice when a validated configuration exists but no source has
+    # been consented yet. It reuses the coverage-notice cooldown and the normal
+    # quiet/pause/cap envelope; there is no second dedupe store.
+    if policy.get("_config_present"):
+        allowed, _guard_reason = notice_allowed(state, policy, prefs, clock.now())
+        message = configuration_notice(
+            state, policy, now=clock.now(), commit=False) if allowed else None
+        if message:
+            configuration_notice(state, policy, now=clock.now(), commit=True)
+            state["last_delivery_at"] = clock.now().isoformat()
+            state.setdefault("delivered", []).append({
+                "at": clock.now().isoformat(),
+                "signature": "configuration-notice",
+                "urgent": False,
+            })
+            store.save("notify_state.json", state)
+            _emit(message)
+            return 0
     # Persist deterministic observations (health/coverage/cache) without
     # advancing the inference baseline.
     store.save("notify_state.json", state)
