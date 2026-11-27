@@ -986,10 +986,33 @@ def _seed_reminder_followthroughs_locked(store: Any, data: dict[str, Any],
     """
     raw = store.load("reminders.json", {"reminders": {}})
     reminders = raw.get("reminders") if isinstance(raw, dict) else None
-    if not isinstance(reminders, dict) or not reminders:
+    if not isinstance(reminders, dict):
         return [], False
     created: list[str] = []
     touched = False
+    seeded_map = data.setdefault("reminder_followthroughs", {})
+    # A valid empty registry still gets cleanup: markers for reminders that no
+    # longer exist must not accumulate forever.
+    for rid in [rid for rid in seeded_map if rid not in reminders]:
+        seeded_map.pop(rid, None)
+        touched = True
+    if not reminders:
+        return [], touched
+    # Upgrade path: 1.2.0-dev stores kept a bounded `reminder-followthrough:<id>`
+    # dedupe key instead of this map. Adopt any surviving marker before seeding,
+    # or a reminder that was already followed through would be re-seeded once its
+    # closed entry was pruned. The same truncation is applied when rebuilding the
+    # key, so a long id matches exactly.
+    dedupe = data.setdefault("dedupe", [])
+    legacy = set()
+    for rid in reminders:
+        key = f"reminder-followthrough:{rid}"[:MAX_EVENT_KEY_CHARS]
+        if key in dedupe:
+            legacy.add(key)
+            seeded_map.setdefault(rid, "")
+    if legacy:
+        data["dedupe"] = [key for key in dedupe if key not in legacy]
+        touched = True
     existing_refs = {
         str(entry.get("source_ref") or "")
         for entry in data["entries"].values()
@@ -998,7 +1021,6 @@ def _seed_reminder_followthroughs_locked(store: Any, data: dict[str, Any],
     for rid, rem in sorted(reminders.items()):
         if not isinstance(rem, dict) or rem.get("status") != "emitted":
             continue
-        seeded_map = data.setdefault("reminder_followthroughs", {})
         if rid in seeded_map:
             continue
         source_ref = f"reminder:{rid}"[:MAX_SOURCE_REF_CHARS]
@@ -1058,13 +1080,6 @@ def _seed_reminder_followthroughs_locked(store: Any, data: dict[str, Any],
         existing_refs.add(source_ref)
         created.append(fid)
         touched = True
-    seeded_map = data.get("reminder_followthroughs")
-    if isinstance(seeded_map, dict):
-        stale = [rid for rid in seeded_map if rid not in reminders]
-        for rid in stale:
-            seeded_map.pop(rid, None)
-        if stale:
-            touched = True
     return created, touched
 
 

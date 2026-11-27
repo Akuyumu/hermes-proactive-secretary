@@ -126,6 +126,29 @@ class ReminderFollowthroughTests(unittest.TestCase):
         self.assertLessEqual(len(stored), F.MAX_TEXT_CHARS)
         self.assertTrue(stored.startswith("Follow up: "))
 
+    def test_legacy_dedupe_marker_is_adopted_before_seeding(self):
+        """A 1.2.0-dev store must not re-seed a reminder it already handled."""
+        self._emitted(rid="r00")
+        data = F._load(self.store)
+        data["dedupe"] = ["reminder-followthrough:r00"]
+        data.pop("reminder_followthroughs", None)
+        F._save(self.store, data, self.now)
+        reloaded = StateStore(self.root, Clock())
+        rows = F.portal_rows(reloaded, now=self.now)
+        self.assertEqual(rows, [])
+        after = reloaded.load("followups.json", {})
+        self.assertIn("r00", after.get("reminder_followthroughs") or {})
+        self.assertEqual(after.get("dedupe"), [])
+
+    def test_clearing_the_registry_clears_the_markers(self):
+        self._emitted(rid="r00")
+        F.portal_rows(self.store, now=self.now)
+        self.store.save("reminders.json", {"schema": 1, "reminders": {}})
+        F.portal_rows(self.store, now=self.now + timedelta(minutes=5))
+        after = self.store.load("followups.json", {})
+        self.assertEqual(after.get("reminder_followthroughs"), {})
+
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
