@@ -240,6 +240,13 @@ def effective_route_status(ctx: Any = None, *, settings: Mapping[str, Any] | Non
               else ("plugin_defaults" if defaults else "chat_model_inheritance"))
     block = _effective_block(defaults, explicit if explicit_pinned else None)
     route_blockers = list(setting_errors) + _route_blockers(block)
+    if strict_active:
+        provider = str(block.get("provider") or "").strip()
+        model = str(block.get("model") or "").strip()
+        if not (provider and model) and not any(
+                "provider and model" in reason for reason in route_blockers):
+            route_blockers.append(
+                "strict route requires an explicit non-auto primary provider and model")
     primary_provider = str(block.get("provider") or "")
     primary_model = str(block.get("model") or "")
     primary = {

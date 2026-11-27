@@ -14,8 +14,9 @@ It uses your existing profile: same tools, same memory, same permissions.
 
 - You get one short message when something really needs you, not a feed of
   everything that changed.
-- You can answer it naturally: `later 30` for a temporary snooze, `done` when it
-  is handled, or `stop` when you no longer want that item or topic.
+- You can answer it naturally: `later 30` to snooze that item, `done` when it is
+  handled, `stop` to stop that one item. Reply in your own words; deciding which
+  notice you mean is the agent's job, not an extra phrase you have to append.
 - You choose what it may read in a short conversation, and it says so plainly
   when nothing is set up yet instead of pretending to watch.
 - Reminders you asked for keep working, and a notice you ignore does not turn
@@ -51,10 +52,11 @@ agent wakes on your cadence and can:
   stoppable follow-up with an expiry. You can file one, and so can the agent.
 - **Investigate and propose.** It can look into a change and propose one bounded
   notice through the same gates.
-- **Stage drafts.** Anything it would send, book, buy or change is written to a
-  pending draft with its body and manifest. Approving it in a foreground session
-  moves it to approved and records your decision; the plugin itself never
-  performs the action.
+- **Stage drafts.** Anything it prepares to send, book, buy or change is written
+  to a pending draft with its body and manifest. Approving it in a foreground
+  session records your decision and never executes it. The scheduled agent keeps
+  your profile's ordinary tools and permissions, so treat the draft as a record
+  of intent, not a sandbox.
 - **Respect your corrections.** Once you say a topic is finished, it stops
   raising it (see below).
 
@@ -96,8 +98,10 @@ other two are separate opt-ins:
    route you configured.
 2. **Reminders** — every minute, deterministic and model-free.
 3. **The optional agent** (`--with-portal`) — a scheduled ordinary Hermes
-   session for investigation, follow-ups and drafts. It uses more resources and
-   can be stopped without touching the monitors.
+   session for investigation, follow-ups and drafts. It runs on a 15-minute
+   scheduler tick in gated mode, and the gate's default cadence is 3 hours, so
+   the tick is not a promise that it investigates every 15 minutes. It uses more
+   resources and can be stopped without touching the monitors.
 4. **Private preparation** (`--with-preparation`) — a separate script job that
    prepares material for accepted commitments, and exists only when you opt in.
 
@@ -109,7 +113,11 @@ Configuration or onboarding alone arms nothing. Jobs are created explicitly by
 - A Linux or macOS Hermes profile with plugin support and working `hermes cron`.
 - Private sources (mail, calendar, tasks) need accounts connected and scoped
   separately; the plugin never connects one for you.
-- Model-dependent features need a working model route. Reminders do not.
+- Model-dependent features (monitoring judgment, private preparation) need more
+  than a working chat model: they need the host's strict auxiliary task contract.
+  `hermes secretary status` reports that as `configured_model_calls_allowed`; when
+  it is false those lanes stay off rather than quietly using your main model.
+  Requested reminders need no model at all.
 
 ## Install
 
@@ -182,7 +190,7 @@ it does not recreate jobs that were removed.
 
 ## The tools your agent gets
 
-The plugin hands your normal agent seven small tools, each with a narrow job:
+The plugin hands your normal agent eight small tools, each with a narrow job:
 
 | Tool | Purpose |
 |---|---|
@@ -193,6 +201,7 @@ The plugin hands your normal agent seven small tools, each with a narrow job:
 | `secretary_guidance` | Close or reopen a topic for the notice lane |
 | `secretary_draft` | Stage a draft for owner approval |
 | `secretary_propose_notice` | Propose one bounded notice through the gates |
+| `secretary_acknowledge` | Record your `done` / `later` / `stop` answer against an item |
 
 ## Settings
 
@@ -250,6 +259,44 @@ No state migration is needed: the acknowledgement, follow-through and
 first-run features use the existing stores, and the voice rules ship in the
 tool description and skill, so they take effect as soon as the new version
 loads. Nothing in your stored jobs has to be re-created.
+
+### Uninstalling, and reinstalling to upgrade
+
+Order matters, and it is the whole safety mechanism.
+
+```bash
+hermes secretary uninstall          # pause, remove only this plugin's own jobs and runners
+hermes plugins remove hermes-proactive-secretary
+```
+
+`hermes secretary uninstall` is the only step that knows what belongs to this
+plugin: it pauses collection and delivery, removes the four owned cron jobs
+through the ownership ledger, and removes its own runner scripts. It never
+touches another plugin's jobs. Runtime state — configuration, preferences,
+reminders, follow-throughs, ledgers and drafts — lives in the profile's
+`plugin-data/hermes-proactive-secretary/` and is **kept**, so a reinstall picks
+up where you left off.
+
+`hermes plugins remove` deletes the code directory and nothing else. Run it
+**first** and you leave cron jobs firing every minute at scripts that no longer
+exist, because the plugin cannot clean up after its own directory is gone —
+that is a Hermes-level gap, not something this plugin can fix from inside.
+
+Reinstall with the same state:
+
+```bash
+hermes plugins install Akuyumu/hermes-proactive-secretary --ref <commit>
+hermes secretary setup            # re-arms the default jobs
+```
+
+Delivery is not proved by any of this. `setup` arms jobs and reports the target
+as unverified until a message actually arrives, so confirm with one test notice
+at the destination you intend.
+
+`--purge` on `uninstall` deletes the runtime data as well; it is deliberately a
+separate, explicit flag. A preserved global pause survives a reinstall, so check
+`hermes secretary status` and resume deliberately rather than assuming monitoring
+restarted.
 
 ## Learn more
 
