@@ -218,8 +218,10 @@ class LlmRoute:
         }
         kwargs = {k: v for k, v in kwargs.items() if v is not None or k in {
             "instructions", "input", "json_schema", "json_mode", "purpose"}}
-        if _aux_task_registered():
-            kwargs["task"] = AUX_TASK_KEY
+        # Always name this plugin's own auxiliary task. A taskless call is the
+        # host's main-model path, so an unresolved registration must reach the
+        # host as a denied task, never as a call without one.
+        kwargs["task"] = AUX_TASK_KEY
         self._calls += 1
         try:
             result = self.ctx.llm.complete_structured(**kwargs)

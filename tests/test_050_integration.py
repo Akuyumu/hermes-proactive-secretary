@@ -65,7 +65,7 @@ class MemoryState:
 
 class FakeLlm:
     _ALLOWED = {"instructions", "input", "json_schema", "json_mode", "schema_name",
-                "system_prompt", "temperature", "max_tokens", "timeout", "purpose"}
+                "system_prompt", "temperature", "max_tokens", "timeout", "purpose", "task"}
 
     def __init__(self, parsed=None):
         self.calls = []

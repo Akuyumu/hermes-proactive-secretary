@@ -95,21 +95,32 @@ class TrustShapeTests(unittest.TestCase):
                                   max_tokens=64, timeout=5)
         self.assertEqual(route.calls, 1)
         call = llm.calls[0]
-        for forbidden in ("provider", "model", "agent_id", "profile", "task"):
+        self.assertEqual(call["task"], nr.AUX_TASK_KEY)
+        for forbidden in ("provider", "model", "agent_id", "profile"):
             self.assertNotIn(forbidden, call)
         self.assertEqual(call["purpose"], "secretary.evaluate")
         self.assertEqual(call["max_tokens"], 64)
 
-    def test_registered_aux_slot_routes_by_task_never_model(self):
-        llm = FakeLlm()
-        route = nr.evaluator_route(FakeCtx(llm))
-        from unittest import mock
-        with mock.patch.object(nr, "_aux_task_registered", return_value=True):
+    def test_an_unknown_aux_slot_is_denied_by_the_host_not_silently_widened(self):
+        class _NoTaskFacade:
+            def __init__(self):
+                self.calls = 0
+
+            def complete_structured(self, *, instructions, input, json_schema=None,
+                                    json_mode=False, schema_name=None, system_prompt=None,
+                                    temperature=None, max_tokens=None, timeout=None,
+                                    purpose=None):
+                # No ``task`` parameter and no **kwargs: the keyword is refused by
+                # the signature, so the body (and any provider call) never runs.
+                self.calls += 1
+                return None
+
+        facade = _NoTaskFacade()
+        route = nr.evaluator_route(FakeCtx(facade))
+        with self.assertRaises(nr.LlmUnavailable):
             route.complete_structured(instructions="i", input=[{"type": "text", "text": "t"}])
-        call = llm.calls[0]
-        self.assertEqual(call["task"], nr.AUX_TASK_KEY)
-        for forbidden in ("provider", "model", "agent_id", "profile"):
-            self.assertNotIn(forbidden, call)
+        # The façade must never be reached: the keyword is refused before it runs.
+        self.assertEqual(facade.calls, 0)
 
     def test_route_failure_is_sanitized(self):
         route = nr.evaluator_route(FakeCtx(FakeLlm(raise_exc=RuntimeError("token=SECRET"))))
