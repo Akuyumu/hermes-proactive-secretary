@@ -27,10 +27,11 @@ The interview is resumable and profile-scoped. It fills only what is missing:
 3. the daily discretionary ceiling and quiet hours (unchanged defaults count as
    decisions only when actually chosen or already configured);
 4. an autonomy level in plain language:
-   - *prepare privately* (default): may select relevant work and write private,
-     reversible drafts inside the standing scopes, but never performs an
-     external effect;
-   - *review only*: no autonomous preparation;
+   - *prepare privately*: off by default; only an explicit typed opt-in enables
+     it, after which it may select relevant work and write private, reversible
+     drafts inside the standing scopes, but never performs an external effect;
+   - *review only*: the default when no preparation autonomy was chosen; no
+     autonomous preparation;
    - *assist with approval*: same private preparation, plus one clear question
      before any consequential action;
 5. private-preparation consent: which scopes may be read and whether cached

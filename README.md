@@ -10,6 +10,17 @@ It uses your existing profile: same tools, same memory, same permissions.
 
 ![How it works: authorised sources feed scheduled checks, which pass notification gates before anything reaches you](docs/assets/how-it-works.svg)
 
+## What this feels like
+
+- You get one short message when something really needs you, not a feed of
+  everything that changed.
+- You can answer it naturally: `later 30` for a temporary snooze, `done` when it
+  is handled, or `stop` when you no longer want that item or topic.
+- You choose what it may read in a short conversation, and it says so plainly
+  when nothing is set up yet instead of pretending to watch.
+- Reminders you asked for keep working, and a notice you ignore does not turn
+  into a stream of follow-ups.
+
 ## What you get
 
 ### A short notice when something actually needs you
@@ -232,6 +243,13 @@ Runtime state lives in the active profile's
 drafts. `disable` preserves it. Upgrading from the old plugin id copies durable
 state once; Desktop settings may need re-entering. See
 [operations](docs/operations.md).
+
+### Upgrading from 1.1.x
+
+Run `hermes secretary setup --refresh-portal-prompt` to adopt the new notice
+voice in the stored portal prompt. It updates only that owned job's prompt and
+refuses on any identity or cadence mismatch. No state migration is needed: the
+1.2.0 acknowledgement and follow-through features use the existing stores.
 
 ## Learn more
 
