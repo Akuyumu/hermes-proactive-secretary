@@ -32,14 +32,15 @@ the way to record a user's watch.
 
 ## Answering a delivered notice
 
-The owner may answer with one of these exact short words. Route them to the
-existing stores; do not invent a new state or a global switch.
+The owner may answer with one of these exact short words. Route them through the
+single `secretary_acknowledge` tool, which writes the existing stores; do not
+invent a new state, a global switch, or a second route.
 
 | The owner says | Do |
 |---|---|
-| `later 30` / `later 2h` / `later until 2026-12-01T09:00:00+08:00` | the existing snooze action for that item/topic (`hermes secretary feedback snooze` with `--minutes` or `--until`); no new action name |
-| `done` | if the notice carries a topic, close that topic through `secretary_guidance`; otherwise close the follow-up with `secretary_followup` `complete` (the existing `owner_confirmed` reason) |
-| `stop` | close that follow-up with `secretary_followup` `stop` (the existing `owner_stopped` reason) and close its topic through `secretary_guidance`; scope it to that item/topic only |
+| `later 30` / `later 2h` / `later until 2026-12-01T09:00:00+08:00` | `secretary_acknowledge` with `text` = their words; it applies the existing snooze action with `minutes` or `until` (same store as `hermes secretary feedback snooze`) |
+| `done` | `secretary_acknowledge` with `text` = "done" plus `topic` and/or `followup_id`; it closes the topic through the guidance store, or the follow-up with the existing `owner_confirmed` reason |
+| `stop` | `secretary_acknowledge` with `text` = "stop" plus `followup_id`/`topic`; it closes that follow-up with the existing `owner_stopped` reason and its topic — scoped to that item only |
 
 A `stop` is never a global pause, a permanent ban or a widened source decision.
 An unrecognised word changes nothing; say plainly that it was not understood.

@@ -14,6 +14,7 @@ _MODEL_REGISTRATION: dict = {}
 _CONVERSATION_REGISTRATION: dict = {}
 _PORTAL_NOTICE_REGISTRATION: dict = {}
 _GUIDANCE_REGISTRATION: dict = {}
+_ACKNOWLEDGE_REGISTRATION: dict = {}
 
 
 def _plugin_root() -> Path:
@@ -143,6 +144,17 @@ def register(ctx) -> None:
         _GUIDANCE_REGISTRATION.update({
             "guidance_tool": False,
             "guidance_tool_error": f"{type(exc).__name__}: {exc}",
+        })
+
+    # Owner acknowledgements write the same stores as guidance and follow-ups;
+    # the tool is optional so an older host still loads everything else.
+    try:
+        from .secretary.secretary_acknowledge_tool import register_tool as register_acknowledge_tool
+        _ACKNOWLEDGE_REGISTRATION.update(register_acknowledge_tool(ctx))
+    except Exception as exc:  # noqa: BLE001 - registration stays optional
+        _ACKNOWLEDGE_REGISTRATION.update({
+            "acknowledge_tool": False,
+            "acknowledge_tool_error": f"{type(exc).__name__}: {exc}",
         })
 
     ctx.register_cli_command(

@@ -140,7 +140,7 @@ class ToolSpecContractTests(unittest.TestCase):
             call["name"] for call in self.ctx.tool_calls
             if isinstance(call["name"], str))
         declared = sorted(_declared_tools())
-        self.assertEqual(len(declared), 7, declared)
+        self.assertEqual(len(declared), 8, declared)
         self.assertEqual(registered, declared)
 
     def test_no_registration_passes_a_bare_schema(self):
