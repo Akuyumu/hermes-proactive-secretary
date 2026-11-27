@@ -33,9 +33,18 @@ class _Harness(unittest.TestCase):
             applied["body"] = dict(payload or {})
             return {"ok": True, "status": "applied"}
 
+        def fake_pinned(ctx, payload, turn, *, conversation, owner, store, now):
+            return {"target_id": "followup:fu_pinned",
+                    "target_type": "followup",
+                    "target_label": "harbour tide",
+                    "followup_id": "fu_pinned",
+                    "aliases": {"fu_pinned", "followup:fu_pinned"}}, None
+
         original_attested, original_apply = tool._attested_owner_turn, tool._apply_unattested
+        original_pinned = tool._pinned_target
         tool._attested_owner_turn = fake_attested
         tool._apply_unattested = fake_apply
+        tool._pinned_target = fake_pinned
         try:
             handler = tool.tool_handler(_Ctx(execution))
             body = {"text": declared, "evidence_quote": turn_text,
@@ -45,6 +54,7 @@ class _Harness(unittest.TestCase):
         finally:
             tool._attested_owner_turn = original_attested
             tool._apply_unattested = original_apply
+            tool._pinned_target = original_pinned
         return json.loads(raw), applied
 
     def test_model_cannot_change_the_duration(self):
