@@ -1,125 +1,8 @@
 # Hermes Proactive Secretary
 
-**A little less checking. A little more done.**
+A plugin for an existing Hermes profile. It reads the sources you authorise, sends a short notice when something needs you, and delivers reminders you asked for. An opt-in adds a scheduled copy of your ordinary agent that investigates, keeps follow-ups and stages drafts. Same profile, tools, memory and permissions.
 
-This is a Hermes plugin, not a separate assistant. It watches the sources you
-have authorised and tells you when something needs you; it runs the reminders
-you asked for; and — only if you opt in — it runs a scheduled copy of your normal
-agent that can investigate, keep follow-ups and stage drafts for your approval.
-It uses your existing profile: same tools, same memory, same permissions.
-
-![How it works: authorised sources feed scheduled checks, which pass notification gates before anything reaches you](docs/assets/how-it-works.svg)
-
-## What this feels like
-
-- You get one short message when something really needs you, not a feed of
-  everything that changed.
-- You can answer it naturally: `later 30` to snooze that item, `done` when it is
-  handled, `stop` to stop that one item. Reply in your own words; deciding which
-  notice you mean is the agent's job, not an extra phrase you have to append.
-- You choose what it may read in a short conversation, and it says so plainly
-  when nothing is set up yet instead of pretending to watch.
-- Reminders you asked for keep working, and a notice you ignore does not turn
-  into a stream of follow-ups.
-
-## What you get
-
-### A short notice when something actually needs you
-
-Ordinary notices are checked before they reach you: quiet hours, a minimum gap
-between messages, duplicate suppression for the same event, your optional daily
-ceiling, and any expiry the notice carries. Urgent evidence and reminders you
-asked for have their own exception rather than a free pass.
-
-Collectors are deterministic, and only what changed goes on to judgment.
-`hermes secretary status` shows what was checked, what was skipped and where
-coverage was missing, so a source that could not be read shows up as a gap
-instead of a silent success.
-
-### Reminders you asked for
-
-"Remind me on Thursday about the parcel." Added from chat or the CLI, stored, and
-delivered through your normal Hermes channel. The reminder job is deterministic
-and makes no model calls, so it keeps working while ordinary notices are quiet or
-capped.
-
-### Optional: a background agent that does the thinking
-
-With `hermes secretary setup --with-portal`, a scheduled copy of your Hermes
-agent wakes on your cadence and can:
-
-- **Keep follow-ups.** "Keep an eye on the visa page" becomes an inspectable,
-  stoppable follow-up with an expiry. You can file one, and so can the agent.
-- **Investigate and propose.** It can look into a change and propose one bounded
-  notice through the same gates.
-- **Stage drafts.** Anything it prepares to send, book, buy or change is written
-  to a pending draft with its body and manifest. Approving it in a foreground
-  session records your decision and never executes it. The scheduled agent keeps
-  your profile's ordinary tools and permissions, so treat the draft as a record
-  of intent, not a sandbox.
-- **Respect your corrections.** Once you say a topic is finished, it stops
-  raising it (see below).
-
-That agent is your ordinary profile agent: it keeps your existing tools and
-permissions. The plugin adds no sandbox around it and does not widen what the
-profile could already do.
-
-### Optional: private preparation for accepted commitments
-
-With `--with-preparation`, a separate script job prepares material — briefings,
-checklists, draft skeletons — for responsibilities you have accepted. It is off
-until you enable it and choose what it may use, and it never sends anything.
-
-### It remembers your corrections
-
-- **Topic closure.** When you ask to stop notices about a topic, the tool then
-  gives you a one-line description of the exact change — for example
-  `close "exams" until 2026-12-02` — and asks you to reply with one exact
-  sentence, for example "yes, close exams until 2026-12-02" or "yes, close exams
-  permanently". Only that sentence is accepted: a
-  bare "yes", a different topic, a shorter expiry or an extra clause is refused,
-  because the plugin cannot see what the assistant showed you. Requested
-  reminders are unaffected. A permanent closure needs you to say so.
-- **Bounded context.** A few short, expiring notes about your projects,
-  preferences and people, used to make notices relevant. Advisory only: they
-  never grant access or consent.
-- **Adaptive maintenance.** With your consent, a public source that keeps failing
-  can be replaced by a verified equivalent, and you can undo it. Suggested
-  configuration changes stay proposals; nothing is edited silently.
-
-## How it works
-
-Four jobs exist. `hermes secretary setup` arms the first two together; the
-other two are separate opt-ins:
-
-1. **Monitoring** — every 15 minutes: deterministic collectors for your enabled
-   sources, then the notification gates, then delivery through Hermes. Collection
-   and gating are deterministic; judgment about what changed may use the model
-   route you configured.
-2. **Reminders** — every minute, deterministic and model-free.
-3. **The optional agent** (`--with-portal`) — a scheduled ordinary Hermes
-   session for investigation, follow-ups and drafts. It runs on a 15-minute
-   scheduler tick in gated mode, and the gate's default cadence is 3 hours, so
-   the tick is not a promise that it investigates every 15 minutes. It uses more
-   resources and can be stopped without touching the monitors.
-4. **Private preparation** (`--with-preparation`) — a separate script job that
-   prepares material for accepted commitments, and exists only when you opt in.
-
-Configuration or onboarding alone arms nothing. Jobs are created explicitly by
-`hermes secretary setup`.
-
-## Requirements
-
-- A Linux or macOS Hermes profile with plugin support and working `hermes cron`.
-- Private sources (mail, calendar, tasks) need accounts connected and scoped
-  separately; the plugin never connects one for you.
-- Model-dependent features (monitoring judgment, private preparation) need more
-  than a working chat model: they need the host's strict auxiliary task contract.
-  `hermes secretary status` reports that as `configured_model_calls_allowed`; when
-  it is false those lanes stay off rather than quietly using your main model.
-  Requested reminders need no model at all.
-
-## Install
+Version 1.2.0, for Linux or macOS with `hermes cron`.
 
 ```bash
 hermes plugins install Akuyumu/hermes-proactive-secretary --no-enable
@@ -127,188 +10,119 @@ hermes plugins enable hermes-proactive-secretary
 hermes secretary doctor
 ```
 
-Desktop users can install from the native consent link instead:
+## What this feels like
 
-```text
-hermes://plugin/install?repo=Akuyumu/hermes-proactive-secretary&enable=1
-```
+Ordinary notices arrive one at a time. Each passes quiet hours, a minimum gap between messages, duplicate suppression, your optional daily ceiling and its own expiry.
 
-The [installation guide](docs/INSTALLATION.md) covers compatibility, upgrades and
-removal.
+Answer a notice the way you would answer a person: `done` when handled, `stop` to stop that item, `later 30` to snooze it. Send the answer as your whole reply; the agent supplies the words that identify which notice you mean. A reply the tool cannot read that way is refused.
+
+## What you get
+
+**A notice lane.** Monitoring collects from enabled sources, keeps what changed, and gates each candidate. `hermes secretary status` reports checks, skips and coverage gaps.
+
+**Requested reminders.** "Remind me on Thursday about the parcel" is stored and delivered through your normal Hermes channel. No model calls, so it keeps working while ordinary notices are quiet or capped.
+
+**An optional background agent.** With `--with-portal`, a scheduled Hermes session keeps follow-ups with an expiry, investigates, proposes one bounded notice through the gates, and stages drafts. `--with-preparation` adds a script job for briefings and draft skeletons; it is off until you enable it and choose scopes.
+
+**Your corrections.** Closing a topic stores a closure until a date or until you reopen it. Context notes are advisory, expire, and never grant access.
+
+## How it works
+
+Four jobs exist; `setup` arms the first two, and the other two are opt-ins.
+
+1. **Monitoring**, every 15 minutes: collection, the gates, delivery. Judgment may use your configured model route.
+2. **Reminders**, every minute: a `--no-agent` script job; no model.
+3. **The portal** (`--with-portal`): an ordinary Hermes session, created at the 3-hour default cadence. `hermes secretary cadence apply` converts it to a 15-minute tick; the gate then wakes the agent only after your interval, so the tick is a check, not work every 15 minutes.
+4. **Preparation** (`--with-preparation`): a script job every 10 minutes, silent unless an artifact is queued.
+
+## Requirements
+
+- A Linux or macOS host with plugin support and a working `hermes cron`.
+- Private sources need their accounts connected and scoped separately. The plugin never connects one.
+- Model-dependent lanes — monitoring judgment and private preparation — need the host's strict auxiliary task contract, not just a working chat model. `hermes secretary status` reports it as `configured_model_calls_allowed`; when false those lanes stay off instead of borrowing your chat model. Reminders need no model.
+
+## Install
+
+The two plugin commands install it; `doctor` checks the result. Pin a reviewed release with `--ref <commit>`. Host compatibility and upgrades: [installation guide](docs/INSTALLATION.md).
 
 ## First run
 
-Choosing what it may read happens in **chat**, not in the CLI. On a fresh profile
-send any message in a one-to-one chat and the short interview starts;
-`/secretary setup` resumes it later. It asks for your timezone, one delivery
-route, daily ceiling and quiet hours, how much autonomy you want, and which
-sources you grant. The interview arms nothing.
+Choosing what it may read happens in chat. On a fresh profile, send any message in a one-to-one chat and the interview starts; `/secretary setup` resumes it later. It asks for timezone, one delivery route, daily ceiling, quiet hours, autonomy and sources, and arms nothing.
 
-When you are ready, arm the jobs from the terminal:
+Then arm the jobs:
 
 ```bash
-hermes secretary setup --no-cron --deliver local   # trial: verify offline, arm nothing
-hermes secretary setup --deliver local             # arm monitoring and reminders, record locally
-hermes secretary setup --deliver telegram          # arm them with a delivery route
-hermes secretary status
+hermes secretary setup --no-cron --deliver local  # offline checks, no jobs
+hermes secretary setup --deliver local  # arm the two default jobs, output local
+hermes secretary setup --deliver telegram:YOUR_CHAT_ID  # arm with a destination you can see
 ```
 
-Add `--with-portal` for the scheduled agent and `--with-preparation` for the
-preparation job. Start with `local` delivery to see what it would have sent
-before it sends anything.
+Add `--with-portal` and `--with-preparation` when you want them. Start with `local` to see what it would have sent. `setup` reports the destination as unverified; confirm it with one test notice.
 
 ## Everyday controls
 
-In chat:
-
-| Command | Effect |
-|---|---|
-| `/secretary setup` | Start or resume the setup interview |
-| `/secretary status` | Onboarding, jobs, model route and limits |
-| `/secretary pause` | Stop collection and delivery, including requested reminders |
-| `/secretary resume` | Clear the pause; reports whether owned jobs are recorded |
-| `/secretary disable` | Pause and remove only plugin-owned jobs |
+In chat, the main `/secretary` commands are `setup`, `status`, `pause`, `resume` and `disable`. `pause` stops collection and delivery, reminders included; `resume` reports whether owned jobs are recorded; `disable` pauses and removes only plugin-owned jobs.
 
 From the terminal:
 
 | Command | What it does |
 |---|---|
-| `hermes secretary status` | Enabled state, jobs, last run, coverage and counts |
+| `hermes secretary status` | Enabled state, jobs, last run, coverage, counts |
 | `hermes secretary doctor` | Check the install and configuration |
 | `hermes secretary deliveries --since 2026-11-24` | Notices handed to Hermes recently |
 | `hermes secretary reminders list` | Reminders you asked for |
-| `hermes secretary watch list` | Public watches |
-| `hermes secretary guidance list` | Topics currently muted |
-| `hermes secretary cadence set --set 3h` | How often the optional agent wakes (no job change) |
-| `hermes secretary cadence apply` | Install the cadence gate once |
-| `hermes secretary job status` | The optional agent job's state |
-| `hermes secretary disable` | Pause and remove owned jobs; data is preserved |
 
-A global pause is absolute: requested reminders stay registered but are not read
-or sent until you resume, and they may then fire late. Resume clears the pause;
-it does not recreate jobs that were removed.
+A global pause is absolute: reminders stay registered but are not read or sent until you resume, then may fire late. Resume does not recreate removed jobs.
 
 ## The tools your agent gets
 
-The plugin hands your normal agent eight small tools, each with a narrow job:
+Eight tools, each with one narrow job:
 
 | Tool | Purpose |
 |---|---|
-| `secretary_onboarding` | Inspect, propose, validate and confirm setup |
-| `secretary_context` | List, show, update or revoke bounded context entries |
-| `secretary_responsibility` | Capture and manage an accepted commitment |
-| `secretary_followup` | Create, inspect or stop a follow-up |
-| `secretary_guidance` | Close or reopen a topic for the notice lane |
-| `secretary_draft` | Stage a draft for owner approval |
-| `secretary_propose_notice` | Propose one bounded notice through the gates |
-| `secretary_acknowledge` | Record your `done` / `later` / `stop` answer against an item |
+| `secretary_onboarding` | Inspect and confirm setup |
+| `secretary_context` | List, update or revoke context notes |
+| `secretary_responsibility` | Manage an accepted commitment |
+| `secretary_propose_notice` | Propose one bounded notice |
+| `secretary_followup` | Create, inspect or stop follow-ups |
+| `secretary_draft` | Stage a draft for approval |
+| `secretary_guidance` | Close or reopen a topic |
+| `secretary_acknowledge` | Record `done`, `later` or `stop` |
+
+`secretary_acknowledge` writes only from an attested foreground turn of your profile; it refuses scheduled runs, delegated children and replayed transcripts.
 
 ## Settings
 
-Settings live in the Desktop plugin page and in validated configuration
-(`hermes secretary configure show`). The ones that matter:
-
-- **Delivery** — destination, quiet hours, cooldown, optional daily ceiling.
-- **Sources** — mail, calendar, tasks, public feeds, and a narrower
-  "due payments and orders" switch for mail. All off by default; an empty public
-  source list means no public coverage.
-- **Cadence and route** — how often the optional agent wakes, and which model it
-  uses.
-- **Preparation** — whether private preparation is allowed, and in which scopes.
-
-Invalid values are rejected, and an explicit empty value is kept distinct from an
-unset one.
+Settings live in the Desktop plugin page and in validated configuration (`hermes secretary configure show`): delivery, sources, cadence and model route, and preparation scopes. Sources are off by default, and an empty public source list means no public coverage. Invalid values are rejected; an explicit empty value stays distinct from an unset one.
 
 ## What it will not do
 
-- The plugin's own collectors use only the sources you enabled and scoped.
-- Its draft path never executes anything: approving a draft records your decision.
+- Its collectors read only sources you enabled and scoped.
+- Approving a draft never executes it. A draft records intent; approval records your decision; nothing is sent, booked or changed. The scheduled agent keeps your profile's ordinary tools and permissions, so a draft is a record, not a sandbox.
 - It does not create a second memory, permission system or approval path.
 - It does not claim coverage it did not achieve.
 
-The optional background agent is a normal Hermes session. It acts with your
-profile's existing tools and permissions, so its safety comes from Hermes' own
-approval gates, not from a plugin sandbox.
-
 ## Limits worth knowing
 
-- **The delivery ledger is not a receipt.** A row means a notice was handed to
-  Hermes, and rows stay `emitted-unconfirmed`. To test a destination, send a test
-  message through your usual Hermes channel and confirm you receive it.
-- **Local-only is not offline.** It means no external notification; enabled
-  public checks can still contact sites, and judgment uses the provider you
-  configured.
-- **Topic closure trusts the platform, not the chat type.** Hermes reports the
-  platform and sender, not whether a chat is a group, so a group message can look
-  like a direct one. A recent message can also be reused for up to 30 minutes,
-  because the host exposes no message id.
-- **Closure matches labels or keys**, so a differently worded paraphrase of the
-  same topic may still arrive.
+- **The delivery ledger is not a receipt.** A row means a notice was handed to Hermes; rows stay `emitted-unconfirmed`. Confirm a destination with a test message through your usual channel.
+- **Local-only is not offline.** No external notification is sent, but enabled public checks still contact sites, and judgment uses the provider you configured.
+- **Closure matches labels or keys**, so a reworded paraphrase may still arrive.
 
 ## Data and upgrades
 
-Runtime state lives in the active profile's
-`plugin-data/hermes-proactive-secretary/`: configuration, reminders, ledgers and
-drafts. `disable` preserves it. Upgrading from the old plugin id copies durable
-state once; Desktop settings may need re-entering. See
-[operations](docs/operations.md).
+Runtime state lives in the profile's `plugin-data/hermes-proactive-secretary/`: configuration, preferences, reminders, follow-ups, ledgers and drafts. `disable` preserves it. Upgrading from 1.1.x needs no migration; existing stores and stored jobs are reused.
 
-### Upgrading from 1.1.x
-
-No state migration is needed: the acknowledgement, follow-through and
-first-run features use the existing stores, and the voice rules ship in the
-tool description and skill, so they take effect as soon as the new version
-loads. Nothing in your stored jobs has to be re-created.
-
-### Uninstalling, and reinstalling to upgrade
-
-Order matters, and it is the whole safety mechanism.
+## Uninstall and reinstall
 
 ```bash
-hermes secretary uninstall          # pause, remove only this plugin's own jobs and runners
+hermes secretary uninstall
 hermes plugins remove hermes-proactive-secretary
 ```
 
-`hermes secretary uninstall` is the only step that knows what belongs to this
-plugin: it pauses collection and delivery, removes the four owned cron jobs
-through the ownership ledger, and removes its own runner scripts. It never
-touches another plugin's jobs. Runtime state — configuration, preferences,
-reminders, follow-throughs, ledgers and drafts — lives in the profile's
-`plugin-data/hermes-proactive-secretary/` and is **kept**, so a reinstall picks
-up where you left off.
+`uninstall` pauses collection and delivery, removes the jobs it has recorded (monitoring and reminders, plus the portal and preparation jobs if present) and its runner scripts. `plugins remove` deletes only the code; run it second, because a missing plugin cannot remove its cron entries.
 
-`hermes plugins remove` deletes the code directory and nothing else. Run it
-**first** and you leave cron jobs firing every minute at scripts that no longer
-exist, because the plugin cannot clean up after its own directory is gone —
-that is a Hermes-level gap, not something this plugin can fix from inside.
+Data survives unless you pass `--purge` to `uninstall`. Reinstall with `--ref <commit>`, run `setup`, and check status: a preserved pause survives, so resume deliberately. Reinstalling does not re-verify delivery; `setup` reports the target as unverified, so confirm with one test notice.
 
-Reinstall with the same state:
+## Check that it works
 
-```bash
-hermes plugins install Akuyumu/hermes-proactive-secretary --ref <commit>
-hermes secretary setup            # re-arms the default jobs
-```
-
-Delivery is not proved by any of this. `setup` arms jobs and reports the target
-as unverified until a message actually arrives, so confirm with one test notice
-at the destination you intend.
-
-`--purge` on `uninstall` deletes the runtime data as well; it is deliberately a
-separate, explicit flag. A preserved global pause survives a reinstall, so check
-`hermes secretary status` and resume deliberately rather than assuming monitoring
-restarted.
-
-## Learn more
-
-- [Installation](docs/INSTALLATION.md)
-- [Agent-assisted setup](docs/AGENT_SETUP.md)
-- [Operations guide](docs/operations.md)
-- [Background agent](docs/NATIVE-PORTAL.md)
-- [Notification contract](docs/notification-contract.md)
-- [Adaptive maintenance](docs/adaptive-maintenance.md)
-- [Engineering notes](docs/ENGINEERING.md)
-- [Contributing](CONTRIBUTING.md)
-
-## License
-
-[MIT](LICENSE).
+Run `hermes secretary doctor`, then `hermes secretary status` for jobs, last run, coverage and `configured_model_calls_allowed`. `hermes secretary self-test` runs offline checks; `hermes secretary run-once --fixture healthy_empty` proves only that nothing was emitted. `hermes secretary deliveries --since <timestamp>` lists what was handed to Hermes. Send one test notice to the destination you intend and confirm it arrives; that, not the ledger, is proof of delivery.
