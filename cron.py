@@ -167,6 +167,7 @@ class CronBackend(Protocol):
     def update_schedule(self, job_id: str, schedule: str) -> dict[str, Any]: ...
     def update_route(self, job_id: str, provider: str, model: str,
                      reasoning: str | None = None) -> dict[str, Any]: ...
+    def update_prompt(self, job_id: str, prompt: str) -> dict[str, Any]: ...
     def pause_job(self, job_id: str) -> dict[str, Any]: ...
     def resume_job(self, job_id: str) -> dict[str, Any]: ...
 
@@ -782,6 +783,90 @@ class HermesCronBackend:
             if response_id and response_id != str(job_id):
                 raise CronError(
                     f"native schedule update returned a different job id "
+                    f"{response_id!r}; refusing to claim preservation"
+                )
+        return dict(after)
+
+    def update_prompt(self, job_id: str, prompt: str) -> dict[str, Any]:
+        """Change only the stored prompt of one job through the native update API.
+
+        ``cron.jobs.update_job(id, {"prompt": text})`` updates by the immutable
+        job id. Every other stored field must read back unchanged; a missing
+        seam, an ambiguous reply that the source of truth does not confirm, or
+        any extra field change is refused. This method never removes, pauses or
+        recreates a job.
+        """
+        prompt = _validate_text("prompt", str(prompt), required=True)
+        try:
+            from cron import jobs as native_jobs
+        except Exception as exc:  # noqa: BLE001 - absent/shadowed SDK is a blocker
+            raise CronError(
+                "native cron update API is unavailable; no safe in-place prompt "
+                f"update: {exc}"
+            ) from exc
+        updater = getattr(native_jobs, "update_job", None)
+        if not callable(updater):
+            raise CronError(
+                "native cron.jobs.update_job is unavailable; no safe in-place "
+                "prompt update"
+            )
+        getter = getattr(native_jobs, "get_job", None)
+        if not callable(getter):
+            raise CronError(
+                "native cron.jobs.get_job is unavailable; cannot verify a "
+                "prompt update"
+            )
+        try:
+            before = getter(str(job_id))
+        except Exception as exc:  # noqa: BLE001 - cannot prove the row
+            raise CronError(
+                f"cannot read cron job {job_id!r} before prompt update: {exc}"
+            ) from exc
+        if not isinstance(before, dict) or _job_id(before) != str(job_id):
+            raise CronError(f"cron job {job_id!r} is not present")
+        if str(before.get("prompt") or "") == prompt:
+            return dict(before)
+
+        error: Exception | None = None
+        response = None
+        try:
+            response = updater(str(job_id), {"prompt": prompt})
+        except Exception as exc:  # noqa: BLE001 - the write may still have landed
+            error = exc
+
+        try:
+            after = getter(str(job_id))
+        except Exception as exc:  # noqa: BLE001 - cannot prove the committed row
+            raise CronError(
+                f"prompt update of {job_id!r} could not be read back: {exc}; "
+                "refusing to retry"
+            ) from exc
+        if not isinstance(after, dict) or _job_id(after) != str(job_id):
+            suffix = f" after ambiguous response: {error}" if error else ""
+            raise CronError(
+                f"prompt update of {job_id!r} was not confirmed from the "
+                f"source of truth{suffix}"
+            )
+        if str(after.get("prompt") or "") != prompt:
+            suffix = f" after ambiguous response: {error}" if error else ""
+            raise CronError(
+                f"prompt update of {job_id!r} was not applied{suffix}; "
+                "refusing to retry or recreate"
+            )
+        changed = sorted(
+            key for key in set(before) | set(after)
+            if before.get(key) != after.get(key) and key != "prompt"
+        )
+        if changed:
+            raise CronError(
+                "native prompt update changed fields beyond prompt ("
+                + ", ".join(changed) + "); refusing to claim preservation"
+            )
+        if isinstance(response, dict):
+            response_id = _job_id(response)
+            if response_id and response_id != str(job_id):
+                raise CronError(
+                    f"native prompt update returned a different job id "
                     f"{response_id!r}; refusing to claim preservation"
                 )
         return dict(after)
@@ -1980,6 +2065,13 @@ class InMemoryCronBackend:
                 job["schedule"] = str(schedule)
                 return dict(job)
         raise CronError(f"cron job {job_id!r} is not present to reschedule")
+
+    def update_prompt(self, job_id: str, prompt: str) -> dict[str, Any]:
+        for job in self.jobs:
+            if _job_id(job) == str(job_id):
+                job["prompt"] = str(prompt)
+                return dict(job)
+        raise CronError(f"cron job {job_id!r} is not present to update prompt")
 
     def update_route(self, job_id: str, provider: str, model: str,
                      reasoning: str | None = None) -> dict[str, Any]:

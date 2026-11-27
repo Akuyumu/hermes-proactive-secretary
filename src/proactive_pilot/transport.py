@@ -18,7 +18,7 @@ Design (all fail-closed):
 3. Only a clean ``travel_likely is True`` verdict permits the fetch.
 4. HARD FLOORS (persisted in the plugin private state directory, never in the
    repo/config): at least ``LTA_MIN_INTERVAL_MINUTES`` between LTA calls; at
-   most ``LTA_MAX_CALLS_PER_DAY`` per local (Asia/Singapore) day; while a
+   most ``LTA_MAX_CALLS_PER_DAY`` per configured local day; while a
    disruption stands a shorter ``LTA_DISRUPTION_RETRY_MINUTES`` retry applies,
    still subject to the daily cap.
 5. Fail CLOSED: an unavailable/erroring/non-yes model lane never fetches.
@@ -34,11 +34,12 @@ import json
 import os
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from .clock import SG
+from .policy import policy_zone
 
 # -- Hard floors / bounds ------------------------------------------------------
 LTA_MAX_CALLS_PER_DAY = 24
@@ -275,8 +276,14 @@ def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
                 pass
 
 
-def _local_day(now: datetime) -> str:
-    return _as_aware(now).astimezone(SG).date().isoformat()
+def _local_day(now: datetime, policy: dict[str, Any] | None = None) -> str:
+    """Return the day in the configured zone, else the system local zone."""
+    if isinstance(policy, dict):
+        zone = policy_zone(policy)
+    else:
+        zone = datetime.now().astimezone().tzinfo or timezone.utc
+    aware = now if now.tzinfo is not None else now.replace(tzinfo=zone)
+    return aware.astimezone(zone).date().isoformat()
 
 
 def _append_telemetry(state: dict[str, Any], *, now: datetime, verdict: str,
@@ -321,6 +328,7 @@ def evaluate_transport_gate(
     facts: TransportFacts,
     state_path: Any,
     model_lane: Any = None,
+    policy: dict[str, Any] | None = None,
 ) -> tuple[GateDecision, dict[str, Any]]:
     """Decide whether one LTA fetch is permitted. Returns (decision, state).
 
@@ -366,7 +374,7 @@ def evaluate_transport_gate(
                               disruption_found=facts.disruption_standing, clues=clues)
             return decision, state
 
-    day = _local_day(now)
+    day = _local_day(now, policy)
     calls_today = int(state.get("calls_today", 0) or 0) if state.get("day") == day else 0
     if calls_today >= LTA_MAX_CALLS_PER_DAY:
         decision = GateDecision(
@@ -456,15 +464,17 @@ def record_transport_outcome(
 class TransportGate:
     """Run-scoped gate: binds candidate facts + model lane + private state file."""
 
-    def __init__(self, *, facts: TransportFacts, model_lane: Any, state_path: Any):
+    def __init__(self, *, facts: TransportFacts, model_lane: Any, state_path: Any,
+                 policy: dict[str, Any] | None = None):
         self.facts = facts
         self.model_lane = model_lane
         self.state_path = state_path
+        self.policy = policy
 
     def decide(self, *, rec: Any = None, now: datetime) -> GateDecision:
         decision, state = evaluate_transport_gate(
             now=now, facts=self.facts, state_path=self.state_path,
-            model_lane=self.model_lane)
+            model_lane=self.model_lane, policy=self.policy)
         save_transport_state(self.state_path, state)
         return decision
 

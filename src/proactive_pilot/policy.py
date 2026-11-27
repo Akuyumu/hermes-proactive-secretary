@@ -324,7 +324,7 @@ def policy_zone(policy: dict[str, Any]) -> ZoneInfo:
     """Return the configured zone; invalid values use neutral UTC.
 
     The generic plugin never assumes a regional location. A malformed legacy
-    value therefore falls back to UTC (not Asia/Singapore) while the validated
+    value therefore falls back to UTC (never a regional default) while the validated
     user configuration path still rejects invalid IANA names explicitly.
     """
     name = policy.get("timezone") or DEFAULT_TIMEZONE

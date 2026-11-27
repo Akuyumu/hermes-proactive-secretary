@@ -176,6 +176,11 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
     p["setup"].add_argument("--portal-schedule", default=None, metavar="CRON",
                             help="native schedule for --with-portal (default: canonical "
                                  "Portal configuration resolver)")
+    p["setup"].add_argument("--refresh-portal-prompt", action="store_true",
+                            dest="refresh_portal_prompt",
+                            help="update only the stored prompt of the existing exact "
+                                 "owned Portal job; refuses on any identity/cadence/"
+                                 "context mismatch")
     p["run-once"].add_argument("--fixture", default=None,
                                help="run against a synthetic fixture instead of live sources")
     p["run-once"].add_argument("--check", action="store_true",
@@ -689,6 +694,8 @@ def setup_command(args: argparse.Namespace, *, backend: cron_mod.CronBackend | N
     """
     as_json = bool(getattr(args, "json", False))
     import_from = getattr(args, "import_from", None)
+    if bool(getattr(args, "refresh_portal_prompt", False)):
+        return _refresh_portal_prompt(args, backend=backend)
     if bool(getattr(args, "import_dry_run", False)):
         if not import_from:
             _emit({"ok": False, "error": "--import-dry-run requires --import-from <legacy_tree>"},
@@ -933,6 +940,42 @@ def setup_command(args: argparse.Namespace, *, backend: cron_mod.CronBackend | N
         return 1
 
     _emit(result, as_json=as_json, human=_setup_human(result))
+    return 0 if result.get("ok") else 1
+
+
+def _refresh_portal_prompt(args: argparse.Namespace, *, backend: Any = None) -> int:
+    """Refresh only the stored prompt of an existing exact owned portal job."""
+    as_json = bool(getattr(args, "json", False))
+    if bool(getattr(args, "with_portal", False)):
+        _emit({"ok": False, "action": "refresh-portal-prompt",
+               "error": "--refresh-portal-prompt cannot be combined with --with-portal"},
+              as_json=as_json,
+              human="refresh refused: --refresh-portal-prompt cannot be combined "
+                    "with --with-portal")
+        return 2
+    if bool(getattr(args, "no_cron", False)):
+        _emit({"ok": False, "action": "refresh-portal-prompt",
+               "error": "--refresh-portal-prompt requires the native cron surface; "
+                        "drop --no-cron"},
+              as_json=as_json,
+              human="refresh refused: the native cron surface is required (drop --no-cron)")
+        return 2
+    try:
+        from . import secretary_portal as portal
+        cron_backend = backend or _backend()
+        if not cron_backend.is_available():
+            raise cron_mod.CronError("the native cron surface is unavailable")
+        ownership = portal_controls.load_ownership_strict(paths.job_ownership_path())
+        result = portal.refresh_prompt(
+            cron_mod, cron_backend, ownership=ownership,
+            ownership_path=paths.job_ownership_path())
+    except Exception as exc:  # noqa: BLE001 - bounded refusal, never a traceback
+        result = {"ok": False, "action": "refresh-portal-prompt",
+                  "status": "error", "error": f"{type(exc).__name__}: {exc}"}
+    _emit(result, as_json=as_json, human=(
+        "portal prompt refresh: " + str(result.get("status") or "failed")
+        + (" id=" + str(result["job_id"]) if result.get("job_id") else "")
+        + (" " + str(result.get("detail") or result.get("error") or ""))))
     return 0 if result.get("ok") else 1
 
 

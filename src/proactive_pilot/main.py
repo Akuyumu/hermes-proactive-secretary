@@ -746,7 +746,8 @@ def _run_once(args: argparse.Namespace, *, evaluator=None, location_http=None) -
                                                 path=LTA_MODEL_PATH, purpose=LTA_MODEL_PURPOSE)
                         transport_gate = TransportGate(
                             facts=facts, model_lane=lane,
-                            state_path=Path(args.state_dir) / LTA_GATE_STATE_NAME)
+                            state_path=Path(args.state_dir) / LTA_GATE_STATE_NAME,
+                            policy=policy)
                     except Exception:  # noqa: BLE001 - gate stays None: source skipped
                         transport_gate = None
                 try:

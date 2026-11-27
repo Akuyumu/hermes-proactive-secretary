@@ -62,12 +62,32 @@ EXCLUDED_PATHS = {"docs/FINALIZATION_PREPARATION.md"}
 FORBIDDEN = tuple(filter(None, os.environ.get(
     "SECRETARY_FORBIDDEN_IDENTIFIERS", "").split(",")))
 HOME_RE = re.compile(r"/(?:home|Users)/[A-Za-z0-9._-]+")
+# Built-in, user-agnostic checks that always run. These supplement the optional
+# operator list above; an empty environment can never make the scan a no-op.
+EMAIL_RE = re.compile(
+    r"(?<![\w.+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![\w.-])")
+EMAIL_ALLOWED_DOMAINS = frozenset({"example.com", "example.org", "example.net"})
+# Exact synthetic addresses that are placeholders rather than owner identifiers.
+EMAIL_ALLOWLIST = frozenset({"jobs-noreply@linkedin.com", "noreply@example.com"})
+IANA_ZONE_RE = re.compile(
+    r"\b(?:Africa|America|Antarctica|Arctic|Asia|Atlantic|Australia|Canada|"
+    r"Etc|Europe|Indian|Pacific|US)/[A-Za-z0-9_+.-]+")
+PHONE_RE = re.compile(r"\+[0-9][0-9\s().-]{6,}[0-9]")
+# Modules that are themselves deterministic fixtures or the explicit regional
+# compatibility adapter. Everything else in src/ must not name a zone literal.
+TIMEZONE_LITERAL_EXEMPT = frozenset({
+    "src/proactive_pilot/clock.py",
+    "src/proactive_pilot/fixtures.py",
+    "src/proactive_pilot/selftest.py",
+})
+CODE_TREES = ("src", "runners", "skills", "dashboard", "desktop", "policy")
 
 
 def _shipped_files(root: Path = ROOT) -> list[Path]:
     files: list[Path] = []
     for path in root.iterdir():
-        if (path.name == "release_export.py"
+        if (path.name.startswith(".")
+                or path.name == "release_export.py"
                 or path.relative_to(root).as_posix() in EXCLUDED_PATHS):
             continue
         if path.is_file() and (path.suffix.lower() in ROOT_SUFFIXES
@@ -93,12 +113,76 @@ def _shipped_files(root: Path = ROOT) -> list[Path]:
 
 
 def _version(root: Path) -> tuple[str, str]:
-    manifest = (root / "plugin.yaml").read_text(encoding="utf-8")
+    try:
+        manifest = (root / "plugin.yaml").read_text(encoding="utf-8")
+    except OSError:
+        manifest = ""
     match = re.search(r"(?m)^version:\s*(\S+)\s*$", manifest)
-    module = (root / "src" / "proactive_pilot" / "__init__.py").read_text(encoding="utf-8")
+    try:
+        module = (root / "src" / "proactive_pilot" / "__init__.py").read_text(
+            encoding="utf-8")
+    except OSError:
+        module = ""
     module_match = re.search(r'__version__\s*=\s*"([^"]+)"', module)
     return (match.group(1) if match else "",
             module_match.group(1) if module_match else "")
+
+
+def _code_files(root: Path, files: list[Path]) -> list[Path]:
+    selected: list[Path] = []
+    for path in files:
+        rel = path.relative_to(root)
+        if len(rel.parts) == 1 and path.suffix.lower() == ".py":
+            selected.append(path)
+        elif rel.parts and rel.parts[0] in CODE_TREES:
+            selected.append(path)
+    return selected
+
+
+def _email_allowed(address: str) -> bool:
+    address = address.strip().lower()
+    if address in EMAIL_ALLOWLIST:
+        return True
+    if address.rsplit("@", 1)[-1] in EMAIL_ALLOWED_DOMAINS:
+        return True
+    local = address.split("@", 1)[0]
+    return local == "noreply" or local.endswith(("-noreply", ".noreply", "_noreply"))
+
+
+def _builtin_problems(root: Path, files: list[Path]) -> list[str]:
+    """Return deterministic built-in identifier violations as ``file:line rule``."""
+    problems: list[str] = []
+    code_files = _code_files(root, files)
+    for path in files:
+        rel = path.relative_to(root).as_posix()
+        text = path.read_text(encoding="utf-8", errors="replace")
+        lines = text.splitlines()
+        for lineno, line in enumerate(lines, 1):
+            for match in HOME_RE.finditer(line):
+                problems.append(
+                    f"{rel}:{lineno}: [home_path] personal path {match.group(0)!r}")
+    for path in code_files:
+        rel = path.relative_to(root).as_posix()
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for lineno, line in enumerate(text.splitlines(), 1):
+            for match in EMAIL_RE.finditer(line):
+                if not _email_allowed(match.group(0)):
+                    problems.append(
+                        f"{rel}:{lineno}: [email] literal address {match.group(0)!r}")
+            for match in PHONE_RE.finditer(line):
+                if sum(ch.isdigit() for ch in match.group(0)) >= 8:
+                    problems.append(
+                        f"{rel}:{lineno}: [phone] phone-like number {match.group(0)!r}")
+            if (rel.startswith("src/")
+                    and rel not in TIMEZONE_LITERAL_EXEMPT
+                    and not ({"tests", "fixtures"} & set(path.relative_to(root).parts))):
+                for match in IANA_ZONE_RE.finditer(line):
+                    value = match.group(0)
+                    if value in {"Etc/UTC", "localtime"}:
+                        continue
+                    problems.append(
+                        f"{rel}:{lineno}: [timezone] hardcoded zone literal {value!r}")
+    return problems
 
 
 def scan(root: Path = ROOT) -> dict[str, Any]:
@@ -116,10 +200,14 @@ def scan(root: Path = ROOT) -> dict[str, Any]:
     for path in files:
         text = path.read_text(encoding="utf-8", errors="replace")
         for term in FORBIDDEN:
-            if term in text:
-                problems.append(f"{path.relative_to(root)} contains forbidden term {term!r}")
-        for match in HOME_RE.finditer(text):
-            problems.append(f"{path.relative_to(root)} contains personal path {match.group(0)}")
+            if term not in text:
+                continue
+            for lineno, line in enumerate(text.splitlines(), 1):
+                if term in line:
+                    problems.append(
+                        f"{path.relative_to(root)}:{lineno}: [forbidden_term] "
+                        f"forbidden term {term!r}")
+    problems.extend(_builtin_problems(root, files))
     return {"ok": not problems, "version": VERSION, "file_count": len(files),
             "files": [p.relative_to(root).as_posix() for p in files],
             "problems": problems}

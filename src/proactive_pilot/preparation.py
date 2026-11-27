@@ -33,6 +33,7 @@ from typing import Any, Callable
 
 from . import ownerpaths as _ownerpaths
 from . import responsibilities as R
+from .notice_voice import _notice_fragment, render_ready_notice
 from .policy import active_snooze
 from .state import CorruptStateError, StateStore
 
@@ -616,43 +617,7 @@ def public_artifact_ref(artifact_ref: Any) -> str:
 # Semantic attention identity + bounded human notice text
 # --------------------------------------------------------------------------- #
 
-_NOTICE_ARTIFACT = re.compile(
-    r"\b(?:artifact|responsibility|generation|ref|path|handle)\s*[:=]\s*\S+",
-    re.IGNORECASE)
-_NOTICE_PATH = re.compile(r"(?:/[\w.~-]+){2,}")
-_NOTICE_LONG_TOKEN = re.compile(r"\b[A-Za-z0-9][A-Za-z0-9._:-]{23,}\b")
-# Opaque internal handles are frequently short (resp_ab12cd34, artifact:…,
-# sec-…). They are stripped explicitly so a bare id cannot survive prose.
-_NOTICE_OPAQUE_ID = re.compile(
-    r"\b(?:resp|artifact|artifact_ref|sec|cal|mail|task|thread|evt|msg|"
-    r"responsibility|handle)_[A-Za-z0-9][A-Za-z0-9_-]{3,}\b",
-    re.IGNORECASE)
-_NOTICE_HEX = re.compile(r"\b[0-9a-f]{16,}\b", re.IGNORECASE)
 _NOTICE_SPACE = re.compile(r"\s+")
-
-
-def _notice_fragment(value: Any, limit: int) -> str:
-    """Bounded, identifier-free owner prose for chat.
-
-    Only accepted responsibility prose is used, never an artifact title/path,
-    ref, generation counter or source identifier. Untrusted text cannot inject
-    a ref/URL/path-shaped handle into the rendered sentence.
-    """
-    text = str(value or "")
-    text = _CITATION.sub(" ", text)
-    text = _URL.sub(" ", text)
-    text = _REF_TOKEN.sub(" ", text)
-    text = _NOTICE_ARTIFACT.sub(" ", text)
-    text = _NOTICE_PATH.sub(" ", text)
-    text = _NOTICE_LONG_TOKEN.sub(" ", text)
-    text = _NOTICE_OPAQUE_ID.sub(" ", text)
-    text = _NOTICE_HEX.sub(" ", text)
-    text = _CONTROL.sub(" ", text)
-    text = text.replace("<", " ").replace(">", " ")
-    text = _NOTICE_SPACE.sub(" ", text).strip(" \"'“”‘’.,;:-")
-    if len(text) > limit:
-        text = text[:limit].rstrip(" ,;:-") + "..."
-    return text
 
 
 def ready_material_fingerprint(rec: dict[str, Any]) -> str:
@@ -670,24 +635,6 @@ def ready_material_fingerprint(rec: dict[str, Any]) -> str:
     ]
     payload = json.dumps(fields, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def render_ready_notice(rec: dict[str, Any]) -> str:
-    """Task-specific, bounded notice or ``""`` when there is nothing useful.
-
-    The first ready notice is not mandatory: a generic status-only sentence is
-    never emitted. The owner's own goal and acceptance note provide the useful
-    task-specific content; detailed linkage stays structured/on demand.
-    """
-    goal = _notice_fragment(rec.get("desired_outcome"), 180)
-    if not goal:
-        return ""
-    criterion = _notice_fragment(rec.get("acceptance_criterion"), 120)
-    text = f'Your private draft for "{goal}" is ready to review.'
-    if criterion and criterion.casefold() not in goal.casefold():
-        text += f' It was prepared against your acceptance note: "{criterion}".'
-    text += " Open it from your preparation queue when convenient."
-    return text
 
 
 def seed_legacy_ready_attention(

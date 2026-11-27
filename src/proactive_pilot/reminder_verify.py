@@ -309,9 +309,9 @@ def _source_failure_uncertain(now: datetime) -> bool:
 # Parent-only, READ-ONLY evidence plan (no live verification performed here)
 # --------------------------------------------------------------------------- #
 
-def parent_evidence_plan(*, reminder_time: str = "21:00", tz: str = "Asia/Singapore",
+def parent_evidence_plan(*, reminder_time: str = "21:00", tz: str = "UTC",
                          state_dir: str = "/path/to/state") -> dict[str, Any]:
-    """Read-only plan to verify the already-requested 9pm school-fee reminder.
+    """Read-only plan to verify the user-requested sample reminder.
 
     This fabricates nothing and performs no live read/send. It tells the parent
     exactly which read-only evidence distinguishes the two routes.
@@ -319,7 +319,7 @@ def parent_evidence_plan(*, reminder_time: str = "21:00", tz: str = "Asia/Singap
     return {
         "scope": "parent-only read-only verification; no send, no write, no live client here",
         "requested_reminder": {"time": reminder_time, "tz": tz,
-                               "topic": "school fee (user-requested)"},
+                               "topic": "sample topic (user-requested)"},
         "route_a_standalone_native_one_shot": {
             "what_it_is": "A one-off native scheduler job armed by the assistant, independent of reminders.json.",
             "where_to_look": [

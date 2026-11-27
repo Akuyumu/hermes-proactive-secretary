@@ -56,7 +56,11 @@ _EMISSION_STATUSES = frozenset({"emitted-unconfirmed"})
 TOOL_DESCRIPTION = (
     "Queue one bounded user-facing notice through the existing "
     "monitoring gates. This only proposes a notice; it does not send, "
-    "complete work, or bypass quiet hours, caps, or delivery controls."
+    "complete work, or bypass quiet hours, caps, or delivery controls. "
+    "Write at most two sentences of context plus one concrete action, and "
+    "use first person for work you did. Never include hashes, opaque ids, "
+    "file paths, timestamps, field labels, or \"Two items.\"-style "
+    "enumerations; put detail behind a \"show\" reply."
 )
 
 TOOL_SCHEMA: dict[str, Any] = {
@@ -85,7 +89,12 @@ TOOL_SCHEMA: dict[str, Any] = {
         "message": {
             "type": "string",
             "maxLength": MAX_MESSAGE,
-            "description": "One bounded notice message for the monitoring lane.",
+            "description": (
+                "One bounded notice message: at most two sentences of context "
+                "plus one concrete action, first person for work you did; no "
+                "hashes, opaque ids, file paths, timestamps, field labels or "
+                "item-count enumerations; detail stays behind a \"show\" reply."
+            ),
         },
         "evidence_refs": {
             "type": "array",

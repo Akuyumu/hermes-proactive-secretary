@@ -31,6 +31,7 @@ from . import guidance
 from .evaluator import EvaluatorResult
 from .gates import decide as gates_decide
 from .gates import record_delivery as gates_record_delivery
+from .notice_voice import check_notice_text
 from .state import CorruptStateError
 
 PORTAL_NOTICES_ARTIFACT = "portal_notices.json"
@@ -231,6 +232,11 @@ def _validate_proposal(proposal: Any, now: datetime) -> tuple[dict[str, Any] | N
         return None, "invalid topic"
     if not _bounded_text(message, MAX_MESSAGE):
         return None, "invalid message"
+    voice_ok, voice_rule = check_notice_text(message)
+    # Existing bounded callers predate the terminal-punctuation rule; keep that
+    # rule advisory here while every identifier/evasion rule remains fatal.
+    if not voice_ok and voice_rule != "no_sentence_end":
+        return None, f"message voice check failed: {voice_rule}"
     if not isinstance(evidence, list) or isinstance(evidence, tuple):
         return None, "invalid evidence_refs"
     if not (1 <= len(evidence) <= MAX_EVIDENCE):

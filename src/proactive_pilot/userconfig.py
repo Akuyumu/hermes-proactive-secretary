@@ -333,14 +333,14 @@ def validate_config(raw: Any) -> dict[str, Any]:
         if not isinstance(timezone, str) or not _SAFE_TIMEZONE.fullmatch(timezone.strip()):
             raise ConfigError(
                 f"timezone {timezone!r} is not a valid IANA timezone name",
-                remedy="use e.g. \"UTC\" or \"Europe/London\", or omit it for the neutral default",
+                remedy="use e.g. \"UTC\" or another known IANA name, or omit it for the neutral default",
             )
         try:
             ZoneInfo(timezone.strip())
         except (ZoneInfoNotFoundError, ValueError) as exc:
             raise ConfigError(
                 f"timezone {timezone!r} is not a known IANA timezone",
-                remedy="use e.g. \"UTC\" or \"Europe/London\"",
+                remedy="use e.g. \"UTC\" or another known IANA name",
             ) from exc
         config["timezone"] = timezone.strip()
     config["context_refresh"] = _bounded_bool(

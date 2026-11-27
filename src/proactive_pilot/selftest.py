@@ -300,11 +300,11 @@ def run_self_test() -> int:
         outcomes.append(_Result(
             "adversarial_corpus_present", False,
             f"missing or invalid {_adversarial_corpus_path()}"))
-        bad_plans = [{"queries": ["a@b.com"]}, {"queries": ["x"] * 3}]
+        bad_plans = [{"queries": ["alex@example.com"]}, {"queries": ["x"] * 3}]
     else:
         outcomes.append(_Result("adversarial_corpus_present", True,
                                 f"{len(corpus)} queries"))
-        bad_plans = ([{"queries": ["a@b.com"]}, {"queries": ["x"] * 3}]
+        bad_plans = ([{"queries": ["alex@example.com"]}, {"queries": ["x"] * 3}]
                      + [{"queries": [query]} for query in corpus])
     for bad in bad_plans:
         try:
