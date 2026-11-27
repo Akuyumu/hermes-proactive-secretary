@@ -60,7 +60,7 @@ class _Harness(unittest.TestCase):
     def test_model_cannot_change_the_duration(self):
         result, applied = self.drive(turn_text="later 30", declared="later 2h")
         self.assertFalse(result["ok"])
-        self.assertIn("do not match", result["reason"])
+        self.assertEqual(result["reason"]["code"], "not_instruction")
         self.assertEqual(applied, {})
 
     def test_model_cannot_turn_a_refusal_into_an_acknowledgement(self):
@@ -77,13 +77,15 @@ class _Harness(unittest.TestCase):
         result, applied = self.drive(turn_text="done", declared="done",
                                      execution=object())
         self.assertFalse(result["ok"])
-        self.assertIn("scheduled or delegated", result["reason"])
+        self.assertEqual(result["reason"]["code"], "scheduled")
         self.assertEqual(applied, {})
 
-    def test_unscoped_later_is_refused(self):
-        result, applied = self.drive(turn_text="later 30", declared="later 30", scope="")
-        self.assertFalse(result["ok"])
-        self.assertEqual(applied, {})
+    def test_later_uses_the_pinned_target_even_without_model_scope(self):
+        result, applied = self.drive(turn_text="later 30", declared="later 30",
+                                     scope="")
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(applied["body"]["target_id"], "followup:fu_pinned")
+        self.assertEqual(applied["body"]["scope"], "harbour tide")
 
     def test_kind_is_forwarded_to_the_store(self):
         result, applied = self.drive(turn_text="later 30", declared="later 30", kind="mail")

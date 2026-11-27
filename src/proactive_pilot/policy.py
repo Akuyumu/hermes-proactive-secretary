@@ -410,11 +410,14 @@ def in_quiet_hours(policy: dict[str, Any], now: datetime) -> bool:
     return hour >= start or hour < end
 
 
-def active_snooze(prefs: dict[str, Any], now: datetime) -> bool:
+def active_snooze(prefs: dict[str, Any], now: datetime,
+                  target_id: Any = None) -> bool:
     """True for a global pause or an unscoped active snooze.
 
-    Scoped snoozes (kind/match) are enforced per-item in ``preference_blocks``;
-    a global pause is intentionally total and reversible via ``resume``.
+    Scoped snoozes (kind/match/target_id) are enforced per-item in
+    ``preference_blocks``; a global pause is intentionally total and reversible
+    via ``resume``. An id-only snooze is scoped even when its matcher is empty,
+    and only matches when the caller supplies the same target id.
     """
     paused = prefs.get("paused") or {}
     if isinstance(paused, dict) and paused.get("active"):
@@ -426,8 +429,13 @@ def active_snooze(prefs: dict[str, Any], now: datetime) -> bool:
                 return True
         except ValueError:
             return True  # malformed pause: stay paused (fail closed)
+    wanted = str(target_id or "").strip().lower()
     for row in prefs.get("snoozes", []):
-        if row.get("kind") or row.get("match"):
+        row_target = str(row.get("target_id") or "").strip().lower()
+        if row_target:
+            if not wanted or row_target != wanted:
+                continue
+        elif row.get("kind") or row.get("match"):
             continue  # scoped: handled per item
         try:
             until = parse_iso(row["until"], _TZ(now))
@@ -471,15 +479,24 @@ def preference_blocks(item: dict[str, Any], prefs: dict[str, Any], now: datetime
     """
     kind = item.get("kind")
     text = f"{item.get('subject','')} {item.get('message','')}".lower()
+    item_target = str(item.get("target_id") or "").strip().lower()
     for row in prefs.get("snoozes", []):
-        if not (row.get("kind") or row.get("match")):
+        if not (row.get("kind") or row.get("match") or row.get("target_id")):
             continue
-        row_kind = str(row.get("kind") or "")
-        if row_kind and row_kind not in {kind, "any"}:
-            continue
-        match = str(row.get("match") or "").lower().strip()
-        if match and match not in text:
-            continue
+        row_target = str(row.get("target_id") or "").strip().lower()
+        if row_target:
+            # A target-scoped snooze only matches the same target id. Without
+            # an id to compare it must fail open to delivery, never suppress a
+            # sibling by text. The id is the matcher; kind/label are not.
+            if not item_target or row_target != item_target:
+                continue
+        else:
+            row_kind = str(row.get("kind") or "")
+            if row_kind and row_kind not in {kind, "any"}:
+                continue
+            match = str(row.get("match") or "").lower().strip()
+            if match and match not in text:
+                continue
         try:
             if parse_iso(row["until"], now) > now:
                 return True

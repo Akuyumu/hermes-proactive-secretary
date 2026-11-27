@@ -297,7 +297,9 @@ def decide(
         # An explicit pause/snooze is respected even for ordinary items.
         return {"send": False, "message": "", "reason": "snoozed", "urgent": urgent}
 
-    item = {"kind": proposal.kind, "ref": proposal.key, "subject": proposal.message, "message": proposal.message}
+    item = {"kind": proposal.kind, "ref": proposal.key,
+            "target_id": proposal.key,
+            "subject": proposal.message, "message": proposal.message}
     if preference_blocks(item, prefs, now):
         return {"send": False, "message": "", "reason": "explicit preference", "urgent": urgent}
 

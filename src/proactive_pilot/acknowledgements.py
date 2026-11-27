@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -95,6 +95,8 @@ def apply(
     scope: str = "",
     provenance: str = "owner acknowledgement",
     item_kind: str = "",
+    target_id: str = "",
+    key: str = "",
 ) -> dict[str, Any]:
     """Apply one acknowledgement to the existing stores, or refuse cleanly."""
     action = parse(text, now=now)
@@ -106,7 +108,15 @@ def apply(
         if preferences_path is None:
             return {"ok": False, "status": "refused",
                     "reason": "no preferences artifact is available for the snooze"}
-        match = str(scope or topic or "").strip().lower()
+        clean_target = str(target_id or "").strip()
+        if clean_target:
+            # The matcher is the pinned target id, never the model's scope or
+            # the visible label. The label is only carried for display.
+            match = clean_target.lower()
+            display_scope = str(scope or target_id).strip()
+        else:
+            match = str(scope or topic or "").strip().lower()
+            display_scope = str(scope or topic)
         if not match:
             return {"ok": False, "status": "refused",
                     "reason": ("later needs the words it applies to; pass scope with the "
@@ -115,7 +125,9 @@ def apply(
             "action": "snooze",
             "kind": str(item_kind or "any"),
             "match": match[:200],
-            "scope": str(scope or topic)[:200],
+            "scope": display_scope[:200],
+            "target_id": clean_target[:240],
+            "key": str(key or "")[:128],
             "provenance": str(provenance)[:200],
         }
         if action.get("minutes") is not None:
@@ -128,7 +140,8 @@ def apply(
             after = feedback.save_preferences_file(
                 path, feedback.apply_action(before, request, now), now)
         except feedback.FeedbackError as exc:
-            return {"ok": False, "status": "refused", "reason": str(exc)}
+            return {"ok": False, "status": "refused", "reason": str(exc),
+                    "reason_code": "preferences_refused"}
         return {
             "ok": True,
             "status": "snoozed",
@@ -193,7 +206,8 @@ def apply(
 __all__ = [
     "parse", "apply", "turn_key", "proposal_problem", "is_bare_affirmative",
     "build_effect", "render_question", "target_candidates", "target_aliases",
-    "resolve_target", "apply_target", "apply_effect", "propose", "confirm",
+    "resolve_target", "apply_target", "apply_effect", "propose",
+    "propose_target", "confirm",
 ]
 
 
@@ -215,6 +229,11 @@ _EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 _PLUGIN_HANDLE = re.compile(
     r"\b(?:fu|resp|sec|cal|mail|task|thread|evt|msg|artifact|handle|"
     r"responsibility|reminder|followup|obs|cand)_[A-Za-z0-9][A-Za-z0-9_-]{3,}\b",
+    re.IGNORECASE,
+)
+_TARGET_HANDLE = re.compile(
+    r"\b(?:ack|notice|rem|reminder|followup|fu)[_-]"
+    r"[A-Za-z0-9][A-Za-z0-9_-]{1,}\b",
     re.IGNORECASE,
 )
 _REPLY_KEYS = (
@@ -246,6 +265,35 @@ def turn_key(conversation: Any, owner: Any, turn: Mapping[str, Any]) -> str:
         str(turn.get("text") or ""),
     ))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
+
+def turn_ref(turn: Mapping[str, Any]) -> str:
+    """The host's own turn reference, when it supplies one."""
+    return str(turn.get("ref") or "").strip()[:128]
+
+
+def _turn_datetime(value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(value), timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _turn_at_iso(turn: Mapping[str, Any], now: datetime) -> str:
+    moment = _turn_datetime(turn.get("at"))
+    return (moment or now).isoformat()
 
 
 def proposal_problem(text: Any) -> str:
@@ -318,6 +366,7 @@ def _safe_label(value: Any) -> str:
     text = notice_voice._notice_fragment(value, 180)
     text = _EMAIL.sub(" ", text)
     text = _PLUGIN_HANDLE.sub(" ", text)
+    text = _TARGET_HANDLE.sub(" ", text)
     text = notice_voice._ABSOLUTE_PATH_RE.sub(" ", text)
     text = text.replace("?", " ")
     text = " ".join(text.split()).strip(" \"'“”‘’.,;:-")
@@ -329,33 +378,39 @@ def _safe_label(value: Any) -> str:
 def _human_until(value: Any) -> str:
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return str(value or "")[:32]
-    return parsed.strftime("%d %b %Y %H:%M")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("the proposed deadline cannot be rendered exactly") from exc
+    if parsed.tzinfo is None:
+        raise ValueError("the proposed deadline has no timezone")
+    shape = "%d %b %Y %H:%M:%S" if parsed.second or parsed.microsecond else "%d %b %Y %H:%M"
+    zone = parsed.strftime("%Z") or parsed.strftime("%z")
+    return (parsed.strftime(shape) + (f" {zone}" if zone else "")).strip()
+
+
+def _question_for(effect: Mapping[str, Any], label: str) -> str:
+    action = str(effect.get("action") or "")
+    if action == "stop":
+        return f"Stop follow-ups for “{label}” only?"
+    if action == "done":
+        return f"Mark “{label}” as done?"
+    if effect.get("minutes") is not None:
+        count = int(effect["minutes"])
+        unit = "minute" if count == 1 else "minutes"
+        return f"Snooze “{label}” for {count} {unit}?"
+    if not effect.get("until"):
+        raise ValueError("the proposed snooze has no exact deadline")
+    return f"Snooze “{label}” until {_human_until(effect.get('until'))}?"
 
 
 def render_question(effect: Mapping[str, Any], target_label: Any) -> str:
     label = _safe_label(target_label)
-    action = str(effect.get("action") or "")
-    if action == "stop":
-        question = f"Stop follow-ups for “{label}” only?"
-    elif action == "done":
-        question = f"Mark “{label}” as done?"
-    elif effect.get("minutes") is not None:
-        count = int(effect["minutes"])
-        unit = "minute" if count == 1 else "minutes"
-        question = f"Snooze “{label}” for {count} {unit}?"
-    else:
-        question = f"Snooze “{label}” until {_human_until(effect.get('until'))}?"
+    question = _question_for(effect, label)
     ok, _rule = notice_voice.check_notice_text(question)
     if not ok:
-        label = "the item you replied to"
-        if action == "stop":
-            question = f"Stop follow-ups for “{label}” only?"
-        elif action == "done":
-            question = f"Mark “{label}” as done?"
-        else:
-            question = "Snooze that item until the proposed time?"
+        question = _question_for(effect, "the item you replied to")
+        ok, _rule = notice_voice.check_notice_text(question)
+    if not ok:
+        raise ValueError("the confirmation question cannot be rendered safely")
     return question
 
 
@@ -529,45 +584,37 @@ def _target_from_pending(row: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-_SELECTION_STOPWORDS = frozenset({
-    "the", "this", "that", "these", "those", "about", "with", "from", "your",
-    "you", "and", "for", "its", "it", "reminder", "reminders", "notice",
-    "notices", "item", "items", "yes", "okay", "ok", "please", "stop",
-    "done", "later", "snooze", "not", "dont", "don't",
-})
+def _normalise_label(value: Any) -> str:
+    text = re.sub(r"[^0-9a-z]+", " ", str(value or "").lower())
+    return " ".join(text.split())
 
 
-def _label_terms(label: Any) -> list[str]:
-    """Distinctive words from a visible label; used for owner selection only."""
-    words = [w for w in re.split(r"[^0-9a-z]+", str(label or "").lower()) if len(w) >= 4]
-    return [w for w in dict.fromkeys(words) if w not in _SELECTION_STOPWORDS]
+def _label_appears(label: Any, message: Any) -> bool:
+    wanted = _normalise_label(label)
+    if not wanted:
+        return False
+    haystack = f" {_normalise_label(message)} "
+    return f" {wanted} " in haystack
 
 
 def select_by_label(candidates: Iterable[Mapping[str, Any]], message: Any
                     ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
-    """The owner naming an item's own words selects it; ambiguity selects nothing.
+    """The owner naming one item's full visible label selects exactly it.
 
-    This is an owner-authored selection, not model authority: the words must be
-    present in the message the owner actually sent, and exactly one item may
-    own them. Two items sharing the words leave both in play.
+    This is an owner-authored selection, not model authority. There is no
+    scoring: a label either appears whole in the owner's message or it does
+    not. Zero matches select nothing; two or more matches are ambiguous.
     """
-    text = " " + " ".join(str(message or "").lower().split()) + " "
-    scored: list[tuple[int, dict[str, Any]]] = []
-    for candidate in candidates:
-        terms = _label_terms(candidate.get("target_label"))
-        hits = sum(1 for term in terms if f" {term} " in text or f" {term}," in text)
-        if hits:
-            scored.append((hits, dict(candidate)))
-    if not scored:
-        return None, []
-    best = max(hits for hits, _row in scored)
-    winners = [row for hits, row in scored if hits == best]
-    if len(winners) == 1:
-        return winners[0], []
-    return None, winners
+    matched = [dict(candidate) for candidate in candidates
+               if _label_appears(candidate.get("target_label"), message)]
+    if len(matched) == 1:
+        return matched[0], []
+    if len(matched) > 1:
+        return None, matched
+    return None, []
 
 
-def _no_pin_question(candidates: Iterable[Mapping[str, Any]]) -> str:
+def _question_labels(candidates: Iterable[Mapping[str, Any]]) -> list[str]:
     labels: list[str] = []
     for candidate in candidates:
         label = _safe_label(candidate.get("target_label"))
@@ -575,12 +622,65 @@ def _no_pin_question(candidates: Iterable[Mapping[str, Any]]) -> str:
             labels.append(label)
         if len(labels) >= 3:
             break
+    return labels
+
+
+def _question_from_labels(labels: list[str]) -> str:
     if not labels:
         return "Which item do you mean? Reply to the notice you mean."
     if len(labels) == 1:
         return f"Which item do you mean: “{labels[0]}”?"
     joined = ", ".join(f"“{label}”" for label in labels[:-1])
     return f"Which item do you mean: {joined} or “{labels[-1]}”?"
+
+
+def _no_pin_question(candidates: Iterable[Mapping[str, Any]]) -> str:
+    return _question_from_labels(_question_labels(candidates))
+
+
+def _clarify(candidates: Iterable[Mapping[str, Any]], code: str) -> dict[str, Any]:
+    rows = list(candidates)
+    labels = _question_labels(rows)
+    return {
+        "ok": False,
+        "status": "needs_clarification",
+        "reason": _question_from_labels(labels),
+        "reason_code": code,
+        "labels": labels,
+        "candidates": [dict(row) for row in rows],
+    }
+
+
+def _select_by_position(candidates: Iterable[Mapping[str, Any]],
+                        labels: list[str], message: Any
+                        ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    match = re.match(r"^\s*(\d{1,2})\s*[.)]?\s*$", str(message or ""))
+    if not match or not labels:
+        return None, []
+    index = int(match.group(1)) - 1
+    if index < 0 or index >= len(labels):
+        return None, []
+    wanted = _normalise_label(labels[index])
+    rows = [dict(candidate) for candidate in candidates
+            if _normalise_label(_safe_label(candidate.get("target_label")))
+            == wanted]
+    if len(rows) == 1:
+        return rows[0], []
+    return None, rows
+
+
+def _record_clarification(store: Any, *, conversation: Any, owner: Any,
+                          labels: list[str], question: str,
+                          now: datetime | None,
+                          effect: Any = None) -> None:
+    if not labels:
+        return
+    try:
+        pending_ack.record_question(
+            conversation=conversation, owner=owner, labels=labels,
+            question=question, effect=effect, now=now, store=store)
+    except pending_ack.PendingAckError:
+        pass
 
 
 def resolve_target(
@@ -593,62 +693,106 @@ def resolve_target(
     allow_pending: bool = True,
     message: Any = "",
     now: datetime | None = None,
+    question_effect: Any = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Pin one target from host facts; the model's id is never authority."""
     try:
         candidates = target_candidates(store, now=now)
     except ValueError as exc:
-        return None, {"ok": False, "status": "refused", "reason": str(exc)}
+        return None, {"ok": False, "status": "refused",
+                      "reason": str(exc), "reason_code": "store_unreadable"}
 
-    replies = _reply_ids(turn)
-    matches = _matches_reply(candidates, replies)
-    distinct = {str(row.get("target_id") or ""): row for row in matches}
-    if len(distinct) == 1:
-        target = dict(next(iter(distinct.values())))
-        target["aliases"] = target_aliases(target)
+    def selected_target(candidate: Mapping[str, Any]):
+        target = dict(candidate)
         problem = _model_target_problem(target, model_target)
         if problem:
-            return None, {"ok": False, "status": "refused", "reason": problem}
+            return None, {"ok": False, "status": "refused", "reason": problem,
+                          "reason_code": "target_mismatch"}
+        target["aliases"] = target_aliases(target)
         return target, None
-    if len(distinct) > 1:
-        return None, {
-            "ok": False, "status": "needs_clarification",
-            "reason": _no_pin_question(distinct.values()),
-        }
+
+    spoken = message or turn.get("text")
+    replies = _reply_ids(turn)
+    if replies:
+        # An explicit host reply is authoritative. If it names no current item,
+        # stop here: never fall through to a different target by label.
+        matches = _matches_reply(candidates, replies)
+        distinct = {str(row.get("target_id") or ""): row for row in matches}
+        if len(distinct) == 1:
+            return selected_target(next(iter(distinct.values())))
+        if len(distinct) > 1:
+            refusal = _clarify(distinct.values(), "ambiguous_reply")
+            _record_clarification(store, conversation=conversation, owner=owner,
+                                  labels=refusal["labels"],
+                                  question=refusal["reason"], now=now,
+                                  effect=question_effect)
+            return None, refusal
+        refusal = _clarify(candidates, "unmatched_reply")
+        _record_clarification(store, conversation=conversation, owner=owner,
+                              labels=refusal["labels"],
+                              question=refusal["reason"], now=now,
+                              effect=question_effect)
+        return None, refusal
 
     # No trusted reply: the owner may have named the item in their own words.
     # That selection is owner-authored and must name exactly one item.
-    selected, ambiguous = select_by_label(candidates, message or turn.get("text"))
+    selected, ambiguous = select_by_label(candidates, spoken)
     if selected is not None:
-        problem = _model_target_problem(selected, model_target)
-        if problem:
-            return None, {"ok": False, "status": "refused", "reason": problem}
-        selected["aliases"] = target_aliases(selected)
-        return selected, None
+        return selected_target(selected)
     if ambiguous:
-        return None, {
-            "ok": False, "status": "needs_clarification",
-            "reason": _no_pin_question(ambiguous),
-        }
+        refusal = _clarify(ambiguous, "ambiguous_label")
+        _record_clarification(store, conversation=conversation, owner=owner,
+                              labels=refusal["labels"],
+                              question=refusal["reason"], now=now,
+                              effect=question_effect)
+        return None, refusal
+
+    # A bare list position is only a selection when it answers the exact list
+    # this conversation was actually shown.
+    try:
+        question = pending_ack.find_question(
+            store, conversation=conversation, owner=owner, now=now)
+    except pending_ack.PendingAckError as exc:
+        return None, {"ok": False, "status": "refused",
+                      "reason": "the pending question could not be read",
+                      "reason_code": "pending_unreadable"}
+    if question:
+        chosen, shared = _select_by_position(
+            candidates, list(question.get("labels") or []), spoken)
+        if chosen is not None:
+            return selected_target(chosen)
+        if shared:
+            refusal = _clarify(shared, "ambiguous_position")
+            _record_clarification(store, conversation=conversation, owner=owner,
+                                  labels=refusal["labels"],
+                                  question=refusal["reason"], now=now,
+                                  effect=question_effect)
+            return None, refusal
 
     if allow_pending:
         try:
-            pending = pending_ack.find_pin(
+            live = pending_ack.live_for(
                 store, conversation=conversation, owner=owner, now=now)
         except pending_ack.PendingAckError as exc:
             return None, {"ok": False, "status": "refused",
-                          "reason": f"pending acknowledgement refused: {exc}"}
-        if pending is not None:
-            target = _target_from_pending(pending)
-            problem = _model_target_problem(target, model_target)
-            if problem:
-                return None, {"ok": False, "status": "refused", "reason": problem}
-            return target, None
+                          "reason": "the pending acknowledgement could not be read",
+                          "reason_code": "pending_unreadable"}
+        if len(live) > 1:
+            return None, {
+                "ok": False, "status": "refused",
+                "reason": ("more than one confirmation is waiting; say which item "
+                           "you mean"),
+                "reason_code": "ambiguous_pending",
+            }
+        if len(live) == 1:
+            return selected_target(_target_from_pending(live[0]))
 
-    return None, {
-        "ok": False, "status": "needs_clarification",
-        "reason": _no_pin_question(candidates),
-    }
+    refusal = _clarify(candidates, "clarify_target")
+    _record_clarification(store, conversation=conversation, owner=owner,
+                          labels=refusal["labels"],
+                          question=refusal["reason"], now=now,
+                          effect=question_effect)
+    return None, refusal
 
 
 def _model_target_problem(target: Mapping[str, Any], model_target: Any) -> str:
@@ -684,6 +828,8 @@ def apply_target(
     provenance: str = "owner acknowledgement",
     pending_store: Any = None,
     defer_disposition: bool = False,
+    idempotency_key: str = "",
+    consume_turn: bool = False,
 ) -> dict[str, Any]:
     """Apply one parsed acknowledgement to the already-pinned target."""
     action = parse(text, now=now)
@@ -697,6 +843,25 @@ def apply_target(
     reminder_id = str(target.get("reminder_id") or "")
     target_type = str(target.get("target_type") or "")
     clean_scope = str(scope or target.get("scope") or "").strip()
+    turn_store = pending_store if pending_store is not None else followup_store
+
+    if consume_turn and turn_id and turn_store is not None:
+        try:
+            if pending_ack.turn_used(turn_store, turn_id, now=now) is not None:
+                return {"ok": False, "status": "refused",
+                        "reason": "that owner turn was already used; nothing changed",
+                        "reason_code": "turn_consumed"}
+        except pending_ack.PendingAckError:
+            return {"ok": False, "status": "refused",
+                    "reason": "the acknowledgement state could not be read",
+                    "reason_code": "state_unreadable"}
+
+    def finish(result: dict[str, Any]) -> dict[str, Any]:
+        if result.get("ok") and consume_turn and turn_id and turn_store is not None:
+            pending_ack.mark_turn(
+                turn_store, turn_id=turn_id, mode="apply",
+                target_id=target_id, key=idempotency_key, now=now)
+        return result
 
     if kind == "snooze":
         result = apply(
@@ -709,10 +874,16 @@ def apply_target(
             scope=clean_scope or target_label,
             item_kind=str(item_kind or target.get("kind") or ""),
             provenance=provenance,
+            target_id=target_id,
+            key=idempotency_key,
         )
-        return result
+        return finish(result)
 
-    if followup_id and followup_store is not None:
+    if followup_id:
+        if followup_store is None:
+            return {"ok": False, "status": "refused",
+                    "reason": "no follow-up store is available",
+                    "reason_code": "followup_unavailable"}
         result = apply(
             text,
             now=now,
@@ -743,12 +914,20 @@ def apply_target(
             )
             if not result.get("ok"):
                 return result
-        else:
+        elif reminder_id:
+            # The disposition is recorded, but this stage does not yet wire the
+            # follow-through seeder to honour it. Never claim an enforcement
+            # that has not happened.
             result = {
                 "ok": True,
-                "status": "stopped" if kind == "stop" else "owner_confirmed",
-                "action": "stop" if kind == "stop" else "topic_closed",
+                "status": "recorded",
+                "action": "stop" if kind == "stop" else "done",
+                "recorded": True,
             }
+        else:
+            return {"ok": False, "status": "refused",
+                    "reason": ("this stage cannot close that notice; nothing changed"),
+                    "reason_code": "notice_not_supported"}
 
     disposition_key = (reminder_id
                        or (target_id if target_type == "reminder" else ""))
@@ -760,8 +939,10 @@ def apply_target(
             "turn_id": str(turn_id or ""),
             "pending_id": str(pending_id or ""),
             "source": provenance[:80],
-            "note": ("no further follow-up for this item"
-                     if kind == "stop" else "owner marked the item done"),
+            "note": ("owner recorded a stop for this item; follow-through "
+                     "wiring is pending"
+                     if kind == "stop" else
+                     "owner marked this item done; follow-through wiring is pending"),
         }
         if defer_disposition:
             result["deferred_disposition"] = {"key": disposition_key,
@@ -772,15 +953,14 @@ def apply_target(
                     disposition_key, record, now=now,
                     store=(pending_store if pending_store is not None
                            else followup_store))
-            except pending_ack.PendingAckError as exc:
-                return {"ok": False, "status": "refused", "reason": str(exc)}
+            except pending_ack.PendingAckError:
+                return {"ok": False, "status": "refused",
+                        "reason": "the acknowledgement record could not be kept",
+                        "reason_code": "state_unreadable"}
         result["disposition"] = disposition_key
-        result["no_further_followup"] = True
-        result["note"] = (
-            f'No further follow-up will be raised for “{target_label}”.'
-            if kind == "stop" else
-            f'“{target_label}” is recorded as done; no further follow-up is needed.')
-    return result
+        if result.get("recorded"):
+            result["note"] = f'Recorded your reply for “{target_label}”.'
+    return finish(result)
 
 
 def _receipt_for(
@@ -792,9 +972,11 @@ def _receipt_for(
 ) -> dict[str, Any]:
     label = _safe_label(target.get("target_label"))
     action = str(effect.get("action") or result.get("action") or "")
+    recorded = bool(result.get("recorded")) or str(
+        result.get("status") or "") == "recorded"
     receipt: dict[str, Any] = {
         "ok": bool(result.get("ok")),
-        "status": str(result.get("status") or ""),
+        "status": "recorded" if recorded else str(result.get("status") or ""),
         "action": action,
         "target_label": label,
         "turn_id": turn_id,
@@ -807,9 +989,10 @@ def _receipt_for(
         receipt["no_further_followup"] = True
     if not result.get("ok"):
         receipt["note"] = f'Nothing changed for “{label}”.'
+    elif recorded:
+        receipt["note"] = f'Recorded your reply for “{label}”.'
     elif action == "stop":
-        receipt["note"] = (f'Stopped follow-ups for “{label}”. '
-                           "No further follow-up will be raised for that item.")
+        receipt["note"] = f'Stopped follow-ups for “{label}”.'
     elif action == "done":
         receipt["note"] = f'Marked “{label}” as done.'
     elif effect.get("minutes") is not None:
@@ -833,6 +1016,7 @@ def apply_effect(
     pending_id: str = "",
     pending_store: Any = None,
     defer_disposition: bool = False,
+    idempotency_key: str = "",
 ) -> dict[str, Any]:
     """Apply the frozen effect exactly as the owner was asked to confirm it."""
     action = str(effect.get("action") or "")
@@ -851,9 +1035,57 @@ def apply_effect(
         turn_id=turn_id, pending_id=pending_id,
         provenance="owner confirmation", pending_store=pending_store,
         defer_disposition=defer_disposition,
+        idempotency_key=idempotency_key,
     )
     result["receipt"] = _receipt_for(effect, target, result, turn_id=turn_id)
     return result
+
+
+def propose_target(
+    target: Mapping[str, Any],
+    effect: Mapping[str, Any],
+    *,
+    store: Any,
+    conversation: Any,
+    owner: Any,
+    turn: Mapping[str, Any],
+    now: datetime,
+) -> dict[str, Any]:
+    """Store one proposal for an already-pinned target and parsed intent."""
+    target_label = _safe_label(target.get("target_label"))
+    # Freeze the effect from server-side target facts. The model's scope may
+    # narrow which item was chosen; it can never become the stored matcher.
+    frozen = dict(effect)
+    frozen["scope"] = target_label
+    frozen["kind"] = str(target.get("kind") or "")[:64]
+    try:
+        question = render_question(frozen, target_label)
+    except ValueError as exc:
+        return {"ok": False, "status": "refused", "reason": str(exc),
+                "reason_code": "deadline_unrenderable"}
+    created = pending_ack.create(
+        conversation=conversation, owner=owner,
+        target_id=target.get("target_id"),
+        target_label=target_label,
+        effect=frozen, question=question,
+        turn_id=turn_key(conversation, owner, turn),
+        turn_ref=turn_ref(turn),
+        turn_at=_turn_at_iso(turn, now),
+        now=now, store=store)
+    if not created.get("ok"):
+        return created
+    pending_row = created.get("pending") or {}
+    return {
+        "ok": True,
+        "status": "confirmation_required",
+        "id": pending_row.get("id", ""),
+        "ref": pending_row.get("id", ""),
+        "pending": pending_row,
+        "question": question,
+        "effect": frozen,
+        "target_label": target_label,
+        "note": "Nothing has been changed. Confirm with one bare yes before any effect.",
+    }
 
 
 def propose(
@@ -892,33 +1124,95 @@ def propose(
         effect = build_effect(action, minutes=minutes, until=until,
                               kind=kind, scope=scope, now=now)
     except ValueError as exc:
-        return {"ok": False, "status": "refused", "reason": str(exc)}
+        return {"ok": False, "status": "refused", "reason": str(exc),
+                "reason_code": "effect_invalid"}
 
     target, refusal = resolve_target(
         turn, store=store, conversation=conversation, owner=owner,
-        model_target=target_id, message=message, now=now)
+        model_target=target_id, message=message, now=now,
+        question_effect=effect)
     if refusal is not None:
         return refusal
-    question = render_question(effect, target.get("target_label"))
-    created = pending_ack.create(
-        conversation=conversation, owner=owner,
-        target_id=target.get("target_id"),
-        target_label=_safe_label(target.get("target_label")),
-        effect=effect, question=question,
-        turn_id=turn_key(conversation, owner, turn), now=now, store=store)
-    if not created.get("ok"):
-        return created
-    pending_row = created.get("pending") or {}
+    return propose_target(
+        target, effect, store=store, conversation=conversation, owner=owner,
+        turn=turn, now=now)
+
+
+def _reconcile_applied(
+    stored: Mapping[str, Any],
+    target: Mapping[str, Any],
+    *,
+    preferences_path: Path | str | None,
+    followup_store: Any,
+    turn_id: str,
+) -> dict[str, Any] | None:
+    """Rebuild the receipt for an effect whose marker save was interrupted."""
+    effect = dict(stored.get("effect") or {})
+    action = str(effect.get("action") or "")
+    key = str(stored.get("key") or stored.get("id") or "")
+    if action == "snooze" and key and preferences_path is not None:
+        try:
+            prefs = feedback.load_preferences_file(Path(preferences_path), strict=True)
+        except feedback.FeedbackError:
+            return None
+        for row in prefs.get("snoozes", []) or []:
+            if str(row.get("key") or "") != key:
+                continue
+            result = {"ok": True, "status": "snoozed", "action": "snooze",
+                      "minutes": effect.get("minutes"),
+                      "until": effect.get("until", "")}
+            result["receipt"] = _receipt_for(effect, target, result,
+                                             turn_id=turn_id)
+            return result
+        return None
+    if action in {"done", "stop"} and followup_store is not None:
+        followup_id = str(target.get("followup_id") or "")
+        if not followup_id:
+            return None
+        try:
+            entry = followups.get(followup_store, followup_id)
+        except Exception:  # noqa: BLE001 - unreadable state cannot reconcile
+            return None
+        expected = "owner_stopped" if action == "stop" else "owner_confirmed"
+        if (str(entry.get("status") or "") != "done"
+                or str(entry.get("close_reason") or "") != expected):
+            return None
+        result = {
+            "ok": True,
+            "status": "stopped" if action == "stop" else "owner_confirmed",
+            "action": "stop" if action == "stop" else "followup_closed",
+        }
+        reminder_id = str(target.get("reminder_id") or "")
+        if reminder_id:
+            label = _safe_label(target.get("target_label"))
+            record = {
+                "action": "stop" if action == "stop" else "done",
+                "target_id": str(target.get("target_id") or ""),
+                "target_label": label,
+                "turn_id": str(stored.get("intent_turn_id") or turn_id),
+                "pending_id": str(stored.get("id") or ""),
+                "source": "owner confirmation",
+                "note": ("owner recorded a stop for this item; follow-through "
+                         "wiring is pending" if action == "stop" else
+                         "owner marked this item done; follow-through wiring is pending"),
+            }
+            result["deferred_disposition"] = {"key": reminder_id,
+                                              "record": record}
+            result["disposition"] = reminder_id
+        result["receipt"] = _receipt_for(effect, target, result,
+                                         turn_id=turn_id)
+        return result
+    return None
+
+
+def _confirmed_response(receipt: Mapping[str, Any],
+                        row: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "ok": True,
-        "status": "confirmation_required",
-        "id": pending_row.get("id", ""),
-        "ref": pending_row.get("id", ""),
-        "pending": pending_row,
-        "question": question,
-        "effect": effect,
-        "target_label": _safe_label(target.get("target_label")),
-        "note": "Nothing has been changed. Confirm with one bare yes before any effect.",
+        "status": "confirmed",
+        "receipt": dict(receipt),
+        "pending": dict(row),
+        "effect": dict(row.get("effect") or {}),
     }
 
 
@@ -934,33 +1228,55 @@ def confirm(
     followup_store: Any = None,
     guidance_root: Path | str | None = None,
 ) -> dict[str, Any]:
-    """Commit the stored effect once for one bare affirmative owner turn."""
+    """Commit the stored effect once for one later bare affirmative owner turn."""
     text = str(turn.get("text") or "")
     if not is_bare_affirmative(text):
         return {"ok": False, "status": "refused",
-                "reason": "confirmation needs one bare yes with no extra clause"}
+                "reason": "confirmation needs one bare yes with no extra clause",
+                "reason_code": "not_affirmative"}
     key = turn_key(conversation, owner, turn)
     try:
         state, row = pending_ack.lookup(
             store, conversation=conversation, owner=owner, turn_id=key, now=now)
-    except pending_ack.PendingAckError as exc:
+    except pending_ack.PendingAckError:
         return {"ok": False, "status": "refused",
-                "reason": f"pending acknowledgement refused: {exc}"}
+                "reason": "the pending acknowledgement could not be read",
+                "reason_code": "pending_unreadable"}
     if state == "retry" and row is not None:
-        return {"ok": True, "status": "confirmed",
-                "receipt": dict(row.get("receipt") or {}), "pending": row}
+        return _confirmed_response(row.get("receipt") or {}, row)
     if state == "consumed" and row is not None:
         return {"ok": False, "status": "already_done", "reason": "already done",
-                "receipt": dict(row.get("receipt") or {})}
+                "reason_code": "already_done",
+                "receipt": dict(row.get("receipt") or {}),
+                "effect": dict(row.get("effect") or {})}
     if state == "expired":
         return {"ok": False, "status": "refused",
-                "reason": "that confirmation expired; ask again"}
+                "reason": "that confirmation expired; ask again",
+                "reason_code": "expired"}
     if state == "ambiguous":
         return {"ok": False, "status": "refused",
-                "reason": "more than one confirmation is waiting; which one do you mean?"}
+                "reason": "more than one confirmation is waiting; which one do you mean?",
+                "reason_code": "ambiguous_pending"}
     if state != "pending" or row is None:
         return {"ok": False, "status": "refused",
-                "reason": "there is no confirmation waiting for this conversation"}
+                "reason": "there is no confirmation waiting for this conversation",
+                "reason_code": "no_pending"}
+
+    stored_turn = str(row.get("turn_id") or "")
+    stored_ref = str(row.get("turn_ref") or "")
+    current_ref = turn_ref(turn)
+    if key == stored_turn or (stored_ref and current_ref
+                              and stored_ref == current_ref):
+        return {"ok": False, "status": "refused",
+                "reason": "the message that proposed this cannot confirm it",
+                "reason_code": "same_turn"}
+    current_at = _turn_datetime(turn.get("at")) or now
+    stored_at = (_turn_datetime(row.get("turn_at"))
+                 or _turn_datetime(row.get("created_at")))
+    if stored_at is not None and current_at <= stored_at:
+        return {"ok": False, "status": "refused",
+                "reason": "the confirmation must be a strictly later message",
+                "reason_code": "not_later"}
 
     target = _target_from_pending(row)
     supplied_targets = (target_id if isinstance(target_id, (list, tuple, set))
@@ -968,18 +1284,27 @@ def confirm(
     for supplied in supplied_targets:
         problem = _model_target_problem(target, supplied)
         if problem:
-            return {"ok": False, "status": "refused", "reason": problem}
+            return {"ok": False, "status": "refused", "reason": problem,
+                    "reason_code": "target_mismatch"}
     effect = dict(row.get("effect") or {})
     pending_id = str(row.get("id") or "")
+    idempotency_key = str(row.get("key") or row.get("id") or "")
 
     def apply_stored(stored: Mapping[str, Any]) -> dict[str, Any]:
+        target_row = _target_from_pending(stored)
+        reconciled = _reconcile_applied(
+            stored, target_row, preferences_path=preferences_path,
+            followup_store=followup_store,
+            turn_id=str(stored.get("intent_turn_id") or key))
+        if reconciled is not None:
+            return reconciled
         return apply_effect(
             dict(stored.get("effect") or {}),
-            _target_from_pending(stored),
+            target_row,
             now=now, preferences_path=preferences_path,
             followup_store=followup_store, guidance_root=guidance_root,
             turn_id=key, pending_id=pending_id, pending_store=store,
-            defer_disposition=True,
+            defer_disposition=True, idempotency_key=idempotency_key,
         )
 
     result = pending_ack.commit(
@@ -988,10 +1313,10 @@ def confirm(
     if result.get("status") == "already_confirmed":
         receipt = dict(result.get("receipt") or {})
         if str(receipt.get("turn_id") or "") == key:
-            return {"ok": True, "status": "confirmed", "receipt": receipt,
-                    "pending": result.get("pending")}
+            return _confirmed_response(receipt, result.get("pending") or {})
         return {"ok": False, "status": "already_done", "reason": "already done",
-                "receipt": receipt}
+                "reason_code": "already_done", "receipt": receipt,
+                "effect": dict((result.get("pending") or {}).get("effect") or {})}
     if result.get("ok"):
         result.setdefault("effect", effect)
     return result

@@ -194,6 +194,8 @@ def apply_action(prefs: dict[str, Any], action: dict[str, Any], now: datetime) -
             "kind": str(action.get("kind") or ""),
             "match": str(action.get("match") or "").lower().strip(),
             "scope": str(action["scope"])[:200],
+            "target_id": str(action.get("target_id") or "")[:240],
+            "key": str(action.get("key") or "")[:128],
             "provenance": str(action["provenance"])[:200],
             "created_at": stamp,
         })

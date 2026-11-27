@@ -41,13 +41,13 @@ class PendingAckStoreTests(unittest.TestCase):
         self.assertEqual(rows[0]["conversation"], "conv-5")
         self.assertEqual(rows[-1]["conversation"], "conv-24")
 
-    def test_fifo_is_bounded_even_for_one_conversation(self):
-        for index in range(25):
-            self.assertTrue(self._create(index, conversation="same")["ok"])
+    def test_a_live_proposal_refuses_a_second_one_in_the_same_conversation(self):
+        self.assertTrue(self._create(1, conversation="same")["ok"])
+        second = self._create(2, conversation="same")
+        self.assertFalse(second["ok"], second)
         rows = P.rows(self.store)
-        self.assertEqual(len(rows), P.MAX_ROWS)
-        self.assertEqual(rows[0]["turn_id"], "turn-5")
-        self.assertEqual(rows[-1]["turn_id"], "turn-24")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["turn_id"], "turn-1")
 
     def test_a_corrupt_store_refuses_and_is_never_overwritten(self):
         self.assertTrue(self._create(1)["ok"])

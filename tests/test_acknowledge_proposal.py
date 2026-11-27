@@ -123,7 +123,7 @@ class _Harness(unittest.TestCase):
 
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["status"], "confirmation_required")
-        question = result["question"]
+        question = result["message"]
         self.assertTrue(question.endswith("?"))
         self.assertEqual(question.count("?"), 1)
         self.assertIn("Test reminder", question)
@@ -142,17 +142,17 @@ class _Harness(unittest.TestCase):
     def test_propose_rejects_negation_question_conditional_and_bad_quote(self):
         entry = self._followup()
         cases = [
-            ("don't stop the reminder", "don't stop", "negated"),
-            ("stop the reminder?", "stop the reminder", "question"),
-            ("if I say stop the reminder", "stop", "conditional"),
-            ("stop the reminder", " stop the reminder ", "literal part"),
+            ("don't stop the reminder", "don't stop", "not_instruction"),
+            ("stop the reminder?", "stop the reminder", "not_instruction"),
+            ("if I say stop the reminder", "stop", "not_instruction"),
+            ("stop the reminder", " stop the reminder ", "quote_invalid"),
         ]
-        for message, quote, reason in cases:
+        for message, quote, code in cases:
             with self.subTest(message=message):
                 self._turn(message, reply_to=entry["id"])
                 result = self._propose(text=message, quote=quote)
                 self.assertFalse(result["ok"], result)
-                self.assertIn(reason, result["reason"])
+                self.assertEqual(result["reason"]["code"], code)
                 self.assertEqual(pending_ack.rows(self.store), [])
                 self.assertEqual(F.get(self.store, entry["id"])["status"], "active")
 
@@ -166,10 +166,11 @@ class _Harness(unittest.TestCase):
 
         self.assertFalse(result["ok"], result)
         self.assertEqual(result["status"], "needs_clarification")
-        self.assertTrue(result["reason"].endswith("?"))
-        self.assertEqual(result["reason"].count("?"), 1)
-        self.assertIn("first identical reminder", result["reason"])
-        self.assertIn("second identical reminder", result["reason"])
+        question = result["reason"]["message"]
+        self.assertTrue(question.endswith("?"))
+        self.assertEqual(question.count("?"), 1)
+        self.assertIn("first identical reminder", question)
+        self.assertIn("second identical reminder", question)
         self.assertEqual(pending_ack.rows(self.store), [])
         self.assertEqual(F.get(self.store, first["id"])["status"], "active")
         self.assertEqual(F.get(self.store, second["id"])["status"], "active")
@@ -186,7 +187,7 @@ class _Harness(unittest.TestCase):
         turn = self._turn("stop the reminder", reply_to=second["id"])
         proposal = self._propose(text=turn["text"], quote="stop the reminder")
         self.assertTrue(proposal["ok"], proposal)
-        self.assertEqual(proposal["pending"]["target_id"],
+        self.assertEqual(pending_ack.rows(self.store)[0]["target_id"],
                          f"followup:{second['id']}")
 
         self._turn("yes", at=time.time() + 1)
@@ -203,7 +204,7 @@ class _Harness(unittest.TestCase):
             text=turn["text"], quote="stop the reminder",
             target_id=f"followup:{other['id']}")
         self.assertFalse(result["ok"], result)
-        self.assertIn("does not match", result["reason"])
+        self.assertIn("does not match", result["reason"]["message"])
         self.assertEqual(pending_ack.rows(self.store), [])
         self.assertEqual(F.get(self.store, entry["id"])["status"], "active")
         self.assertEqual(F.get(self.store, other["id"])["status"], "active")
@@ -222,7 +223,7 @@ class _Harness(unittest.TestCase):
 
         applied = self._call({"text": "stop", "evidence_quote": "stop"})
         self.assertTrue(applied["ok"], applied)
-        self.assertTrue(applied.get("from_owner_turn"))
+        self.assertEqual(applied["status"], "stopped")
         self.assertEqual(F.get(self.store, pinned["id"])["status"], "done")
         self.assertEqual(F.get(self.store, pinned["id"])["close_reason"],
                          "owner_stopped")
@@ -253,7 +254,7 @@ class _Harness(unittest.TestCase):
         self._turn("yes, but keep the other one", at=time.time() + 1)
         refused = self._confirm(text="yes, but keep the other one")
         self.assertFalse(refused["ok"], refused)
-        self.assertIn("bare yes", refused["reason"])
+        self.assertIn("bare yes", refused["reason"]["message"])
         self.assertEqual(F.get(self.store, entry["id"])["status"], "active")
         self.assertEqual(pending_ack.rows(self.store)[0]["consumed_at"], "")
 
@@ -273,14 +274,15 @@ class _Harness(unittest.TestCase):
         self.assertTrue(first["ok"], first)
         again = self._confirm()
         self.assertTrue(again["ok"], again)
-        self.assertEqual(again["receipt"], first["receipt"])
+        self.assertEqual(again, first)
+        stored_receipt = dict(pending_ack.rows(self.store)[0]["receipt"])
+        self.assertEqual(stored_receipt, first.get("receipt", stored_receipt))
 
         self._turn("yes", at=time.time() + 3)
         conflict = self._confirm()
         self.assertFalse(conflict["ok"], conflict)
         self.assertEqual(conflict["status"], "already_done")
-        self.assertIn("already done", conflict["reason"])
-        self.assertEqual(conflict["receipt"], first["receipt"])
+        self.assertIn("already", conflict["reason"]["message"])
         self.assertEqual(F.get(self.store, entry["id"])["status"], "done")
 
     def test_expiry_is_checked_when_the_pending_row_is_read(self):
@@ -327,7 +329,7 @@ class _Harness(unittest.TestCase):
              "action": "stop", "quote": "stop the reminder",
              "evidence_quote": "stop the reminder"}, task_id="child-task")
         self.assertFalse(delegated["ok"], delegated)
-        self.assertIn("delegated", delegated["reason"])
+        self.assertEqual(delegated["reason"]["code"], "delegated")
         group_turn = self._turn("stop the reminder", chat_type="group",
                                 reply_to=entry["id"], at=time.time() + 2)
         self.assertEqual(group_turn["chat_type"], "group")
@@ -340,7 +342,7 @@ class _Harness(unittest.TestCase):
                    profile="B", at=time.time() + 3)
         foreign = self._propose(text="stop the reminder", quote="stop the reminder")
         self.assertFalse(foreign["ok"], foreign)
-        self.assertIn("another profile", foreign["reason"])
+        self.assertEqual(foreign["reason"]["code"], "foreign_profile")
         self.assertEqual(pending_ack.rows(self.store), [])
         self.assertEqual(F.get(self.store, entry["id"])["status"], "active")
 
@@ -363,10 +365,12 @@ class _Harness(unittest.TestCase):
         self._turn("yes", at=time.time() + 1)
         result = self._confirm()
         self.assertTrue(result["ok"], result)
-        receipt = result["receipt"]
-        self.assertTrue(receipt["no_further_followup"])
-        self.assertEqual(receipt["status"], "stopped")
-        self.assertIn("No further follow-up", receipt["note"])
+        self.assertEqual(result["status"], "recorded")
+        self.assertNotIn("no further follow-up", result["message"].lower())
+        receipt = dict(pending_ack.rows(self.store)[0]["receipt"])
+        self.assertFalse(receipt.get("no_further_followup"))
+        self.assertEqual(receipt["status"], "recorded")
+        self.assertIn("Recorded", receipt["note"])
         self.assertEqual((self.state_dir / "reminders.json").read_bytes(), before)
         self.assertFalse((self.state_dir / F.STORE).exists())
         dispositions = pending_ack.dispositions(self.store)
@@ -379,7 +383,7 @@ class _Harness(unittest.TestCase):
         turn = self._turn("stop the reminder", reply_to=entry["id"])
         result = self._propose(text=turn["text"], quote="stop the reminder")
         self.assertTrue(result["ok"], result)
-        question = result["question"]
+        question = result["message"]
         for forbidden in ("fu_deadbeef", "/home/owner", "a@b.com"):
             self.assertNotIn(forbidden, question)
         self.assertEqual(notice_voice.check_notice_text(question), (True, None))
@@ -400,8 +404,10 @@ class OwnerSelectionTests(unittest.TestCase):
              "target_type": "event"},
         ]
 
-    def test_a_distinctive_word_selects_exactly_one_item(self):
-        picked, ambiguous = A.select_by_label(self._candidates(), "stop the dentist one")
+    def test_a_full_label_selects_exactly_one_item(self):
+        picked, ambiguous = A.select_by_label(
+            self._candidates(),
+            "stop the dentist appointment tomorrow")
         self.assertEqual(ambiguous, [])
         self.assertIsNotNone(picked)
         self.assertEqual(picked["target_id"], "t2")
@@ -413,7 +419,8 @@ class OwnerSelectionTests(unittest.TestCase):
             {"target_id": "b", "target_label": "Invoice from vendor alpha",
              "target_type": "mail"},
         ]
-        picked, ambiguous = A.select_by_label(rows, "snooze the invoice")
+        picked, ambiguous = A.select_by_label(
+            rows, "snooze the invoice from vendor alpha")
         self.assertIsNone(picked)
         self.assertEqual(len(ambiguous), 2)
 

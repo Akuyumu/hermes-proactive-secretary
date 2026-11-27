@@ -14,7 +14,9 @@ network.
 from __future__ import annotations
 
 import secrets
+import time
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -26,6 +28,8 @@ STORE = "pending_ack.json"
 LOCK = "pending_ack.lock"
 SCHEMA = 1
 MAX_ROWS = 20
+MAX_TURN_MARKS = 500
+MAX_QUESTIONS = 20
 DEFAULT_TTL_SECONDS = 10 * 60
 MAX_ID_CHARS = 80
 MAX_CONVERSATION_CHARS = 200
@@ -37,6 +41,7 @@ MAX_KIND_CHARS = 64
 MAX_SCOPE_CHARS = 240
 MAX_TURN_CHARS = 128
 MAX_DISPOSITIONS = 200
+MAX_QUESTION_LABELS = 3
 
 RECEIPT_FIELDS = frozenset({
     "ok", "status", "action", "minutes", "until", "target_label", "effect",
@@ -50,8 +55,15 @@ _EFFECT_FIELDS = frozenset({"action", "minutes", "until", "kind", "scope"})
 _ROW_FIELDS = frozenset({
     "id", "conversation", "owner", "target_id", "target_label", "effect",
     "question", "created_at", "expires_at", "consumed_at", "receipt", "turn_id",
+    "key", "turn_ref", "turn_at", "intent_at", "intent_turn_id",
 })
+_TURN_FIELDS = frozenset({"mode", "at", "target_id", "key"})
+_QUESTION_FIELDS = frozenset({"labels", "question", "at", "expires_at", "effect"})
 _ACTIONS = frozenset({"done", "snooze", "stop"})
+_STORE_FIELDS = frozenset({
+    "schema", "version", "updated_at", "rows", "dispositions", "turns",
+    "questions",
+})
 
 
 class PendingAckError(ValueError):
@@ -60,7 +72,7 @@ class PendingAckError(ValueError):
 
 def empty_store() -> dict[str, Any]:
     return {"schema": SCHEMA, "version": 0, "updated_at": "", "rows": [],
-            "dispositions": {}}
+            "dispositions": {}, "turns": {}, "questions": {}}
 
 
 def _coerce_store(value: Any = None) -> StateStore:
@@ -160,6 +172,14 @@ def _validate_receipt(receipt: Any) -> None:
             _text(value, f"receipt.{key}", 480)
 
 
+def _upgrade_row(row: Any) -> Any:
+    """Accept rows written before the turn/intent fields existed."""
+    if isinstance(row, dict):
+        for key in ("key", "turn_ref", "turn_at", "intent_at", "intent_turn_id"):
+            row.setdefault(key, "")
+    return row
+
+
 def _validate_row(row: Any) -> None:
     if not isinstance(row, dict) or set(row) != _ROW_FIELDS:
         raise PendingAckError("pending row shape is invalid")
@@ -176,6 +196,36 @@ def _validate_row(row: Any) -> None:
     _optional_iso(row.get("consumed_at"), "consumed_at")
     _validate_receipt(row.get("receipt", {}))
     _text(row.get("turn_id"), "turn_id", MAX_TURN_CHARS, required=True)
+    _text(row.get("key"), "key", MAX_TURN_CHARS)
+    _text(row.get("turn_ref"), "turn_ref", MAX_TURN_CHARS)
+    _optional_iso(row.get("turn_at"), "turn_at")
+    _optional_iso(row.get("intent_at"), "intent_at")
+    _text(row.get("intent_turn_id"), "intent_turn_id", MAX_TURN_CHARS)
+
+
+def _validate_turn_mark(value: Any) -> None:
+    if not isinstance(value, dict) or set(value) - _TURN_FIELDS:
+        raise PendingAckError("pending turn mark is malformed")
+    _text(value.get("mode"), "turn.mode", 32, required=True)
+    _parse_iso(value.get("at"), "turn.at")
+    _text(value.get("target_id", ""), "turn.target_id", MAX_TARGET_ID_CHARS)
+    _text(value.get("key", ""), "turn.key", MAX_TURN_CHARS)
+
+
+def _validate_question(value: Any) -> None:
+    if not isinstance(value, dict) or set(value) - _QUESTION_FIELDS:
+        raise PendingAckError("pending question is malformed")
+    labels = value.get("labels")
+    if not isinstance(labels, list) or len(labels) > MAX_QUESTION_LABELS:
+        raise PendingAckError("pending question labels are malformed")
+    for label in labels:
+        _text(label, "question.label", MAX_LABEL_CHARS, required=True)
+    _text(value.get("question"), "question", MAX_QUESTION_CHARS, required=True)
+    _parse_iso(value.get("at"), "question.at")
+    _parse_iso(value.get("expires_at"), "question.expires_at")
+    effect = value.get("effect")
+    if effect not in (None, {}):
+        _validate_effect(effect)
 
 
 def _validate_disposition(value: Any) -> None:
@@ -193,7 +243,7 @@ def _validate_disposition(value: Any) -> None:
 def _validate_store(data: Any) -> dict[str, Any]:
     if not isinstance(data, dict) or data.get("schema") != SCHEMA:
         raise PendingAckError("pending_ack.json has an unsupported schema")
-    if set(data) - {"schema", "version", "updated_at", "rows", "dispositions"}:
+    if set(data) - _STORE_FIELDS:
         raise PendingAckError("pending_ack.json has an unknown field")
     version = data.get("version", 0)
     if not isinstance(version, int) or isinstance(version, bool) or version < 0:
@@ -202,16 +252,30 @@ def _validate_store(data: Any) -> dict[str, Any]:
     if not isinstance(rows, list) or len(rows) > MAX_ROWS:
         raise PendingAckError("pending_ack.json rows are malformed or oversized")
     for row in rows:
-        _validate_row(row)
+        _validate_row(_upgrade_row(row))
     dispositions = data.get("dispositions", {})
     if not isinstance(dispositions, dict) or len(dispositions) > MAX_DISPOSITIONS:
         raise PendingAckError("pending_ack.json dispositions are malformed or oversized")
     for key, value in dispositions.items():
         _text(key, "disposition key", MAX_TARGET_ID_CHARS, required=True)
         _validate_disposition(value)
+    turns = data.get("turns", {})
+    if not isinstance(turns, dict) or len(turns) > MAX_TURN_MARKS:
+        raise PendingAckError("pending_ack.json turns are malformed or oversized")
+    for key, value in turns.items():
+        _text(key, "turn key", MAX_TURN_CHARS, required=True)
+        _validate_turn_mark(value)
+    questions = data.get("questions", {})
+    if not isinstance(questions, dict) or len(questions) > MAX_QUESTIONS:
+        raise PendingAckError("pending_ack.json questions are malformed or oversized")
+    for key, value in questions.items():
+        _text(key, "question key", MAX_CONVERSATION_CHARS * 2, required=True)
+        _validate_question(value)
     if not isinstance(data.get("updated_at", ""), str):
         raise PendingAckError("pending_ack.json has an invalid timestamp")
     data.setdefault("dispositions", {})
+    data.setdefault("turns", {})
+    data.setdefault("questions", {})
     data.setdefault("updated_at", "")
     return data
 
@@ -225,11 +289,22 @@ def _load(store: Any) -> dict[str, Any]:
 
 
 @contextmanager
-def _locked(store: Any):
-    with store.lock(LOCK) as acquired:
-        if not acquired:
+def _locked(store: Any, *, wait_seconds: float = 1.5):
+    """Take the pending-store lock, waiting briefly for a concurrent writer.
+
+    Two confirmations racing for the same pending row must not both write. The
+    loser either sees the winner's consumed row (and its receipt) or refuses
+    cleanly; it never proceeds on a stale copy.
+    """
+    deadline = time.monotonic() + max(0.0, wait_seconds)
+    while True:
+        with store.lock(LOCK) as acquired:
+            if acquired:
+                yield
+                return
+        if time.monotonic() >= deadline:
             raise PendingAckError("pending acknowledgement store is locked")
-        yield
+        time.sleep(0.02)
 
 
 def _save(store: Any, data: dict[str, Any], now: datetime) -> None:
@@ -267,7 +342,7 @@ def _same_owner(row: Mapping[str, Any], conversation: str, owner: str) -> bool:
 def rows(store: Any = None, *, now: datetime | None = None) -> list[dict[str, Any]]:
     target = _coerce_store(store)
     data = _load(target)
-    return [dict(row) for row in data["rows"]]
+    return [deepcopy(row) for row in data["rows"]]
 
 
 def get(store: Any = None, row_id: Any = "", *,
@@ -296,9 +371,13 @@ def live_for(store: Any = None, *, conversation: Any, owner: Any,
 
 def find_pin(store: Any = None, *, conversation: Any, owner: Any,
              now: datetime | None = None) -> dict[str, Any] | None:
-    """The newest unexpired, unconsumed proposal for this conversation/owner."""
+    """The one live proposal for this conversation/owner, or ``None``.
+
+    More than one live row is ambiguous: callers must ask, never pick the
+    newest.
+    """
     live = live_for(store, conversation=conversation, owner=owner, now=now)
-    return live[0] if live else None
+    return live[0] if len(live) == 1 else None
 
 
 def lookup(store: Any = None, *, conversation: Any, owner: Any, turn_id: Any,
@@ -339,11 +418,17 @@ def create(
     effect: Any,
     question: Any,
     turn_id: Any,
+    turn_ref: Any = "",
+    turn_at: Any = "",
     now: datetime | None = None,
     ttl_seconds: int = DEFAULT_TTL_SECONDS,
     store: Any = None,
 ) -> dict[str, Any]:
-    """Store one bounded proposal. Writes no acknowledgement state."""
+    """Store one bounded proposal. Writes no acknowledgement state.
+
+    A conversation may have only one live proposal. The effect is copied once at
+    creation and never rewritten; a second proposal while one is live refuses.
+    """
     target = _coerce_store(store)
     moment = _now(target, now)
     try:
@@ -356,7 +441,7 @@ def create(
                                required=True),
             "target_label": _text(target_label, "target_label", MAX_LABEL_CHARS,
                                   required=True),
-            "effect": dict(effect or {}),
+            "effect": deepcopy(dict(effect or {})),
             "question": _text(question, "question", MAX_QUESTION_CHARS,
                               required=True),
             "created_at": moment.isoformat(),
@@ -365,25 +450,47 @@ def create(
             "consumed_at": "",
             "receipt": {},
             "turn_id": _text(turn_id, "turn_id", MAX_TURN_CHARS, required=True),
+            "key": "",
+            "turn_ref": _text(turn_ref, "turn_ref", MAX_TURN_CHARS),
+            "turn_at": _optional_iso(turn_at, "turn_at"),
+            "intent_at": "",
+            "intent_turn_id": "",
         }
         _validate_effect(row["effect"])
         with _locked(target):
             data = _load(target)
+            live = [existing for existing in data["rows"]
+                    if str(existing.get("conversation") or "")
+                    == row["conversation"]
+                    and not _row_consumed(existing)
+                    and not _row_expired(existing, moment)]
+            if live:
+                return {"ok": False, "status": "refused",
+                        "reason": ("a confirmation is already waiting; answer it "
+                                   "before asking for another one"),
+                        "reason_code": "proposal_live"}
+            if row["turn_id"] in data["turns"]:
+                return {"ok": False, "status": "refused",
+                        "reason": "that owner turn was already used; nothing changed",
+                        "reason_code": "turn_consumed"}
             row["id"] = _new_id(data)
-            data["rows"] = [
-                existing for existing in data["rows"]
-                if not (_same_owner(existing, row["conversation"], row["owner"])
-                        and str(existing.get("turn_id") or "") == row["turn_id"]
-                        and not _row_consumed(existing))
-            ]
+            row["key"] = row["id"]
             _validate_row(row)
             data["rows"].append(row)
             data["rows"] = data["rows"][-MAX_ROWS:]
+            data["turns"][row["turn_id"]] = {
+                "mode": "propose",
+                "at": moment.isoformat(),
+                "target_id": row["target_id"],
+                "key": row["key"],
+            }
+            while len(data["turns"]) > MAX_TURN_MARKS:
+                data["turns"].pop(next(iter(data["turns"])))
             _save(target, data, moment)
     except (PendingAckError, CorruptStateError) as exc:
         return {"ok": False, "status": "refused",
                 "reason": f"pending acknowledgement refused: {exc}"}
-    return {"ok": True, "status": "pending", "pending": dict(row)}
+    return {"ok": True, "status": "pending", "pending": deepcopy(row)}
 
 
 def _receipt_only(value: Any, *, turn_id: str) -> dict[str, Any]:
@@ -428,11 +535,23 @@ def commit(
             if _row_consumed(row):
                 return {"ok": True, "status": "already_confirmed",
                         "receipt": dict(row.get("receipt") or {}),
-                        "pending": dict(row)}
+                        "pending": deepcopy(row)}
             if _row_expired(row, moment):
                 return {"ok": False, "status": "refused",
                         "reason": "that confirmation expired; ask again"}
-            result = apply_fn(dict(row))
+            other = data["turns"].get(turn_text)
+            if other is not None and str(other.get("key") or "") != str(
+                    row.get("key") or row.get("id") or ""):
+                return {"ok": False, "status": "refused",
+                        "reason": "that owner turn was already used; nothing changed",
+                        "reason_code": "turn_consumed"}
+            # Persist the intent and its idempotency key before the effect. A
+            # crash after the effect write leaves this row unconsumed but the
+            # key discoverable in the effect store, so a retry reconciles.
+            row["intent_at"] = moment.isoformat()
+            row["intent_turn_id"] = turn_text
+            _save(target, data, moment)
+            result = apply_fn(deepcopy(row))
             deferred = result.pop("deferred_disposition", None)
             if not result.get("ok"):
                 return result
@@ -449,9 +568,17 @@ def commit(
                                     turn_id=turn_text)
             row["consumed_at"] = moment.isoformat()
             row["receipt"] = receipt
+            data["turns"][turn_text] = {
+                "mode": "confirm",
+                "at": moment.isoformat(),
+                "target_id": str(row.get("target_id") or ""),
+                "key": str(row.get("key") or row.get("id") or ""),
+            }
+            while len(data["turns"]) > MAX_TURN_MARKS:
+                data["turns"].pop(next(iter(data["turns"])))
             _save(target, data, moment)
             return {"ok": True, "status": "confirmed", "receipt": receipt,
-                    "pending": dict(row)}
+                    "pending": deepcopy(row)}
     except (PendingAckError, CorruptStateError) as exc:
         return {"ok": False, "status": "refused",
                 "reason": f"pending acknowledgement refused: {exc}"}
@@ -491,9 +618,113 @@ def dispositions(store: Any = None, *, now: datetime | None = None) -> dict[str,
             for key, value in (database.get("dispositions") or {}).items()}
 
 
+def turn_used(store: Any = None, turn_id: Any = "",
+              now: datetime | None = None) -> dict[str, Any] | None:
+    """Return the mark for an already consumed/proposed owner turn, if any."""
+    wanted = str(turn_id or "").strip()
+    if not wanted:
+        return None
+    target = _coerce_store(store)
+    database = _load(target)
+    value = database.get("turns", {}).get(wanted)
+    return dict(value) if isinstance(value, Mapping) else None
+
+
+def mark_turn(store: Any = None, *, turn_id: Any, mode: str,
+              target_id: Any = "", key: Any = "",
+              now: datetime | None = None) -> dict[str, Any]:
+    """Remember that one owner turn was consumed by an acknowledgement mode."""
+    target = _coerce_store(store)
+    moment = _now(target, now)
+    clean_turn = _text(turn_id, "turn key", MAX_TURN_CHARS, required=True)
+    row = {
+        "mode": _text(mode, "turn.mode", 32, required=True),
+        "at": moment.isoformat(),
+        "target_id": _text(target_id, "turn.target_id", MAX_TARGET_ID_CHARS),
+        "key": _text(key, "turn.key", MAX_TURN_CHARS),
+    }
+    _validate_turn_mark(row)
+    try:
+        with _locked(target):
+            data = _load(target)
+            data["turns"][clean_turn] = row
+            while len(data["turns"]) > MAX_TURN_MARKS:
+                data["turns"].pop(next(iter(data["turns"])))
+            _save(target, data, moment)
+    except (PendingAckError, CorruptStateError) as exc:
+        raise PendingAckError(f"turn mark refused: {exc}") from exc
+    return dict(row)
+
+
+def record_question(*, conversation: Any, owner: Any, labels: Any,
+                    question: Any, effect: Any = None,
+                    now: datetime | None = None,
+                    ttl_seconds: int = DEFAULT_TTL_SECONDS,
+                    store: Any = None) -> dict[str, Any]:
+    """Keep the exact choice list printed by one clarification question.
+
+    The optional ``effect`` remembers the verb the owner already supplied, so a
+    later turn that names one full label can be answered with the same exact
+    confirmation question instead of an immediate write.
+    """
+    target = _coerce_store(store)
+    moment = _now(target, now)
+    conversation_text = _text(conversation, "conversation",
+                              MAX_CONVERSATION_CHARS, required=True)
+    owner_text = _text(owner, "owner", MAX_OWNER_CHARS)
+    clean_labels = []
+    for label in list(labels or [])[:MAX_QUESTION_LABELS]:
+        text = _text(label, "question.label", MAX_LABEL_CHARS, required=True)
+        if text not in clean_labels:
+            clean_labels.append(text)
+    if not clean_labels:
+        raise PendingAckError("question labels are required")
+    row = {
+        "labels": clean_labels,
+        "question": _text(question, "question", MAX_QUESTION_CHARS,
+                          required=True),
+        "at": moment.isoformat(),
+        "expires_at": (moment + timedelta(
+            seconds=max(1, min(int(ttl_seconds), DEFAULT_TTL_SECONDS)))).isoformat(),
+    }
+    if effect not in (None, {}, ""):
+        row["effect"] = deepcopy(dict(effect))
+    _validate_question(row)
+    key = f"{conversation_text}|{owner_text}"[:MAX_CONVERSATION_CHARS * 2]
+    try:
+        with _locked(target):
+            data = _load(target)
+            data["questions"][key] = row
+            while len(data["questions"]) > MAX_QUESTIONS:
+                data["questions"].pop(next(iter(data["questions"])))
+            _save(target, data, moment)
+    except (PendingAckError, CorruptStateError) as exc:
+        raise PendingAckError(f"question refused: {exc}") from exc
+    return dict(row)
+
+
+def find_question(store: Any = None, *, conversation: Any, owner: Any,
+                  now: datetime | None = None) -> dict[str, Any] | None:
+    """The unexpired clarification question for this conversation, if any."""
+    target = _coerce_store(store)
+    moment = _now(target, now)
+    key = f"{str(conversation or '')}|{str(owner or '')}"[:MAX_CONVERSATION_CHARS * 2]
+    database = _load(target)
+    row = (database.get("questions") or {}).get(key)
+    if not isinstance(row, Mapping):
+        return None
+    try:
+        if _parse_iso(row.get("expires_at"), "expires_at") <= moment:
+            return None
+    except PendingAckError:
+        return None
+    return deepcopy(dict(row))
+
+
 __all__ = [
     "STORE", "LOCK", "SCHEMA", "MAX_ROWS", "DEFAULT_TTL_SECONDS",
     "RECEIPT_FIELDS", "PendingAckError", "empty_store", "rows", "get",
     "live_for", "find_pin", "lookup", "create", "commit",
-    "record_disposition", "dispositions",
+    "record_disposition", "dispositions", "turn_used", "mark_turn",
+    "record_question", "find_question",
 ]
