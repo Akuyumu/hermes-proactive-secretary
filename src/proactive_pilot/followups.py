@@ -984,7 +984,13 @@ def _seed_reminder_followthroughs_locked(store: Any, data: dict[str, Any],
     after old closed entries are pruned. No sender, timer or new state file is
     introduced; the existing portal follow-up evaluation performs this read.
     """
-    raw = store.load("reminders.json", {"reminders": {}})
+    try:
+        # Strict: an unreadable registry must never look like an empty one, or
+        # the cleanup below would erase the markers that stop a duplicate
+        # follow-through once the registry is restored.
+        raw = store.load("reminders.json", {"reminders": {}}, strict=True)
+    except CorruptStateError:
+        return [], False
     reminders = raw.get("reminders") if isinstance(raw, dict) else None
     if not isinstance(reminders, dict):
         return [], False
