@@ -88,8 +88,18 @@ class _Harness(unittest.TestCase):
         return row
 
     def _followup(self, text="Test reminder: reply done, or later 30, or stop"):
-        return F.create(self.store, text, kind="one_shot",
-                        check_hint="check the reminder", now=self.clock.now())
+        entry = F.create(self.store, text, kind="one_shot",
+                         check_hint="check the reminder", now=self.clock.now())
+        self._publish(entry, text)
+        return entry
+
+    def _publish(self, entry, message):
+        from proactive_pilot import deliveries
+        deliveries.record_emission(
+            self.store, message=message, kind="portal-notice",
+            event_key=F.notice_event_key(entry["id"]),
+            notice_id=f"notice-{entry['id']}", now=self.clock.now())
+        return entry
 
     def _call(self, body, *, session_id="conv-1", task_id=None):
         return json.loads(tool.tool_handler(self.ctx)(
@@ -229,17 +239,25 @@ class _Harness(unittest.TestCase):
                          "owner_stopped")
         self.assertEqual(F.get(self.store, other["id"])["status"], "active")
 
-    def test_apply_can_use_the_target_recorded_by_a_previous_ask(self):
+    def test_a_previous_ask_never_turns_a_repeated_verb_into_a_write(self):
         entry = self._followup("remembered item")
         turn = self._turn("stop the reminder", reply_to=entry["id"])
         proposal = self._propose(text=turn["text"], quote="stop the reminder")
         self.assertTrue(proposal["ok"], proposal)
 
-        # The direct answer arrives without reply metadata; the previous ask pins it.
+        # The same verb on a later turn while the proposal is live is not a
+        # second write path; it is refused and the proposal remains live.
         self._turn("stop", at=time.time() + 1)
         result = self._call({"text": "stop", "evidence_quote": "stop",
                              "scope": "remembered item"})
-        self.assertTrue(result["ok"], result)
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["reason"]["code"], "proposal_live")
+        self.assertEqual(F.get(self.store, entry["id"])["status"], "active")
+        self.assertEqual(pending_ack.rows(self.store)[0]["consumed_at"], "")
+
+        self._turn("yes", at=time.time() + 2)
+        confirmed = self._confirm()
+        self.assertTrue(confirmed["ok"], confirmed)
         self.assertEqual(F.get(self.store, entry["id"])["status"], "done")
         self.assertEqual(F.get(self.store, entry["id"])["close_reason"],
                          "owner_stopped")

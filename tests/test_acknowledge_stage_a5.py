@@ -91,8 +91,18 @@ class StageA5Harness(unittest.TestCase):
         return row
 
     def _followup(self, text="Test reminder"):
-        return F.create(self.store, text, kind="one_shot",
-                        check_hint=f"check {text}", now=self.clock.now())
+        entry = F.create(self.store, text, kind="one_shot",
+                         check_hint=f"check {text}", now=self.clock.now())
+        self._publish(entry, text)
+        return entry
+
+    def _publish(self, entry, message):
+        from proactive_pilot import deliveries
+        deliveries.record_emission(
+            self.store, message=message, kind="portal-notice",
+            event_key=F.notice_event_key(entry["id"]),
+            notice_id=f"notice-{entry['id']}", now=self.clock.now())
+        return entry
 
     def _call(self, body, *, session_id="conv-1", task_id=None):
         return json.loads(tool.tool_handler(self.ctx)(
@@ -162,8 +172,9 @@ class OneTurnOneModeTests(StageA5Harness):
 
     def test_apply_refuses_a_turn_already_used_by_propose(self):
         entry = self._followup("Dentist")
-        self._turn("stop", reply_to=entry["id"])
-        self.assertTrue(self._propose(text="stop", quote="stop")["ok"])
+        self._turn("stop the reminder", reply_to=entry["id"])
+        self.assertTrue(self._propose(text="stop the reminder",
+                                      quote="stop")["ok"])
         applied = self._call({"text": "stop", "evidence_quote": "stop"})
         self.assertFalse(applied["ok"], applied)
         self.assertEqual(applied["reason"]["code"], "turn_consumed")
@@ -473,7 +484,7 @@ class PublicProseTests(StageA5Harness):
         self._turn("stop the dentist check", at=time.time() + 3,
                    reply_to=fresh["id"])
         with mock.patch.object(
-                A, "propose",
+                A, "propose_target",
                 side_effect=RuntimeError("ack-ab12 /home/private a@b.com")):
             crashed = self._propose(text="stop the dentist check",
                                     quote="stop the dentist")

@@ -96,8 +96,18 @@ class StageA6Harness(unittest.TestCase):
         return row
 
     def _followup(self, text="Dentist"):
-        return F.create(self.store, text, kind="one_shot",
-                        check_hint=f"check {text}", now=self.clock.now())
+        entry = F.create(self.store, text, kind="one_shot",
+                         check_hint=f"check {text}", now=self.clock.now())
+        self._publish(entry, text)
+        return entry
+
+    def _publish(self, entry, message):
+        from proactive_pilot import deliveries
+        deliveries.record_emission(
+            self.store, message=message, kind="portal-notice",
+            event_key=F.notice_event_key(entry["id"]),
+            notice_id=f"notice-{entry['id']}", now=self.clock.now())
+        return entry
 
     def _call(self, body, *, session_id="conv-1"):
         return json.loads(tool.tool_handler(self.ctx)(
@@ -310,8 +320,8 @@ class QuestionBindingTests(StageA6Harness):
 class PublicLabelTests(StageA6Harness):
     def test_a_crafted_label_is_not_echoed_in_question_or_receipt(self):
         entry = self._followup("Dentist because hunter2 is private")
-        turn = self._turn("stop", reply_to=entry["id"])
-        opened = self._propose(text="stop", quote="stop")
+        turn = self._turn("stop the reminder", reply_to=entry["id"])
+        opened = self._propose(text="stop the reminder", quote="stop")
         self.assertTrue(opened["ok"], opened)
         self.assertEqual(opened["message"],
                          "Stop follow-ups for “Dentist” only?")
@@ -339,8 +349,7 @@ class PublicLabelTests(StageA6Harness):
         for index, (word, question, receipt) in enumerate(cases):
             with self.subTest(word=word):
                 entry = self._followup("Dentist")
-                self._turn(word, at=time.time() + index,
-                           reply_to=entry["id"])
+                self._turn(word, at=time.time() + index)
                 action = "later" if word.startswith("later") else word
                 opened = self._propose(
                     text=word, quote=word, action=action,
@@ -367,8 +376,9 @@ class PublicLabelTests(StageA6Harness):
         self.assertEqual(P.rows(self.store), [])
         self.assertEqual(F.get(self.store, entry["id"])["status"], "active")
 
-        self._turn("stop", at=time.time() + 1, reply_to=entry["id"])
-        opened = self._propose(text="stop", quote="stop")
+        self._turn("stop the reminder", at=time.time() + 1,
+                   reply_to=entry["id"])
+        opened = self._propose(text="stop the reminder", quote="stop")
         self.assertTrue(opened["ok"], opened)
         self.assertEqual(opened["target_label"], "the item you replied to")
         self.assertEqual(opened["message"],

@@ -424,21 +424,44 @@ def _target_values(row: dict[str, Any]) -> list[str]:
     return values
 
 
-def _target_matches(stored: list[str], wanted: str) -> bool:
-    """True when the item id is one of the stored canonical delivery keys.
+_FOLLOWUP_PORTAL_PREFIX = "portal:followup-notice:"
 
-    Follow-up notices carry the durable follow-up id in both namespaces
-    (``followup:<id>`` and ``portal:followup-notice:<id>[:digest]``). Either
-    exact key matches; a colon-bounded digest suffix matches its base key.
+
+def _followup_identity(value: str) -> str:
+    """The one documented cross-namespace follow-up identity, or ``""``.
+
+    ``portal:followup-notice:<id>[:digest]`` and ``followup:<id>`` name the
+    same durable follow-up. Only that exact shape is normalised; arbitrary
+    colon-delimited prefixes never match each other.
+    """
+    text = str(value or "").strip().lower()
+    if text.startswith(_FOLLOWUP_PORTAL_PREFIX):
+        rest = text[len(_FOLLOWUP_PORTAL_PREFIX):]
+        followup_id = rest.split(":", 1)[0]
+        return f"followup:{followup_id}" if followup_id else ""
+    if text.startswith("followup:"):
+        followup_id = text[len("followup:"):]
+        return f"followup:{followup_id}" if followup_id else ""
+    return ""
+
+
+def _target_matches(stored: list[str], wanted: str) -> bool:
+    """True only when the wanted key names exactly one stored target.
+
+    Snooze rows and gate keys may carry either ``followup:<id>`` or the exact
+    ``portal:followup-notice:<id>[:digest]`` delivery key for that follow-up;
+    those two documented names are the same identity. Every other key is
+    compared exactly, so a sibling such as ``portal:batch:other`` can never be
+    suppressed by a snooze stored for ``portal:batch``.
     """
     if not stored or not wanted:
         return False
-    for value in stored:
-        if value == wanted:
-            return True
-        if wanted.startswith(value + ":") or value.startswith(wanted + ":"):
-            return True
-    return False
+    if wanted in stored:
+        return True
+    wanted_identity = _followup_identity(wanted)
+    if not wanted_identity:
+        return False
+    return any(_followup_identity(value) == wanted_identity for value in stored)
 
 
 def active_snooze(prefs: dict[str, Any], now: datetime,

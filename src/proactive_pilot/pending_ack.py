@@ -640,6 +640,84 @@ def commit(
                 "reason": f"pending acknowledgement refused: {exc}"}
 
 
+def cancel(
+    row_id: Any,
+    *,
+    conversation: Any,
+    owner: Any,
+    turn_id: Any,
+    now: datetime | None = None,
+    store: Any = None,
+) -> dict[str, Any]:
+    """Cancel one live proposal without applying any effect.
+
+    The row is consumed with a cancellation receipt so it can never be confirmed
+    later, while the acknowledgement stores remain untouched.
+    """
+    target = _coerce_store(store)
+    moment = _now(target, now)
+    wanted = str(row_id or "").strip()
+    conversation_text = str(conversation or "")
+    owner_text = str(owner or "")
+    turn_text = str(turn_id or "")
+    try:
+        with _locked(target):
+            data = _load(target)
+            row = next((item for item in data["rows"]
+                        if str(item.get("id") or "") == wanted), None)
+            if row is None:
+                return {"ok": False, "status": "refused",
+                        "reason": "there is no confirmation waiting for this conversation",
+                        "reason_code": "no_pending"}
+            if not _same_owner(row, conversation_text, owner_text):
+                return {"ok": False, "status": "refused",
+                        "reason": "that confirmation belongs to another conversation"}
+            if _row_consumed(row):
+                receipt = dict(row.get("receipt") or {})
+                if str(receipt.get("status") or "") == "cancelled":
+                    return {"ok": True, "status": "cancelled",
+                            "receipt": receipt, "pending": deepcopy(row)}
+                return {"ok": False, "status": "already_done",
+                        "reason": "already done", "reason_code": "already_done",
+                        "receipt": receipt}
+            if _row_expired(row, moment):
+                return {"ok": False, "status": "refused",
+                        "reason": "that confirmation expired; ask again",
+                        "reason_code": "expired"}
+            other = data["turns"].get(turn_text)
+            if other is not None and str(other.get("key") or "") != str(
+                    row.get("key") or row.get("id") or ""):
+                return {"ok": False, "status": "refused",
+                        "reason": "that owner turn was already used; nothing changed",
+                        "reason_code": "turn_consumed"}
+            effect = dict(row.get("effect") or {})
+            receipt = {
+                "ok": True,
+                "status": "cancelled",
+                "action": str(effect.get("action") or ""),
+                "target_label": str(row.get("target_label") or ""),
+                "turn_id": turn_text,
+                "note": "Cancelled; nothing changed.",
+            }
+            _validate_receipt(receipt)
+            row["consumed_at"] = moment.isoformat()
+            row["receipt"] = receipt
+            data["turns"][turn_text] = {
+                "mode": "cancel",
+                "at": moment.isoformat(),
+                "target_id": str(row.get("target_id") or ""),
+                "key": str(row.get("key") or row.get("id") or ""),
+            }
+            while len(data["turns"]) > MAX_TURN_MARKS:
+                data["turns"].pop(next(iter(data["turns"])))
+            _save(target, data, moment)
+            return {"ok": True, "status": "cancelled", "receipt": dict(receipt),
+                    "pending": deepcopy(row)}
+    except (PendingAckError, CorruptStateError) as exc:
+        return {"ok": False, "status": "refused",
+                "reason": f"pending acknowledgement refused: {exc}"}
+
+
 def record_disposition(
     key: Any,
     record: Any,
@@ -807,7 +885,7 @@ def find_question(store: Any = None, *, conversation: Any, owner: Any,
 __all__ = [
     "STORE", "LOCK", "SCHEMA", "MAX_ROWS", "DEFAULT_TTL_SECONDS",
     "RECEIPT_FIELDS", "PendingAckError", "empty_store", "rows", "get",
-    "live_for", "find_pin", "lookup", "create", "commit",
+    "live_for", "find_pin", "lookup", "create", "commit", "cancel",
     "record_disposition", "dispositions", "turn_used", "mark_turn",
     "record_question", "find_question",
 ]

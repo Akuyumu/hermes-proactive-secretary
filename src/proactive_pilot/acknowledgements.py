@@ -214,15 +214,20 @@ def apply(
 
 __all__ = [
     "parse", "apply", "turn_key", "proposal_problem", "is_bare_affirmative",
-    "build_effect", "render_question", "target_candidates", "target_aliases",
-    "target_gate_keys", "resolve_target", "resolve_question_answer",
-    "apply_target", "apply_effect", "propose", "propose_target", "confirm",
+    "is_bare_negative", "build_effect", "render_question", "target_candidates",
+    "target_aliases", "target_gate_keys", "resolve_target",
+    "resolve_question_answer", "apply_target", "apply_effect", "propose",
+    "propose_target", "confirm",
 ]
 
 
 _AFFIRMATIVES = frozenset({
     "yes", "yeah", "yep", "yup", "ok", "okay", "sure", "do it",
     "go ahead", "confirm",
+})
+_NEGATIVES = frozenset({
+    "no", "nope", "nah", "never", "cancel", "don't", "dont", "not now",
+    "no thanks", "forget it",
 })
 _PROPOSAL_NEGATION = re.compile(
     r"\b(?:no|not|never|none|don't|dont|doesn't|does not|isn't|is not|won't|"
@@ -333,6 +338,11 @@ def proposal_problem(text: Any) -> str:
 def is_bare_affirmative(text: Any) -> bool:
     value = " ".join(str(text or "").lower().split()).strip(" \t.,!;:\"'“”‘’")
     return value in _AFFIRMATIVES
+
+
+def is_bare_negative(text: Any) -> bool:
+    value = " ".join(str(text or "").lower().split()).strip(" \t.,!;:\"'“”‘’")
+    return value in _NEGATIVES
 
 
 def build_effect(
@@ -541,8 +551,12 @@ def target_candidates(store: Any, *, now: datetime | None = None) -> list[dict[s
             aliases.extend([rid, f"reminder:{rid}"])
             aliases.extend(delivery_keys)
             reminder_to_followup[rid] = fid
+        # A follow-up's own text/check hint was never necessarily published to
+        # the owner, so it is not a public label. A delivery ledger row for the
+        # exact follow-up identity below can supply one; otherwise the label
+        # stays generic and a trusted reply pin is required.
         _add_candidate(found, _candidate(
-            f"followup:{fid}", "followup", entry.get("text"), aliases=aliases,
+            f"followup:{fid}", "followup", "", aliases=aliases,
             at=entry.get("created_at") or entry.get("updated_at"),
             delivery_keys=delivery_keys,
             followup_id=fid, reminder_id=rid, kind=entry.get("kind")))
@@ -562,8 +576,13 @@ def target_candidates(store: Any, *, now: datetime | None = None) -> list[dict[s
         key = str(rid)
         if key in reminder_to_followup:
             continue
+        # Only an emitted/missed reminder's text reached the owner; a pending
+        # registry row has never been published and must not leak as a label.
+        published = (reminder.get("text")
+                     if str(reminder.get("status") or "") in {"emitted", "missed"}
+                     else "")
         _add_candidate(found, _candidate(
-            f"reminder:{key}", "reminder", reminder.get("text"),
+            f"reminder:{key}", "reminder", published,
             aliases=[key, f"reminder:{key}"], reminder_id=key,
             at=reminder.get("emitted_at") or reminder.get("created_at")))
 
@@ -579,12 +598,23 @@ def target_candidates(store: Any, *, now: datetime | None = None) -> list[dict[s
         target_followup = ""
         if event_key.startswith("followup-notice:"):
             target_followup = event_key[len("followup-notice:"):].split(":", 1)[0]
-        if target_followup and f"followup:{target_followup}" in found:
-            row = found[f"followup:{target_followup}"]
+        if target_followup:
+            row = found.get(f"followup:{target_followup}")
+            if row is None:
+                # The follow-up this notice belonged to is closed or gone; its
+                # old delivery is not a selectable current item.
+                continue
             row["aliases"] = set(row["aliases"]) | {
                 alias for alias in (event_key, notice_id, *delivery_keys) if alias}
             row["delivery_keys"] = (
                 set(row.get("delivery_keys") or ()) | delivery_keys)
+            if not row.get("label_safe"):
+                # This message is exactly what the delivery ledger recorded as
+                # handed to the owner, so its safe headline may be public.
+                label_text, label_safe = _label_parts(delivery.get("message"))
+                if label_safe:
+                    row["target_label"] = label_text
+                    row["label_safe"] = True
             continue
         candidate_id = notice_id or event_key
         if not candidate_id:

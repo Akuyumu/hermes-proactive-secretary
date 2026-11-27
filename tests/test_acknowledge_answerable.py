@@ -76,8 +76,18 @@ class AnswerableHarness(unittest.TestCase):
         return dict(self.ctx.state.data[R.TURN_KEY][-1])
 
     def _followup(self, text):
-        return F.create(self.store, text, kind="one_shot",
-                        check_hint=f"check {text}", now=self.clock.now())
+        entry = F.create(self.store, text, kind="one_shot",
+                         check_hint=f"check {text}", now=self.clock.now())
+        self._publish(entry, text)
+        return entry
+
+    def _publish(self, entry, message):
+        from proactive_pilot import deliveries
+        deliveries.record_emission(
+            self.store, message=message, kind="portal-notice",
+            event_key=F.notice_event_key(entry["id"]),
+            notice_id=f"notice-{entry['id']}", now=self.clock.now())
+        return entry
 
     def _call(self, body, *, session_id="conv-1"):
         return json.loads(tool.tool_handler(self.ctx)(

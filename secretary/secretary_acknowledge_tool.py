@@ -32,22 +32,23 @@ except ImportError:  # direct/standalone import
 
 TOOL_NAME = "secretary_acknowledge"
 TOOL_DESCRIPTION = (
-    "Apply, propose or confirm the owner's reply to a notice or reminder. "
-    "mode=apply accepts the exact short answers 'done', 'later <n>', "
-    "'later until <when>' and 'stop' from the whole recorded owner message; "
-    "mode=propose interprets the owner's sentence but writes nothing except a "
-    "short confirmation question; mode=confirm accepts only one bare yes for "
-    "that exact proposal. The target is always pinned from the message the owner "
-    "replied to (or an earlier proposal), never from a model-supplied id. "
-    "A stop is scoped to that item only (never a global mute). Anything else is "
-    "refused and changes nothing."
+    "Resolve the owner's reply to a notice or reminder through one state "
+    "machine: a live selection question is answered from the choices it "
+    "printed; a live proposal accepts only one bare yes or no. With no live "
+    "state, the recorded owner message may carry 'done', 'later <n>', "
+    "'later until <when>' or 'stop', or the model may propose one with a "
+    "literal quote. Only a trusted reply pin naming the target plus the owner's "
+    "exact verb applies immediately and consumes that turn; every other target "
+    "gets a confirmation question first. The target is never taken from a "
+    "model-supplied id, and a stop is scoped to that item only."
 )
 TOOL_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "mode": {"type": "string", "enum": ["apply", "propose", "confirm"],
                  "default": "apply",
-                 "description": "apply the exact words, propose a confirmation, or confirm it"},
+                 "description": ("Optional hint only; live state and the owner's "
+                                 "words decide whether a confirmation turn is needed")},
         "text": {"type": "string",
                  "description": "The owner's acknowledgement, e.g. 'done', 'later 20', 'stop'"},
         "action": {"type": "string", "enum": ["done", "later", "stop"],
@@ -101,6 +102,7 @@ _PUBLIC_STATUS = {
     "followup_closed": "done",
     "confirmation_required": "confirmation_required",
     "confirmed": "confirmed",
+    "cancelled": "cancelled",
     "needs_clarification": "needs_clarification",
     "refused": "refused",
     "already_done": "already_done",
@@ -477,6 +479,31 @@ def _pinned_target(ctx: Any, body: dict[str, Any], turn: dict[str, Any], *,
     return target, None
 
 
+def _question_pin_conflict(turn: dict[str, Any], target: dict[str, Any]) -> bool:
+    """A reply pinned to a different item than the offered choice contradicts it."""
+    _ensure_src()
+    from proactive_pilot import acknowledgements
+
+    replies = acknowledgements._reply_ids(turn)
+    if not replies:
+        return False
+    aliases = {str(alias).lower()
+               for alias in acknowledgements.target_aliases(target)}
+    return not any(str(reply).strip().lower() in aliases for reply in replies)
+
+
+def _public_cancellation(result: dict[str, Any]) -> dict[str, Any]:
+    if not result.get("ok"):
+        return _public_failure(result)
+    receipt = dict(result.get("receipt") or {})
+    effect = dict(result.get("effect") or {})
+    return _public_response(
+        ok=True, status=receipt.get("status") or "cancelled",
+        action=receipt.get("action") or effect.get("action"),
+        label=receipt.get("target_label"), deadline=effect,
+        message=receipt.get("note") or "Cancelled; nothing changed.")
+
+
 def tool_handler(ctx: Any = None):
     def handler(args: dict[str, Any] | None = None, session_id: Any = None,
                 task_id: Any = None, **_kwargs: Any) -> str:
@@ -542,102 +569,169 @@ def tool_handler(ctx: Any = None):
             except pending_ack.PendingAckError:
                 pass
 
+        def confirm_live(row: dict[str, Any]) -> str:
+            result = acknowledgements.confirm(
+                store=store, conversation=conversation, owner=owner,
+                turn=turn, target_id=_model_targets(body), now=now,
+                preferences_path=paths.preferences_path(),
+                followup_store=store, guidance_root=Path(paths.data_root()))
+            return json.dumps(_public_confirmation(result),
+                              ensure_ascii=False, sort_keys=True)
+
+        def cancel_live(row: dict[str, Any]) -> str:
+            result = pending_ack.cancel(
+                str(row.get("id") or ""), conversation=conversation,
+                owner=owner, turn_id=acknowledgements.turn_key(
+                    conversation, owner, turn), now=now, store=store)
+            result.setdefault("effect", dict(row.get("effect") or {}))
+            return json.dumps(_public_cancellation(result),
+                              ensure_ascii=False, sort_keys=True)
+
         try:
-            live_question = pending_ack.find_question(
-                store, conversation=conversation, owner=owner, now=now)
-        except pending_ack.PendingAckError:
-            live_question = None
-        if live_question is not None:
-            # The next owner message answers the outstanding question; it is
-            # never reinterpreted as a fresh command, whatever mode the model
-            # asked for.
+            # 1. A printed selection question owns the next owner message.
             try:
-                candidates = acknowledgements.target_candidates(store, now=now)
-            except ValueError:
-                return json.dumps(_public_refusal("store_unreadable"),
+                live_question = pending_ack.find_question(
+                    store, conversation=conversation, owner=owner, now=now)
+            except pending_ack.PendingAckError:
+                return json.dumps(_public_refusal("pending_unreadable"),
                                   ensure_ascii=False, sort_keys=True)
-            target, refusal = acknowledgements.resolve_question_answer(
-                live_question, spoken_text, candidates)
-            if target is None:
-                return json.dumps(_public_failure(refusal),
+            if live_question is not None:
+                try:
+                    candidates = acknowledgements.target_candidates(store, now=now)
+                except ValueError:
+                    return json.dumps(_public_refusal("store_unreadable"),
+                                      ensure_ascii=False, sort_keys=True)
+                target, refusal = acknowledgements.resolve_question_answer(
+                    live_question, spoken_text, candidates)
+                if target is None:
+                    return json.dumps(_public_failure(refusal),
+                                      ensure_ascii=False, sort_keys=True)
+                stored_effect = dict(live_question.get("effect") or {})
+                if not stored_effect:
+                    return json.dumps(_public_failure({
+                        "ok": False,
+                        "status": "needs_clarification",
+                        "reason": str(live_question.get("question") or ""),
+                        "reason_code": "question_unbound",
+                    }), ensure_ascii=False, sort_keys=True)
+                if _question_pin_conflict(turn, target):
+                    # The owner replied to a different item than the one this
+                    # question offered; keep the question live and re-ask.
+                    return json.dumps(_public_failure({
+                        "ok": False,
+                        "status": "needs_clarification",
+                        "reason": str(live_question.get("question") or ""),
+                        "reason_code": "target_mismatch",
+                    }), ensure_ascii=False, sort_keys=True)
+                problem = _target_refusal(body, target)
+                if problem is not None:
+                    return json.dumps(_public_failure(problem),
+                                      ensure_ascii=False, sort_keys=True)
+                result = acknowledgements.propose_target(
+                    target, stored_effect, store=store,
+                    conversation=conversation, owner=owner, turn=turn, now=now)
+                return json.dumps(_public_proposal(result),
                                   ensure_ascii=False, sort_keys=True)
-            stored_effect = dict(live_question.get("effect") or {})
-            if not stored_effect:
+
+            # 2. A live proposal accepts only a bare yes or a bare no.
+            try:
+                live_rows = pending_ack.live_for(
+                    store, conversation=conversation, owner=owner, now=now)
+            except pending_ack.PendingAckError:
+                return json.dumps(_public_refusal("pending_unreadable"),
+                                  ensure_ascii=False, sort_keys=True)
+            if len(live_rows) > 1:
+                return json.dumps(_public_refusal("ambiguous_pending"),
+                                  ensure_ascii=False, sort_keys=True)
+            if len(live_rows) == 1:
+                row = live_rows[0]
+                if acknowledgements.is_bare_affirmative(spoken_text):
+                    return confirm_live(row)
+                if acknowledgements.is_bare_negative(spoken_text):
+                    return cancel_live(row)
+                # A qualified yes is still not the one bare affirmative the
+                # live proposal accepts; the proposal stays live.
+                if re.match(r"^(?:yes|yeah|yep|yup|ok|okay|sure|confirm)\b",
+                            " ".join(spoken_text.lower().split())):
+                    return json.dumps(_public_refusal("not_affirmative"),
+                                      ensure_ascii=False, sort_keys=True)
+                # A request that arrives while a proposal is live is never
+                # parsed as a command, even when it repeats the same verb.
+                current_turn = acknowledgements.turn_key(
+                    conversation, owner, turn)
+                code = ("turn_consumed"
+                        if str(row.get("turn_id") or "") == current_turn
+                        else "proposal_live")
                 return json.dumps(_public_failure({
                     "ok": False,
                     "status": "needs_clarification",
-                    "reason": str(live_question.get("question") or ""),
-                    "reason_code": "question_unbound",
+                    "reason": str(row.get("question") or ""),
+                    "reason_code": code,
                 }), ensure_ascii=False, sort_keys=True)
-            problem = _target_refusal(body, target)
-            if problem is not None:
-                return json.dumps(_public_failure(problem),
-                                  ensure_ascii=False, sort_keys=True)
-            result = acknowledgements.propose_target(
-                target, stored_effect, store=store,
-                conversation=conversation, owner=owner, turn=turn, now=now)
-            return json.dumps(_public_proposal(result),
-                              ensure_ascii=False, sort_keys=True)
 
-        if mode == "propose":
-            try:
-                target, refusal = _pinned_target(
-                    ctx, body, turn, conversation=conversation, owner=owner,
-                    store=store, now=now)
-                if refusal is not None:
-                    return json.dumps(_public_failure(refusal),
+            # 3. No live state: the owner's own words may carry the verb, or
+            # the model may propose one with a literal quote.
+            if mode != "confirm":
+                try:
+                    used = pending_ack.turn_used(
+                        store, acknowledgements.turn_key(
+                            conversation, owner, turn), now=now)
+                except pending_ack.PendingAckError:
+                    return json.dumps(_public_refusal("state_unreadable"),
                                       ensure_ascii=False, sort_keys=True)
-                result = acknowledgements.propose(
-                    store=store, conversation=conversation, owner=owner, turn=turn,
-                    action=body.get("action"), quote=quote_raw, text=spoken_text,
-                    minutes=body.get("minutes"), until=body.get("until"),
-                    kind=body.get("kind"), scope=body.get("scope"),
-                    target_id="", now=now)
-                return json.dumps(_public_proposal(result),
-                                  ensure_ascii=False, sort_keys=True)
-            except (AssertionError, OSError, KeyboardInterrupt, SystemExit):
-                raise
-            except Exception:  # noqa: BLE001 - public errors never leak text
-                return json.dumps(_public_refusal("internal_error"),
-                                  ensure_ascii=False, sort_keys=True)
-
-        if mode == "confirm":
-            try:
-                result = acknowledgements.confirm(
-                    store=store, conversation=conversation, owner=owner, turn=turn,
-                    target_id=_model_targets(body),
-                    now=now, preferences_path=paths.preferences_path(),
-                    followup_store=store, guidance_root=Path(paths.data_root()))
-                return json.dumps(_public_confirmation(result),
-                                  ensure_ascii=False, sort_keys=True)
-            except (AssertionError, OSError, KeyboardInterrupt, SystemExit):
-                raise
-            except Exception:  # noqa: BLE001 - public errors never leak text
-                return json.dumps(_public_refusal("internal_error"),
-                                  ensure_ascii=False, sort_keys=True)
-
-        try:
-            live_rows = pending_ack.live_for(
-                store, conversation=conversation, owner=owner, now=now)
-        except pending_ack.PendingAckError:
-            live_rows = []
-        if len(live_rows) > 1:
-            return json.dumps(_public_refusal("ambiguous_pending"),
-                              ensure_ascii=False, sort_keys=True)
-        if len(live_rows) == 1:
-            # A live proposal owns the next message. A bare yes is its offered
-            # confirmation; a command may only repeat that same frozen effect
-            # (the pre-existing direct-apply path); anything else re-asks and
-            # changes nothing.
-            live_effect = dict(live_rows[0].get("effect") or {})
-            spoken_action = acknowledgements.parse(spoken_text, now=now)
-            repeats = (
-                spoken_action.get("action") not in {None, "refused"}
-                and spoken_action.get("action") == live_effect.get("action")
-                and spoken_action.get("minutes") == live_effect.get("minutes")
-                and spoken_action.get("until") == live_effect.get("until")
-            )
-            if acknowledgements.is_bare_affirmative(spoken_text):
+                if used is not None:
+                    return json.dumps(_public_refusal("turn_consumed"),
+                                      ensure_ascii=False, sort_keys=True)
+            spoken = acknowledgements.parse(spoken_text, now=now)
+            owner_verb = spoken.get("action") != "refused"
+            effect: dict[str, Any] | None = None
+            if owner_verb:
+                declared = acknowledgements.parse(text, now=now)
+                mismatch = (
+                    mode != "propose"
+                    and (declared.get("action") != spoken.get("action")
+                         or any(declared.get(field) != spoken.get(field)
+                                for field in ("minutes", "until")))
+                )
+                if mismatch:
+                    return json.dumps(_public_refusal("not_instruction"),
+                                      ensure_ascii=False, sort_keys=True)
+                try:
+                    effect = acknowledgements.build_effect(
+                        spoken.get("action"), minutes=spoken.get("minutes"),
+                        until=spoken.get("until"), kind=body.get("kind"),
+                        scope=body.get("scope"), now=now)
+                except ValueError:
+                    return json.dumps(_public_refusal("effect_invalid"),
+                                      ensure_ascii=False, sort_keys=True)
+            elif (mode == "propose"
+                  or str(body.get("action") or "").strip()):
+                if not quote_raw or quote_raw not in spoken_text:
+                    return json.dumps(_public_refusal("quote_invalid"),
+                                      ensure_ascii=False, sort_keys=True)
+                problem = acknowledgements.proposal_problem(spoken_text)
+                if problem:
+                    return json.dumps(_public_refusal("not_instruction"),
+                                      ensure_ascii=False, sort_keys=True)
+                minutes = body.get("minutes")
+                until = body.get("until")
+                if (str(body.get("action") or "").strip().lower()
+                        in {"later", "snooze"}
+                        and minutes in (None, "") and until in (None, "")):
+                    parsed = acknowledgements.parse(spoken_text, now=now)
+                    if parsed.get("action") == "snooze":
+                        minutes = parsed.get("minutes")
+                        until = parsed.get("until")
+                try:
+                    effect = acknowledgements.build_effect(
+                        body.get("action"), minutes=minutes, until=until,
+                        kind=body.get("kind"), scope=body.get("scope"), now=now)
+                except ValueError:
+                    return json.dumps(_public_refusal("effect_invalid"),
+                                      ensure_ascii=False, sort_keys=True)
+            elif mode == "confirm":
+                # No live proposal: preserve the existing retry/already-done
+                # answers without ever writing a new effect.
                 result = acknowledgements.confirm(
                     store=store, conversation=conversation, owner=owner,
                     turn=turn, target_id=_model_targets(body), now=now,
@@ -645,107 +739,69 @@ def tool_handler(ctx: Any = None):
                     followup_store=store, guidance_root=Path(paths.data_root()))
                 return json.dumps(_public_confirmation(result),
                                   ensure_ascii=False, sort_keys=True)
-            if not repeats:
-                return json.dumps(_public_failure({
-                    "ok": False,
-                    "status": "needs_clarification",
-                    "reason": str(live_rows[0].get("question") or ""),
-                    "reason_code": "not_offered",
-                }), ensure_ascii=False, sort_keys=True)
+            else:
+                return json.dumps(_public_refusal("unrecognised"),
+                                  ensure_ascii=False, sort_keys=True)
 
-        # The action, the duration and the deadline all come from the whole
-        # host-recorded owner message, never from the model's paraphrase.
-        spoken = acknowledgements.parse(spoken_text, now=now)
-        if spoken.get("action") == "refused":
-            # A later turn may name the item it was asked about. The verb was
-            # parsed from the earlier turn and kept with that question, so this
-            # turn asks the same answerable question instead of writing.
-            try:
-                question = pending_ack.find_question(
-                    store, conversation=conversation, owner=owner, now=now)
-            except pending_ack.PendingAckError:
-                question = None
-            stored_effect = dict((question or {}).get("effect") or {})
-            if not stored_effect:
-                return json.dumps(
-                    _public_refusal("unrecognised"), ensure_ascii=False,
-                    sort_keys=True)
             target, refusal = _pinned_target(
                 ctx, body, turn, conversation=conversation, owner=owner,
                 store=store, now=now)
-            if target is not None:
-                result = acknowledgements.propose_target(
-                    target, stored_effect, store=store,
-                    conversation=conversation, owner=owner, turn=turn, now=now)
-                return json.dumps(_public_proposal(result),
-                                  ensure_ascii=False, sort_keys=True)
             if refusal is not None:
-                remember_question(refusal, stored_effect)
-            if refusal is not None and refusal.get("status") == "needs_clarification":
+                remember_question(refusal, effect)
+                if refusal.get("reason_code") == "clarify_target":
+                    candidates = list(refusal.get("candidates") or [])
+                    if not candidates:
+                        return json.dumps(_public_refusal("no_candidate"),
+                                          ensure_ascii=False, sort_keys=True)
+                    if len(candidates) == 1:
+                        problem = _target_refusal(body, candidates[0])
+                        if problem is not None:
+                            return json.dumps(_public_failure(problem),
+                                              ensure_ascii=False, sort_keys=True)
+                        result = acknowledgements.propose_target(
+                            candidates[0], effect, store=store,
+                            conversation=conversation, owner=owner, turn=turn,
+                            now=now)
+                        return json.dumps(_public_proposal(result),
+                                          ensure_ascii=False, sort_keys=True)
                 return json.dumps(_public_failure(refusal),
                                   ensure_ascii=False, sort_keys=True)
-            return json.dumps(
-                _public_refusal("unrecognised"), ensure_ascii=False,
-                sort_keys=True)
-        declared = acknowledgements.parse(text, now=now)
-        mismatch = declared.get("action") != spoken.get("action") or any(
-            declared.get(field) != spoken.get(field) for field in ("minutes", "until"))
-        if mismatch:
-            return json.dumps(
-                _public_refusal("not_instruction"), ensure_ascii=False,
-                sort_keys=True)
-        try:
-            intent = acknowledgements.build_effect(
-                spoken.get("action"), minutes=spoken.get("minutes"),
-                until=spoken.get("until"), now=now)
-        except ValueError:
-            return json.dumps(
-                _public_refusal("effect_invalid"), ensure_ascii=False,
-                sort_keys=True)
 
-        target, refusal = _pinned_target(
-            ctx, body, turn, conversation=conversation, owner=owner,
-            store=store, now=now)
-        if refusal is not None:
-            remember_question(refusal, intent)
-            if refusal.get("reason_code") == "clarify_target":
-                candidates = list(refusal.get("candidates") or [])
-                if not candidates:
-                    return json.dumps(
-                        _public_refusal("no_candidate"), ensure_ascii=False,
-                        sort_keys=True)
-                if len(candidates) == 1:
-                    problem = _target_refusal(body, candidates[0])
-                    if problem is not None:
-                        return json.dumps(_public_failure(problem),
-                                          ensure_ascii=False, sort_keys=True)
-                    result = acknowledgements.propose_target(
-                        candidates[0], intent, store=store,
-                        conversation=conversation, owner=owner, turn=turn,
-                        now=now)
-                    return json.dumps(_public_proposal(result),
-                                      ensure_ascii=False, sort_keys=True)
-            return json.dumps(_public_failure(refusal),
+            # The one permitted shortcut: a trusted reply pin plus the owner's
+            # exact verb applies on this turn and consumes it. Every other
+            # resolved target becomes a proposal that needs a later yes.
+            if (str(target.get("pinned_by") or "") == "reply" and owner_verb):
+                payload = dict(body)
+                payload["text"] = spoken_text
+                payload["target_id"] = target.get("target_id", "")
+                payload["target_type"] = target.get("target_type", "")
+                payload["target_label"] = target.get("target_label", "")
+                payload["followup_id"] = target.get("followup_id", "")
+                payload["reminder_id"] = target.get("reminder_id", "")
+                payload["notice_id"] = target.get("notice_id", "")
+                payload["turn_id"] = acknowledgements.turn_key(
+                    conversation, owner, turn)
+                if (spoken.get("action") == "snooze"
+                        and not str(payload.get("scope") or "").strip()):
+                    payload["scope"] = str(
+                        target.get("target_label") or "").strip()
+                result = _apply_unattested(payload)
+                return json.dumps(
+                    _public_application(
+                        result, target_label=target.get("target_label"),
+                        effect=dict(spoken)),
+                    ensure_ascii=False, sort_keys=True)
+
+            result = acknowledgements.propose_target(
+                target, effect, store=store, conversation=conversation,
+                owner=owner, turn=turn, now=now)
+            return json.dumps(_public_proposal(result),
                               ensure_ascii=False, sort_keys=True)
-
-        # Apply the owner's own words, not the model's payload.
-        payload = dict(body)
-        payload["text"] = spoken_text
-        payload["target_id"] = target.get("target_id", "")
-        payload["target_type"] = target.get("target_type", "")
-        payload["target_label"] = target.get("target_label", "")
-        payload["followup_id"] = target.get("followup_id", "")
-        payload["reminder_id"] = target.get("reminder_id", "")
-        payload["notice_id"] = target.get("notice_id", "")
-        payload["turn_id"] = acknowledgements.turn_key(conversation, owner, turn)
-        if spoken.get("action") == "snooze" and not str(payload.get("scope") or "").strip():
-            payload["scope"] = str(target.get("target_label") or "").strip()
-        result = _apply_unattested(payload)
-        effect = dict(spoken)
-        return json.dumps(
-            _public_application(result, target_label=target.get("target_label"),
-                                effect=effect),
-            ensure_ascii=False, sort_keys=True)
+        except (AssertionError, OSError, KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:  # noqa: BLE001 - public errors never leak text
+            return json.dumps(_public_refusal("internal_error"),
+                              ensure_ascii=False, sort_keys=True)
 
     return handler
 

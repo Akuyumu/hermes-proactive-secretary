@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -22,12 +24,27 @@ class _Ctx:
 
 
 class _Harness(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = Path(self._tmp.name)
+        patches = [
+            mock.patch.object(tool.paths, "state_dir", return_value=root / "var"),
+            mock.patch.object(tool.paths, "preferences_path",
+                              return_value=root / "preferences.json"),
+            mock.patch.object(tool.paths, "data_root", return_value=root),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
     def drive(self, *, turn_text: str, declared: str, execution=None, **extra):
         """Run the real handler with an attested turn and a stubbed store write."""
         applied: dict = {}
 
         def fake_attested(ctx, payload, *, host_session_id=None):
-            return True, "", "", {"text": turn_text}, str(payload.get("evidence_quote") or "")
+            return True, "", "", {"text": turn_text, "reply_to": "fu_pinned"}, \
+                str(payload.get("evidence_quote") or "")
 
         def fake_apply(payload=None, *, now=None):
             applied["body"] = dict(payload or {})
@@ -38,6 +55,7 @@ class _Harness(unittest.TestCase):
                     "target_type": "followup",
                     "target_label": "harbour tide",
                     "followup_id": "fu_pinned",
+                    "pinned_by": "reply",
                     "aliases": {"fu_pinned", "followup:fu_pinned"}}, None
 
         original_attested, original_apply = tool._attested_owner_turn, tool._apply_unattested
