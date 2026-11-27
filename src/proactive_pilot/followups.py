@@ -810,8 +810,9 @@ def close(
     reason_text = str(reason or "").strip().lower()
     reason_text = {"stop": "owner_stopped", "cancel": "owner_canceled"}.get(
         reason_text, reason_text)
-    if reason_text not in {"owner_stopped", "owner_canceled"}:
-        raise FollowupError("close reason must be owner_stopped or owner_canceled")
+    if reason_text not in {"owner_stopped", "owner_canceled", "owner_confirmed"}:
+        raise FollowupError(
+            "close reason must be owner_stopped, owner_canceled or owner_confirmed")
 
     target = _coerce_store(store)
     stamp = _now(target, now)
@@ -820,11 +821,13 @@ def close(
         entry = _find(data, followup_id)
         if entry["status"] not in {"active", "awaiting_delivery"}:
             raise FollowupError(f"cannot close a follow-up while {entry['status']}")
-        if reason_text == "owner_stopped":
+        if reason_text in {"owner_stopped", "owner_confirmed"}:
             entry["status"] = "done"
         else:
             entry["status"] = "canceled"
         entry["close_reason"] = reason_text
+        if reason_text == "owner_confirmed":
+            entry["owner_confirmed_at"] = stamp.isoformat()
         entry["closed_at"] = stamp.isoformat()
         entry["updated_at"] = stamp.isoformat()
         _add_dedupe(data, entry.get("notice_event_key", ""))
@@ -944,15 +947,131 @@ def _portal_row(entry: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
+def _reminder_window_end(rem: dict[str, Any], stamp: datetime) -> datetime | None:
+    """The end of an emitted reminder's own window, if it can be read."""
+    raw = str(rem.get("event_due") or rem.get("due") or rem.get("emitted_at") or "")
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=stamp.tzinfo)
+    try:
+        grace = max(0, int(rem.get("late_grace_minutes") or 0))
+    except (TypeError, ValueError):
+        grace = 0
+    return parsed + timedelta(minutes=grace)
+
+
+def _seed_reminder_followthroughs_locked(store: Any, data: dict[str, Any],
+                                         stamp: datetime) -> tuple[list[str], bool]:
+    """Create at most one one-shot follow-up for each emitted reminder.
+
+    Requested reminders live in their own registry. Once a reminder has been
+    emitted and its own window has passed, the follow-up store gets exactly one
+    one-shot entry for it. The bounded ``dedupe`` list keeps that true even
+    after old closed entries are pruned. No sender, timer or new state file is
+    introduced; the existing portal follow-up evaluation performs this read.
+    """
+    raw = store.load("reminders.json", {"reminders": {}})
+    reminders = raw.get("reminders") if isinstance(raw, dict) else None
+    if not isinstance(reminders, dict) or not reminders:
+        return [], False
+    created: list[str] = []
+    touched = False
+    existing_refs = {
+        str(entry.get("source_ref") or "")
+        for entry in data["entries"].values()
+        if isinstance(entry, dict)
+    }
+    for rid, rem in sorted(reminders.items()):
+        if not isinstance(rem, dict) or rem.get("status") != "emitted":
+            continue
+        key = f"reminder-followthrough:{rid}"[:MAX_EVENT_KEY_CHARS]
+        if key in (data.get("dedupe") or []):
+            continue
+        source_ref = f"reminder:{rid}"[:MAX_SOURCE_REF_CHARS]
+        if source_ref in existing_refs:
+            if key not in (data.get("dedupe") or []):
+                _add_dedupe(data, key)
+                touched = True
+            continue
+        window_end = _reminder_window_end(rem, stamp)
+        if window_end is not None and stamp <= window_end:
+            continue
+        if _active_count(data) >= MAX_ACTIVE_FOLLOWUPS:
+            continue
+        try:
+            text = _bounded("Follow up: " + str(rem.get("text") or ""),
+                            "text", MAX_TEXT_CHARS, required=True)
+            hint = _bounded("Ask whether the owner acted on that reminder.",
+                            "check_hint", MAX_CHECK_HINT_CHARS, required=True)
+            expiry = _expiry_text("", stamp, default_days=DEFAULT_PORTAL_EXPIRY_DAYS)
+        except FollowupError:
+            continue
+        fid = _new_id(data)
+        entry = {
+            "id": fid,
+            "text": text,
+            "kind": "one_shot",
+            "status": "active",
+            "created_at": stamp.isoformat(),
+            "updated_at": stamp.isoformat(),
+            "source": "reminder",
+            "check_hint": hint,
+            "filed_by": "agent",
+            "evidence_quote": "",
+            "source_ref": source_ref,
+            "expires_at": expiry,
+            "created_execution_id": "",
+            "last_checked_at": "",
+            "last_result": "",
+            "check_count": 0,
+            "notified_count": 0,
+            "seen": [],
+            "notice_reservations": [],
+            "notice_event_key": "",
+            "notice_status": "",
+            "owner_confirmed_ref": "",
+            "owner_confirmed_at": "",
+            "closed_at": "",
+            "close_reason": "",
+        }
+        data["entries"][fid] = entry
+        _add_dedupe(data, key)
+        existing_refs.add(source_ref)
+        created.append(fid)
+        touched = True
+    return created, touched
+
+
+def seed_from_reminders(store: Any, *, now: datetime | None = None) -> list[str]:
+    """Seed one-shot follow-ups for emitted requested reminders (idempotent)."""
+    target = _coerce_store(store)
+    stamp = _now(target, now)
+    with _locked(target):
+        data = _load(target)
+        created, touched = _seed_reminder_followthroughs_locked(target, data, stamp)
+        if touched:
+            _save(target, data, stamp)
+        return created
+
+
 def portal_rows(store: Any, *, max_entries: int = DEFAULT_WAKE_ENTRIES,
                 now: datetime | None = None) -> list[dict[str, Any]]:
-    """Close expired active watches, then return bounded due rows."""
+    """Close expired active watches, seed reminder follow-throughs, return due rows."""
     limit = min(max(0, int(max_entries)), MAX_WAKE_ENTRIES)
     target = _coerce_store(store)
     stamp = _now(target, now)
     with _locked(target):
         data = _load(target)
-        if _expire_active_locked(data, stamp):
+        changed = bool(_expire_active_locked(data, stamp))
+        _created, seeded = _seed_reminder_followthroughs_locked(target, data, stamp)
+        if seeded:
+            changed = True
+        if changed:
             _save(target, data, stamp)
         rows = [_portal_row(entry) for entry in data["entries"].values()
                 if entry.get("status") == "active"]
@@ -1010,7 +1129,7 @@ __all__ = [
     "FollowupError", "FollowupCapacityError",
     "empty_store", "create", "record_check",
     "queue_notice", "release_notice", "resolve_notice", "confirm_owner_receipt",
-    "close", "expire", "get",
+    "close", "expire", "get", "seed_from_reminders",
     "active_entries",
     "awaiting_entries", "wake_entries", "pending_entries", "portal_rows",
     "notice_event_key", "summary", "receipts",

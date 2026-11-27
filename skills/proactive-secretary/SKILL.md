@@ -30,6 +30,22 @@ already carries due follow-ups, so adding a watch must not touch schedules. Cron
 is only the plugin's own installed monitoring/reminder machinery; it is never
 the way to record a user's watch.
 
+## Answering a delivered notice
+
+The owner may answer with one of these exact short words. Route them to the
+existing stores; do not invent a new state or a global switch.
+
+| The owner says | Do |
+|---|---|
+| `later 30` / `later 2h` / `later until 2026-12-01T09:00:00+08:00` | the existing snooze action for that item/topic (`hermes secretary feedback snooze` with `--minutes` or `--until`); no new action name |
+| `done` | if the notice carries a topic, close that topic through `secretary_guidance`; otherwise close the follow-up with `secretary_followup` `complete` (the existing `owner_confirmed` reason) |
+| `stop` | close that follow-up with `secretary_followup` `stop` (the existing `owner_stopped` reason) and close its topic through `secretary_guidance`; scope it to that item/topic only |
+
+A `stop` is never a global pause, a permanent ban or a widened source decision.
+An unrecognised word changes nothing; say plainly that it was not understood.
+Nothing else changes: quiet hours, caps, schedules, grants and delivery rules
+stay exactly as they are.
+
 ## Filing a follow-up
 
 Filing is cheap and reversible: it is a small text addition to the plugin, so
