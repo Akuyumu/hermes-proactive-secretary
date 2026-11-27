@@ -23,16 +23,23 @@ from .state import parse_iso
 
 
 def _configured_source_labels(policy: dict[str, Any]) -> list[str]:
-    """Source labels the owner explicitly consented to (accounts/feeds only)."""
+    """Source labels that are switched on or carry a consented reference.
+
+    Deliberately broader than "has data": the notice exists for a genuinely
+    empty configuration, so an enabled scope with no data yet must not be
+    described as "nothing is set up".
+    """
     labels: list[str] = []
     consent = (
-        ("mail", ("mail_accounts", "mail_account_aliases")),
-        ("calendar", ("calendar_accounts", "calendar_ids")),
-        ("tasks", ("task_accounts", "task_lists")),
+        ("mail", ("mail_enabled", "source_consent"), ("mail_accounts", "mail_account_aliases")),
+        ("calendar", ("calendar_enabled",), ("calendar_accounts", "calendar_ids")),
+        ("tasks", ("tasks_enabled",), ("task_accounts", "task_lists", "task_adapter")),
     )
-    for label, keys in consent:
-        if any(policy.get(key) for key in keys):
+    for label, switches, keys in consent:
+        if any(policy.get(key) for key in switches + keys):
             labels.append(label)
+    if policy.get("obligations_enabled"):
+        labels.append("obligations")
     if policy.get("feeds_enabled") and (
             policy.get("public_sources") or policy.get("feed_seed_sources")):
         labels.append("public")

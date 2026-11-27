@@ -41,7 +41,14 @@ _OPAQUE_ID_RE = re.compile(
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b", re.IGNORECASE)
 _ABSOLUTE_PATH_RE = re.compile(
-    r"(?<![\w.~-])(?:/[\w.~-]+){2,}|[A-Za-z]:[\\/][\w.\\/-]+")
+    r"(?<![\w.~-])(?:/[\w.~-]+){2,}"
+    r"|(?<![\w:/])[A-Za-z]:\\+[\w.\\-]+"
+    r"|(?<![\w.~-])/(?:etc|home|var|usr|tmp|opt|root|srv|proc|sys|dev|bin|sbin|lib|mnt|media)\b")
+# The plugin's own record ids are shapes a reader can never use; a bare prefix
+# such as resp_ab12cd34 or fu_9f2c1a is an internal handle even at 11 chars.
+_PLUGIN_ID_RE = re.compile(
+    r"\b(?:fu|resp|sec|cal|mail|task|thread|evt|msg|artifact|handle|responsibility|"
+    r"reminder|followup|obs|cand)_[A-Za-z0-9]{4,}\b", re.IGNORECASE)
 _LEADING_TIMESTAMP_RE = re.compile(
     r"^\s*\d{4}-\d{2}-\d{2}"
     r"(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?"
@@ -106,6 +113,8 @@ def check_notice_text(text: str) -> tuple[bool, str | None]:
         return False, "hex_blob"
     if _OPAQUE_ID_RE.search(value):
         return False, "opaque_id"
+    if _PLUGIN_ID_RE.search(value):
+        return False, "plugin_id"
     # URLs are legitimate notice content ("join at https://…"), so remove them
     # before looking for filesystem paths — the drive-letter branch otherwise
     # matches the "s://" tail of every https link.

@@ -91,6 +91,38 @@ class ReminderFollowthroughTests(unittest.TestCase):
                          "reminder:rem-1")
         self.assertEqual(F.portal_rows(reloaded, now=self.now), [row])
 
+    def test_reminder_marker_survives_ordinary_dedupe_churn(self):
+        data = {"dedupe": []}
+        F._add_dedupe(data, "reminder-followthrough:rem-1")
+        for i in range(200):
+            F._add_dedupe(data, f"ordinary-key-{i}")
+        self.assertIn("reminder-followthrough:rem-1", data["dedupe"])
+        self.assertLessEqual(len(data["dedupe"]), F.MAX_DEDUPE)
+
+    def test_closed_followup_is_not_reseeded_after_pruning(self):
+        self._emitted()
+        row = F.portal_rows(self.store, now=self.now)[0]
+        F.close(self.store, row["id"], "owner_confirmed", now=self.now)
+        # Past both retention limits: many closed rows and a full dedupe list.
+        data = self.store.load("followups.json", {})
+        data["dedupe"] = [f"ordinary-{i}" for i in range(F.MAX_DEDUPE)] + list(
+            data.get("dedupe") or [])
+        data["dedupe"] = data["dedupe"][-F.MAX_DEDUPE:]
+        self.store.save("followups.json", data)
+        rows = F.portal_rows(self.store, now=self.now + timedelta(minutes=10))
+        self.assertEqual([r for r in rows if r.get("source_ref") == "reminder:rem-1"], [])
+
+    def test_a_long_reminder_still_gets_its_followup(self):
+        self._emitted()
+        data = self.store.load("reminders.json", {"reminders": {}})
+        data["reminders"]["rem-1"]["text"] = "x" * 300
+        self.store.save("reminders.json", data)
+        rows = F.portal_rows(self.store, now=self.now)
+        self.assertEqual(len(rows), 1)
+        stored = F.get(self.store, rows[0]["id"])["text"]
+        self.assertLessEqual(len(stored), F.MAX_TEXT_CHARS)
+        self.assertTrue(stored.startswith("Follow up: "))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

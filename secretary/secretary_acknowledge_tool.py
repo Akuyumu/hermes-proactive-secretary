@@ -69,6 +69,23 @@ def _refusal(status: str, reason: str) -> dict[str, Any]:
     return {"ok": False, "status": status, "reason": str(reason)[:300]}
 
 
+def _current_execution(ctx: Any) -> Any:
+    """The live execution when this turn is scheduled/delegated, else None.
+
+    An unreadable execution counts as not-foreground: a cached human turn must
+    never authorise a write from a background run.
+    """
+    if ctx is None:
+        return None
+    getter = getattr(ctx, "current_cron_execution", None)
+    if not callable(getter):
+        return None
+    try:
+        return getter()
+    except Exception:  # noqa: BLE001 - unknown execution means refuse
+        return object()
+
+
 def _apply_unattested(payload: dict[str, Any] | None = None, *,
                       now: Any = None) -> dict[str, Any]:
     """Apply one acknowledgement. Private: the handler attests the turn first."""
@@ -92,6 +109,7 @@ def _apply_unattested(payload: dict[str, Any] | None = None, *,
             keys=[str(key) for key in (body.get("keys") or []) if str(key).strip()],
             guidance_root=Path(paths.data_root()),
             scope=str(body.get("scope") or "").strip(),
+            item_kind=str(body.get("kind") or "").strip(),
         )
     except Exception as exc:  # noqa: BLE001 - bounded refusal, never a traceback
         return _refusal("error", f"{type(exc).__name__}: {exc}")
@@ -105,32 +123,44 @@ def tool_handler(ctx: Any = None):
         if not text:
             return json.dumps(_refusal("refused", "no acknowledgement text was given"),
                               ensure_ascii=False, sort_keys=True)
-        ok, status, why, _turn, quote = _attested_owner_turn(
+        execution = _current_execution(ctx)
+        if execution is not None:
+            return json.dumps(
+                _refusal("refused", "a scheduled or delegated run cannot apply an acknowledgement"),
+                ensure_ascii=False, sort_keys=True)
+        ok, status, why, turn, _quote = _attested_owner_turn(
             ctx, body, host_session_id=session_id)
         if not ok:
             return json.dumps(_refusal(status, why), ensure_ascii=False, sort_keys=True)
 
-        # The action comes from the host-recorded owner message, never from the
-        # model's paraphrase: parse both and refuse any disagreement.
+        # The action, the duration and the deadline all come from the whole
+        # host-recorded owner message, never from the model's paraphrase.
         _ensure_src()
         from proactive_pilot import acknowledgements
         from proactive_pilot.clock import Clock
-        declared = acknowledgements.parse(text, now=Clock().now())
-        spoken = acknowledgements.parse(quote, now=Clock().now())
-        if spoken.get("action") != declared.get("action"):
-            return json.dumps(
-                _refusal("refused", "the owner's words do not match that acknowledgement"),
-                ensure_ascii=False, sort_keys=True)
+        now = Clock().now()
+        spoken_text = str(turn.get("text") or "").strip()
+        spoken = acknowledgements.parse(spoken_text, now=now)
         if spoken.get("action") == "refused":
             return json.dumps(_refusal("refused", str(spoken.get("reason") or "")),
                               ensure_ascii=False, sort_keys=True)
+        declared = acknowledgements.parse(text, now=now)
+        mismatch = declared.get("action") != spoken.get("action") or any(
+            declared.get(field) != spoken.get(field) for field in ("minutes", "until"))
+        if mismatch:
+            return json.dumps(
+                _refusal("refused", "the owner's words do not match that acknowledgement"),
+                ensure_ascii=False, sort_keys=True)
         if spoken.get("action") == "snooze" and not str(body.get("scope") or "").strip():
             return json.dumps(
                 _refusal("refused",
                          "later needs scope: the notice's own words, so the snooze is not global"),
                 ensure_ascii=False, sort_keys=True)
 
-        result = _apply_unattested(body)
+        # Apply the owner's own words, not the model's payload.
+        payload = dict(body)
+        payload["text"] = spoken_text
+        result = _apply_unattested(payload)
         if result.get("ok"):
             result["from_owner_turn"] = True
         return json.dumps(result, ensure_ascii=False, sort_keys=True)

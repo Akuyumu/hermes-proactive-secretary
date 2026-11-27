@@ -382,7 +382,13 @@ def _add_dedupe(data: dict[str, Any], value: Any) -> None:
     if text not in dedupe:
         dedupe.append(text)
     if len(dedupe) > MAX_DEDUPE:
-        del dedupe[: len(dedupe) - MAX_DEDUPE]
+        # A reminder follow-through marker must outlive its closed entry, or the
+        # same reminder is seeded again once the entry is pruned. Protect that
+        # class and spend the budget on ordinary keys only.
+        durable = [k for k in dedupe if str(k).startswith("reminder-followthrough:")]
+        ordinary = [k for k in dedupe if not str(k).startswith("reminder-followthrough:")]
+        budget = max(0, MAX_DEDUPE - len(durable))
+        dedupe[:] = ordinary[len(ordinary) - budget:] + durable if budget else durable
 
 
 def _prune_closed(data: dict[str, Any]) -> None:
@@ -1004,8 +1010,14 @@ def _seed_reminder_followthroughs_locked(store: Any, data: dict[str, Any],
         if _active_count(data) >= MAX_ACTIVE_FOLLOWUPS:
             continue
         try:
-            text = _bounded("Follow up: " + str(rem.get("text") or ""),
-                            "text", MAX_TEXT_CHARS, required=True)
+            body_text = str(rem.get("text") or "")
+            prefix = "Follow up: "
+            room = MAX_TEXT_CHARS - len(prefix)
+            if len(body_text) > room:
+                # Bound after adding the prefix: a 300-char reminder must still
+                # get its follow-through, not be silently skipped.
+                body_text = body_text[: max(0, room - 1)].rstrip() + "…"
+            text = _bounded(prefix + body_text, "text", MAX_TEXT_CHARS, required=True)
             hint = _bounded("Ask whether the owner acted on that reminder.",
                             "check_hint", MAX_CHECK_HINT_CHARS, required=True)
             expiry = _expiry_text("", stamp, default_days=DEFAULT_PORTAL_EXPIRY_DAYS)

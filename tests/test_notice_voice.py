@@ -56,6 +56,20 @@ class NoticeVoiceRuleTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(rule, "opaque_id")
 
+    def test_plugin_record_id_is_refused(self):
+        for value in ("fu_9f2c1a", "resp_ab12cd34", "followup_7f3a2b1c"):
+            with self.subTest(value=value):
+                ok, rule = check_notice_text(f"Tracked under {value} for now.")
+                self.assertFalse(ok)
+                self.assertEqual(rule, "plugin_id")
+
+    def test_bare_unix_root_is_an_absolute_path(self):
+        for value in ("/etc", "/etc/passwd", "/home/owner/file.txt"):
+            with self.subTest(value=value):
+                ok, rule = check_notice_text(f"Saved at {value} earlier.")
+                self.assertFalse(ok)
+                self.assertEqual(rule, "absolute_path")
+
     def test_leading_timestamp_is_refused(self):
         ok, rule = check_notice_text("2026-11-27T09:00:00Z The draft is ready.")
         self.assertFalse(ok)

@@ -91,6 +91,7 @@ def apply(
     guidance_root: Path | str | None = None,
     scope: str = "",
     provenance: str = "owner acknowledgement",
+    item_kind: str = "",
 ) -> dict[str, Any]:
     """Apply one acknowledgement to the existing stores, or refuse cleanly."""
     action = parse(text, now=now)
@@ -109,7 +110,7 @@ def apply(
                                "notice's own subject so the snooze is not global")}
         request = {
             "action": "snooze",
-            "kind": str(action.get("kind") or "any"),
+            "kind": str(item_kind or "any"),
             "match": match[:200],
             "scope": str(scope or topic)[:200],
             "provenance": str(provenance)[:200],
