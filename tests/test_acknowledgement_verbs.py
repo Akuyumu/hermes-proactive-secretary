@@ -18,6 +18,7 @@ from proactive_pilot import acknowledgements as A  # noqa: E402
 from proactive_pilot import feedback  # noqa: E402
 from proactive_pilot import followups as F  # noqa: E402
 from proactive_pilot import guidance  # noqa: E402
+from proactive_pilot import policy  # noqa: E402
 from proactive_pilot.clock import Clock  # noqa: E402
 from proactive_pilot.state import StateStore  # noqa: E402
 
@@ -50,16 +51,33 @@ class AcknowledgementVerbTests(unittest.TestCase):
         prefs = feedback.load_preferences_file(self.prefs, strict=True)
         self.assertEqual(len(prefs["snoozes"]), 1)
         self.assertEqual(prefs["snoozes"][0]["scope"], "harbour tide")
+        self.assertEqual(prefs["snoozes"][0]["match"], "harbour tide")
+        self.assertEqual(prefs["snoozes"][0]["kind"], "any")
         self.assertEqual(prefs["snoozes"][0]["until"],
                          (self.now + timedelta(minutes=30)).isoformat())
+        # A snooze must never become a global mute.
+        self.assertFalse(policy.active_snooze(prefs, self.now))
+        self.assertTrue(policy.preference_blocks(
+            {"kind": "mail", "subject": "Harbour tide times", "message": ""},
+            prefs, self.now))
+        self.assertFalse(policy.preference_blocks(
+            {"kind": "mail", "subject": "Unrelated invoice", "message": ""},
+            prefs, self.now))
 
         self.assertEqual(A.parse("later 2h", now=self.now)["minutes"], 120)
         until = self.now + timedelta(hours=3)
         explicit = A.apply(f"later until {until.isoformat()}", now=self.now,
-                           preferences_path=self.prefs)
+                           preferences_path=self.prefs, scope="harbour tide")
         self.assertTrue(explicit["ok"], explicit)
         prefs = feedback.load_preferences_file(self.prefs, strict=True)
         self.assertEqual(prefs["snoozes"][-1]["until"], until.isoformat())
+
+    def test_later_without_scope_is_refused_instead_of_going_global(self):
+        result = A.apply("later 30", now=self.now, preferences_path=self.prefs)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "refused")
+        prefs = feedback.load_preferences_file(self.prefs, strict=True)
+        self.assertEqual(prefs.get("snoozes"), [])
 
     def test_done_closes_the_right_store_entry(self):
         first = self._followup("first item")

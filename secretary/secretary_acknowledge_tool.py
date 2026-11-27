@@ -16,7 +16,6 @@ Anything unrecognised is refused with a reason and changes nothing.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 
@@ -26,11 +25,9 @@ except ImportError:  # direct/standalone import
     import paths  # type: ignore
 
 try:  # reuse the guidance tool's attested-foreground gate verbatim
-    from .secretary_guidance_tool import (
-        _NEGATION_ANY, _attested_owner_turn, _ensure_src)
+    from .secretary_guidance_tool import _attested_owner_turn, _ensure_src
 except ImportError:  # direct/standalone import
-    from secretary_guidance_tool import (  # type: ignore
-        _NEGATION_ANY, _attested_owner_turn, _ensure_src)
+    from secretary_guidance_tool import _attested_owner_turn, _ensure_src  # type: ignore
 
 TOOL_NAME = "secretary_acknowledge"
 TOOL_DESCRIPTION = (
@@ -47,16 +44,17 @@ TOOL_SCHEMA: dict[str, Any] = {
                  "description": "The owner's acknowledgement, e.g. 'done', 'later 20', 'stop'"},
         "followup_id": {"type": "string",
                         "description": "Follow-up id the notice belonged to, when known"},
-        "topic": {"type": "string",
-                  "description": "Topic label of the notice, when the owner closed a topic"},
         "keys": {"type": "array", "items": {"type": "string"},
                  "description": "Stable ids (event, follow-up, observation) to close"},
         "scope": {"type": "string",
-                  "description": "Bounded description of what the answer applies to"},
+                  "description": ("For 'later': distinctive words from the notice this answer "
+                                  "applies to; the snooze matches on them and is never global")},
+        "kind": {"type": "string",
+                 "description": "Optional item kind for a scoped snooze (default: any)"},
         "evidence_quote": {"type": "string",
                            "description": "Exact words from the owner's current message"},
     },
-    "required": ["text"],
+    "required": ["text", "evidence_quote"],
     "additionalProperties": False,
 }
 
@@ -99,20 +97,6 @@ def _apply_unattested(payload: dict[str, Any] | None = None, *,
         return _refusal("error", f"{type(exc).__name__}: {exc}")
 
 
-def _names_label(quote: str, label: str) -> bool:
-    """True when the owner's own words name this label (plural tolerant)."""
-    stem = r"(?<![\w])" + re.escape(str(label).strip()) + r"(?:s)?(?![\w])"
-    return bool(re.search(stem, quote, re.IGNORECASE))
-
-
-def _negated_before(quote: str, word: str) -> bool:
-    """True when a negation precedes the acknowledgement word."""
-    found = re.search(r"(?<![\w])" + re.escape(word) + r"(?![\w])", quote, re.IGNORECASE)
-    if not found:
-        return False
-    return bool(_NEGATION_ANY.search(quote[:found.start()]))
-
-
 def tool_handler(ctx: Any = None):
     def handler(args: dict[str, Any] | None = None, session_id: Any = None,
                 task_id: Any = None, **_kwargs: Any) -> str:
@@ -121,8 +105,7 @@ def tool_handler(ctx: Any = None):
         if not text:
             return json.dumps(_refusal("refused", "no acknowledgement text was given"),
                               ensure_ascii=False, sort_keys=True)
-        details: dict[str, Any] = {}
-        ok, status, why, turn, quote = _attested_owner_turn(
+        ok, status, why, _turn, quote = _attested_owner_turn(
             ctx, body, host_session_id=session_id)
         if not ok:
             return json.dumps(_refusal(status, why), ensure_ascii=False, sort_keys=True)
@@ -141,20 +124,15 @@ def tool_handler(ctx: Any = None):
         if spoken.get("action") == "refused":
             return json.dumps(_refusal("refused", str(spoken.get("reason") or "")),
                               ensure_ascii=False, sort_keys=True)
-        if _negated_before(quote, str(spoken.get("word") or "")):
-            return json.dumps(_refusal("refused", "a negated answer is not an acknowledgement"),
-                              ensure_ascii=False, sort_keys=True)
-
-        topic = str(body.get("topic") or "").strip()
-        if topic and not _names_label(quote, topic):
+        if spoken.get("action") == "snooze" and not str(body.get("scope") or "").strip():
             return json.dumps(
-                _refusal("refused", "the owner's words do not name that topic"),
+                _refusal("refused",
+                         "later needs scope: the notice's own words, so the snooze is not global"),
                 ensure_ascii=False, sort_keys=True)
 
         result = _apply_unattested(body)
-        if details:
-            result = {**result, "authority": details}
-        result["from_owner_turn"] = True
+        if result.get("ok"):
+            result["from_owner_turn"] = True
         return json.dumps(result, ensure_ascii=False, sort_keys=True)
 
     return handler

@@ -102,9 +102,16 @@ def apply(
         if preferences_path is None:
             return {"ok": False, "status": "refused",
                     "reason": "no preferences artifact is available for the snooze"}
+        match = str(scope or topic or "").strip().lower()
+        if not match:
+            return {"ok": False, "status": "refused",
+                    "reason": ("later needs the words it applies to; pass scope with the "
+                               "notice's own subject so the snooze is not global")}
         request = {
             "action": "snooze",
-            "scope": str(scope or topic or "acknowledged notice")[:200],
+            "kind": str(action.get("kind") or "any"),
+            "match": match[:200],
+            "scope": str(scope or topic)[:200],
             "provenance": str(provenance)[:200],
         }
         if action.get("minutes") is not None:

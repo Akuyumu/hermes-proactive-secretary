@@ -29,7 +29,7 @@ class RegistrationTests(unittest.TestCase):
         (args, kwargs) = ctx.registered[0]
         self.assertEqual(args[0], "secretary_acknowledge")
         self.assertEqual(kwargs["description"], tool.TOOL_DESCRIPTION)
-        self.assertEqual(args[2]["parameters"]["required"], ["text"])
+        self.assertEqual(args[2]["parameters"]["required"], ["text", "evidence_quote"])
         self.assertFalse(args[2]["parameters"]["additionalProperties"])
 
     def test_missing_registrar_is_reported_not_raised(self):

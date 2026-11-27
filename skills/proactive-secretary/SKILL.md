@@ -1,7 +1,7 @@
 ---
 name: proactive-secretary
 description: "Use when the user asks to follow up on, watch, track, be notified about, notify me about or keep an eye on something, or to set up, tune, pause or troubleshoot proactive alerts and reminders."
-version: 1.1.11
+version: 1.2.0
 author: Hermes Plugin Community
 license: MIT
 platforms: [linux, macos]
@@ -38,9 +38,9 @@ invent a new state, a global switch, or a second route.
 
 | The owner says | Do |
 |---|---|
-| `later 30` / `later 2h` / `later until 2026-12-01T09:00:00+08:00` | `secretary_acknowledge` with `text` = their words; it applies the existing snooze action with `minutes` or `until` (same store as `hermes secretary feedback snooze`) |
-| `done` | `secretary_acknowledge` with `text` = "done" plus `topic` and/or `followup_id`; it closes the topic through the guidance store, or the follow-up with the existing `owner_confirmed` reason |
-| `stop` | `secretary_acknowledge` with `text` = "stop" plus `followup_id`/`topic`; it closes that follow-up with the existing `owner_stopped` reason and its topic — scoped to that item only |
+| `later 30` / `later 2h` / `later until 2026-12-01T09:00:00+08:00` | `secretary_acknowledge` with `text` = their words **and `scope`** = a distinctive phrase from the notice; the snooze matches on that phrase, so it applies to that item and is never a global mute |
+| `done` | `secretary_acknowledge` with `text` = "done" plus `followup_id` and/or `keys`; it closes that follow-up with the existing `owner_confirmed` reason |
+| `stop` | `secretary_acknowledge` with `text` = "stop" plus `followup_id` and/or `keys`; it closes that follow-up with the existing `owner_stopped` reason — scoped to that item only |
 
 A `stop` is never a global pause, a permanent ban or a widened source decision.
 An unrecognised word changes nothing; say plainly that it was not understood.
