@@ -149,22 +149,26 @@ class ReminderFollowthroughTests(unittest.TestCase):
         self.assertEqual(after.get("reminder_followthroughs"), {})
 
 
-    def test_a_corrupt_registry_does_not_erase_the_markers(self):
+    def test_a_corrupt_registry_cannot_lose_or_duplicate_a_followthrough(self):
+        """The strongest shape: marker kept, closed row already pruned."""
         self._emitted(rid="r00")
-        first = F.portal_rows(self.store, now=self.now)
-        self.assertEqual(len(first), 1)
-        path = self.root / "reminders.json"
-        path.write_text("{", encoding="utf-8")
-        # A corrupt registry reads as unreadable, not as empty: markers stay.
-        during = F.portal_rows(self.store, now=self.now)
-        self.assertEqual([r["id"] for r in during], [r["id"] for r in first])
-        after = self.store.load("followups.json", {})
-        self.assertIn("r00", after.get("reminder_followthroughs") or {})
-        # Restoring the registry must not add a second follow-through either.
+        row = F.portal_rows(self.store, now=self.now)[0]
+        F.close(self.store, row["id"], "owner_confirmed", now=self.now)
+        data = F._load(self.store)
+        data["entries"].pop(row["id"], None)      # pruned, as real retention does
+        F._save(self.store, data, self.now)
+        path = self.root / "followups.json"
+        before = path.read_bytes()
+        for corruption in ("{", "[]"):
+            with self.subTest(corruption=corruption):
+                (self.root / "reminders.json").write_text(corruption, encoding="utf-8")
+                F.portal_rows(self.store, now=self.now)
+                self.assertEqual(path.read_bytes(), before)
+        # Restoring the registry must not re-seed the reminder whose row is gone.
         self._emitted(rid="r00")
-        later = F.portal_rows(self.store, now=self.now + timedelta(minutes=5))
-        self.assertEqual([r["id"] for r in later], [r["id"] for r in first])
-        self.assertEqual(F.summary(self.store)["total"], 1)
+        F.portal_rows(self.store, now=self.now + timedelta(minutes=5))
+        self.assertEqual(F.summary(self.store)["total"], 0)
+        self.assertEqual(path.read_bytes(), before)
 
     def test_a_missing_registry_still_clears_the_markers(self):
         self._emitted(rid="r00")
